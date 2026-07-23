@@ -57,6 +57,11 @@ import { fragmentHasZone, flattenZonesInSlice, enclosingZonePos } from './transc
 import { recallLinkedCopy } from './clipboard-link-cache.js';
 import { detectPasteDialect } from './paste-dialect.js';
 import { convertWordHtml, convertHakuHtml } from '../import/html-paste.js';
+import {
+  FOLDABLE_SPACES_RE,
+  STRIPPABLE_INVISIBLES_RE,
+  UNICODE_BREAKS_RE,
+} from './exotic-whitespace.js';
 
 
 /**
@@ -101,19 +106,33 @@ const SINGLE_LINE_PASTE_PARENTS = new Set<string>([
 ]);
 
 /** Normalize clipboard text for paste into the given parent block.
- *  In single-line contexts (`SINGLE_LINE_PASTE_PARENTS`), collapse
- *  any whitespace run (newlines, tabs, repeated spaces) to a single
- *  space and trim the edges. In multi-paragraph contexts
- *  (`card_body`, `paragraph`, etc.) leave the text alone so
- *  intentional paragraph splits in the clipboard survive. */
+ *  Only the PLAIN-paste paths call this (F2 direct read, the F2-armed
+ *  Ctrl/Cmd+V, and Paste-and-Condense) — rich paste and file loads are
+ *  deliberately untouched, so existing documents never mutate silently.
+ *
+ *  All plain pastes fold the PDF-extraction whitespace artifacts (see
+ *  exotic-whitespace.ts): soft hyphens / zero-widths stripped, LINE /
+ *  PARAGRAPH SEPARATOR and friends routed into the newline handling
+ *  (they carry break semantics, so they become paragraph splits — never
+ *  spaces), and every other Unicode space separator folded to a plain
+ *  space (U+2007 FIGURE SPACE is the field case: non-breaking, so a
+ *  card pasted with it can't wrap at its word gaps). Then, in
+ *  single-line contexts (`SINGLE_LINE_PASTE_PARENTS`), collapse any
+ *  whitespace run (newlines, tabs, repeated spaces) to a single space
+ *  and trim the edges. In multi-paragraph contexts (`card_body`,
+ *  `paragraph`, etc.) intentional paragraph splits survive. */
 export function normalizeClipboardTextForPaste(
   text: string,
   parentTypeName: string,
 ): string {
+  const cleaned = text
+    .replace(STRIPPABLE_INVISIBLES_RE, '')
+    .replace(UNICODE_BREAKS_RE, '\n')
+    .replace(FOLDABLE_SPACES_RE, ' ');
   if (SINGLE_LINE_PASTE_PARENTS.has(parentTypeName)) {
-    return text.replace(/\s+/g, ' ').trim();
+    return cleaned.replace(/\s+/g, ' ').trim();
   }
-  return text;
+  return cleaned;
 }
 
 const SPLITTABLE_BODY_SLOTS = new Set<string>([

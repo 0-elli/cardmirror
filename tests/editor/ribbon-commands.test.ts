@@ -3143,6 +3143,32 @@ describe('buildPlainTextSlice (F2 Paste Text)', () => {
       expect(normalizeClipboardTextForPaste('  a  ', 'card_body')).toBe('  a  ');
     });
 
+    it('folds PDF-extraction exotic spaces to plain spaces in multi-line parents (the nora figure-space case)', () => {
+      // A libgen PDF's word gaps arrived as U+2007 FIGURE SPACE — a
+      // NON-breaking space — so the pasted card could only wrap at
+      // stray intra-word spaces or mid-word, rendering fake line
+      // breaks that survive backspace. Plain paste must fold them.
+      expect(
+        normalizeClipboardTextForPaste('offensive\u2007mari time\u2007power', 'card_body'),
+      ).toBe('offensive mari time power');
+      expect(
+        normalizeClipboardTextForPaste('a\u00A0b\u2009c\u202Fd', 'card_body'),
+      ).toBe('a b c d');
+    });
+
+    it('strips soft hyphens and zero-widths, and routes LINE/PARAGRAPH SEPARATOR to paragraph splits', () => {
+      expect(
+        normalizeClipboardTextForPaste('mari\u00ADtime a\u200Bb', 'card_body'),
+      ).toBe('maritime ab');
+      // U+2028/U+2029 DO carry break semantics — they become newlines
+      // (paragraph splits via buildPlainTextSlice), never spaces.
+      expect(
+        normalizeClipboardTextForPaste('one\u2028two\u2029three', 'card_body'),
+      ).toBe('one\ntwo\nthree');
+      // …and in single-line parents they flatten like any newline.
+      expect(normalizeClipboardTextForPaste('one\u2028two', 'tag')).toBe('one two');
+    });
+
     it('plain-paste into a tag with trailing newline no longer creates a multi-paragraph slice (regression test for the "skipping around on paste" / scroll-to-bottom bug)', () => {
       // Triple-click in a browser commonly yields "Article Title\n".
       // Without normalization, buildPlainTextSlice would return a

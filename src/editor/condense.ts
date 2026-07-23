@@ -25,6 +25,11 @@ import { Fragment, type Node as PMNode, type Mark, type NodeType } from 'prosemi
 import { TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { canSplit } from 'prosemirror-transform';
 import { schema } from '../schema/index.js';
+import {
+  isFoldableSpace,
+  isStrippableInvisible,
+  isUnicodeBreak,
+} from './exotic-whitespace.js';
 
 // ---------- Pilcrow primitives ----------
 
@@ -81,12 +86,17 @@ function isPreserved(node: PMNode): boolean {
 // ---------- Whitespace cleanup ----------
 
 /**
- * Tab and NBSP that count as cleanup-eligible whitespace per Verbatim's
- * `CondenseCard`. We don't have page / section / column / soft-line
- * break characters in the schema — those are docx-only artifacts.
+ * Cleanup-eligible whitespace per Verbatim's `CondenseCard` (tab, NBSP)
+ * plus the wider PDF-extraction artifact set from exotic-whitespace.ts:
+ * every Unicode space separator folds to a plain space (U+2007 FIGURE
+ * SPACE is the field case — non-breaking, so a card pasted with it
+ * can't wrap at word gaps), in-text break characters fold like spaces
+ * (the merge is flattening paragraphs anyway), and soft hyphens /
+ * zero-widths are dropped outright. Page / section / column / soft-line
+ * break characters aren't handled — those are docx-only artifacts our
+ * schema can't contain.
  */
 const TAB = '\t';
-const NBSP = ' ';
 
 /**
  * Cleaned inline content for one textblock. Walks the textblock's
@@ -95,7 +105,9 @@ const NBSP = ' ';
  * rebuilds a Fragment that preserves marks per character.
  *
  * Rules:
- *   - Tabs and NBSPs → regular space.
+ *   - Tabs, exotic Unicode spaces (NBSP, figure, thin, en/em, …), and
+ *     in-text break characters → regular space; soft hyphens and
+ *     zero-width characters are dropped (see exotic-whitespace.ts).
  *   - Runs of spaces (across mark boundaries) collapse to one space.
  *     The collapsed space inherits the marks of the *first* space in
  *     the run (this is what Word's Find/Replace effectively does and
@@ -121,7 +133,11 @@ export function cleanTextblockContent(textblock: PMNode): Fragment {
       const t = child.text ?? '';
       for (let i = 0; i < t.length; i++) {
         let ch = t[i]!;
-        if (ch === TAB || ch === NBSP) ch = ' ';
+        // Skipping without touching the run flags keeps stripping
+        // transparent: a zero-width between two spaces must not stop
+        // the run from collapsing.
+        if (isStrippableInvisible(ch)) continue;
+        if (ch === TAB || isFoldableSpace(ch) || isUnicodeBreak(ch)) ch = ' ';
         atoms.push({ kind: 'char', ch, marks: child.marks });
       }
     } else {
