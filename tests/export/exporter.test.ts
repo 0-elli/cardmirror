@@ -373,6 +373,60 @@ describe('exporter — full docx', () => {
     expect(docContent).toContain('Tag');
     expect(docContent).toContain('underlined');
   });
+
+  it('declares the comments parts with the exact SDK content types (Word repair regression)', async () => {
+    // Word validates each part's declared content type against its
+    // relationship; ANY mismatch fails the whole package with the
+    // "unreadable content" repair prompt even though every part parses.
+    // Field report 2026-07-23 (mac Word): every file saved with a
+    // comment triggered repair-on-open because commentsExtended.xml was
+    // declared as the invented "application/vnd.ms-word." type. Pin
+    // both strings to the constants in the Open XML SDK
+    // (WordprocessingCommentsPart / WordprocessingCommentsExPart).
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['card']!.create(null, [
+        schema.nodes['tag']!.create({ id: newHeadingId() }, schema.text('T')),
+        schema.nodes['card_body']!.create(null, [
+          schema.text('commented', [
+            schema.marks['comment_range']!.create({ threadId: '1' }),
+          ]),
+        ]),
+      ]),
+    ]);
+    const threads = [
+      {
+        id: '1',
+        comments: [
+          {
+            id: '1',
+            author: 'A',
+            initials: 'A',
+            date: '2026-07-23T00:00:00Z',
+            text: 'note',
+            kind: 'human' as const,
+            parentId: null,
+          },
+        ],
+      },
+    ];
+    const bytes = await toDocx(doc, { threads });
+    const reloaded = await Docx.load(bytes);
+    const contentTypes = await reloaded.readText('[Content_Types].xml');
+    expect(contentTypes).toContain(
+      '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>',
+    );
+    expect(contentTypes).toContain(
+      '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/>',
+    );
+    expect(contentTypes).not.toContain('vnd.ms-word.commentsExtended');
+    // The wiring the content types describe: both parts present, both
+    // relationships declared.
+    expect(await reloaded.readText('word/comments.xml')).toContain('note');
+    expect(await reloaded.readText('word/commentsExtended.xml')).toContain('commentEx');
+    const rels = await reloaded.readText('word/_rels/document.xml.rels');
+    expect(rels).toContain('relationships/comments"');
+    expect(rels).toContain('office/2011/relationships/commentsExtended');
+  });
 });
 
 describe('image alt text round-trip', () => {
