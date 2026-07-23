@@ -15,6 +15,7 @@
 import { zipSync } from 'fflate';
 import { fromDocxFull, parseNative, serializeNative, toDocx } from '../index.js';
 import { getHost, getElectronHost } from './host/index.js';
+import { settings } from './settings.js';
 import { runWebFileTool } from './web-file-tools.js';
 import { setIcon } from './icons';
 
@@ -35,7 +36,10 @@ async function convertBytes(bytes: Uint8Array, dir: Direction): Promise<Uint8Arr
     return serializeNative(doc, threads.length ? { threads } : undefined);
   }
   const { doc, threads } = parseNative(bytes);
-  return toDocx(doc, threads.length ? { threads } : undefined);
+  return toDocx(doc, {
+    ...(threads.length ? { threads } : {}),
+    defaultFont: settings.get('bodyFont'),
+  });
 }
 
 function swapExt(p: string, dir: Direction): string {

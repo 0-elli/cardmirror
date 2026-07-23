@@ -23,7 +23,7 @@ export type { ExportResult, ExportOptions } from './exporter.js';
  */
 export async function toDocx(doc: PMNode, opts: ExportOptions = {}): Promise<Uint8Array> {
   const result = exportDoc(doc, opts);
-  const docx = Docx.empty();
+  const docx = Docx.empty(opts.defaultFont ? { defaultFont: opts.defaultFont } : undefined);
   docx.writeText('word/document.xml', result.documentXml);
   docx.writeText('word/_rels/document.xml.rels', result.relsXml);
   for (const part of result.mediaParts) {

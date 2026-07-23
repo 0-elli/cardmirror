@@ -20,7 +20,7 @@
  *   - DefaultParagraphFont            — required default character style
  */
 
-import { XML_PROLOG } from './xml.js';
+import { XML_PROLOG, escAttr } from './xml.js';
 
 /**
  * The canonical styles.xml content.
@@ -28,13 +28,30 @@ import { XML_PROLOG } from './xml.js';
  * A stripped-down version of the full styles.xml from Debate.dotm:
  * only the styles Verbatim and our editor actually use, keeping
  * exports stylepox-free by construction.
+ *
+ * `defaultFont` lands as LITERAL w:ascii/w:hAnsi attributes BESIDE the
+ * theme attributes in docDefaults. The redundancy is load-bearing:
+ * theme-aware consumers (Word) resolve the THEME attributes — which
+ * supersede the literals per OOXML when both are present — so Word's
+ * rendering is byte-for-byte unchanged by the literals; theme-BLIND
+ * converters (the LibreOffice-based preview pipelines behind Slack,
+ * Gmail, etc.) read the literals for the first time instead of falling
+ * back to their engine default (Liberation Serif, a Times clone).
+ * Neither may be removed. Per-machine font customization is untouched
+ * by construction: Verbatim writes fonts into STYLE definitions
+ * (frmSettings) and re-applies them on every open (Startup's
+ * UpdateStyles), and style-level fonts outrank docDefaults in Word's
+ * cascade — docDefaults is only ever consulted for text whose whole
+ * style chain names no font, which on a Verbatim machine is nothing.
  */
-export const CANONICAL_STYLES_XML = `${XML_PROLOG}
+export function canonicalStylesXml(defaultFont = 'Calibri'): string {
+  const f = escAttr(defaultFont);
+  return `${XML_PROLOG}
 <w:styles xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">
   <w:docDefaults>
     <w:rPrDefault>
       <w:rPr>
-        <w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cstheme="minorBidi"/>
+        <w:rFonts w:ascii="${f}" w:hAnsi="${f}" w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cstheme="minorBidi"/>
         <w:sz w:val="22"/>
         <w:szCs w:val="22"/>
         <w:lang w:val="en-US" w:eastAsia="en-US" w:bidi="ar-SA"/>
@@ -299,6 +316,12 @@ export const CANONICAL_STYLES_XML = `${XML_PROLOG}
     </w:rPr>
   </w:style>
 </w:styles>`;
+}
+
+/** The default-font build — the shape every pre-existing consumer
+ *  (style injection, legacy remap) wants: style DEFINITIONS with the
+ *  ecosystem-baseline docDefaults. */
+export const CANONICAL_STYLES_XML = canonicalStylesXml();
 
 /** Map from our schema node type name → docx pStyle styleId. */
 export const NODE_TO_PSTYLE: Record<string, string | null> = {

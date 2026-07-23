@@ -374,6 +374,33 @@ describe('exporter — full docx', () => {
     expect(docContent).toContain('underlined');
   });
 
+  it('writes literal docDefaults fonts BESIDE the theme attributes (preview-font regression)', async () => {
+    // The redundancy is load-bearing: Word resolves the THEME
+    // attributes (which supersede literals when both are present), so
+    // machine rendering — and Verbatim's style-level per-machine font
+    // customization — is untouched; theme-BLIND preview converters
+    // (Slack/Gmail render farms) read the literals instead of falling
+    // back to Liberation Serif. Removing either attribute family
+    // regresses one of the two worlds.
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['paragraph']!.create(null, schema.text('hi')),
+    ]);
+    // Default: Calibri, the ecosystem baseline (Debate.dotm's Normal).
+    const plain = (await (await Docx.load(await toDocx(doc))).readText('word/styles.xml'))!;
+    expect(plain).toContain(
+      '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:asciiTheme="minorHAnsi"',
+    );
+    // The editor passes the user's display font; XML-escaped.
+    const custom = (
+      await (
+        await Docx.load(await toDocx(doc, { defaultFont: 'Iowan & Old Style' }))
+      ).readText('word/styles.xml')
+    )!;
+    expect(custom).toContain(
+      '<w:rFonts w:ascii="Iowan &amp; Old Style" w:hAnsi="Iowan &amp; Old Style" w:asciiTheme="minorHAnsi"',
+    );
+  });
+
   it('declares compatibilityMode 15 after the attached template (no Compatibility Mode banner)', async () => {
     // A docx with no declared compatibilityMode opens as Word-2007-era:
     // "[Compatibility Mode]" in the title bar, modern margin comments

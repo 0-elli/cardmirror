@@ -609,7 +609,7 @@ async function runNewSpeechDocumentSingleDoc(): Promise<void> {
   let docBytes: Uint8Array;
   try {
     docBytes =
-      format === 'cmir' ? serializeNative(docNode) : await toDocx(docNode);
+      format === 'cmir' ? serializeNative(docNode) : await toDocx(docNode, { defaultFont: settings.get('bodyFont') });
   } catch (err) {
     console.error('Speech-doc serialization failed:', err);
     void alertDialog(
@@ -6635,7 +6635,7 @@ async function serializeForSave(
   // Word has no live-window concept: materialize each self_ref window to real
   // cards (resolved from the source, ids re-stamped) before export.
   const docxNode = flattenSelfRefs(exportDocNode, newHeadingId);
-  return toDocx(docxNode, { ...threadsOpt, ...(docId ? { docId } : {}) });
+  return toDocx(docxNode, { ...threadsOpt, ...(docId ? { docId } : {}), defaultFont: settings.get('bodyFont') });
 }
 
 /**
@@ -8882,10 +8882,10 @@ async function reserializeJournalAs(
     markedCardsOnly: false,
     markUnreadAfterMarker: settings.get('markUnreadAfterMarker'),
   });
-  return toDocx(
-    exportDoc,
-    parsed.threads.length > 0 ? { threads: parsed.threads } : undefined,
-  );
+  return toDocx(exportDoc, {
+    ...(parsed.threads.length > 0 ? { threads: parsed.threads } : {}),
+    defaultFont: settings.get('bodyFont'),
+  });
 }
 
 /** Silently open every journal entry as part of a mode-switch

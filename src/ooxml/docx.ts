@@ -18,7 +18,7 @@
  */
 
 import { unzipSync, zipSync } from 'fflate';
-import { CANONICAL_STYLES_XML } from './styles.js';
+import { canonicalStylesXml } from './styles.js';
 import { XML_PROLOG, escText } from './xml.js';
 
 const utf8Decoder = new TextDecoder('utf-8');
@@ -48,12 +48,15 @@ export class Docx {
     return new Docx(parts);
   }
 
-  /** Construct a fresh, minimal .docx with the canonical style block. */
-  static empty(): Docx {
+  /** Construct a fresh, minimal .docx with the canonical style block.
+   *  `defaultFont` becomes the literal docDefaults font — read only by
+   *  theme-blind converters (previews); Word resolves the theme
+   *  attributes instead (see canonicalStylesXml). */
+  static empty(opts?: { defaultFont?: string }): Docx {
     const docx = new Docx(new Map());
     docx.writeText('[Content_Types].xml', CONTENT_TYPES_XML);
     docx.writeText('_rels/.rels', TOP_LEVEL_RELS_XML);
-    docx.writeText('word/styles.xml', CANONICAL_STYLES_XML);
+    docx.writeText('word/styles.xml', canonicalStylesXml(opts?.defaultFont));
     docx.writeText('word/_rels/document.xml.rels', DOCUMENT_RELS_XML);
     docx.writeText('word/document.xml', EMPTY_DOCUMENT_XML);
     // Verbatim-recognition surface: <w:attachedTemplate> in
