@@ -374,22 +374,26 @@ describe('exporter — full docx', () => {
     expect(docContent).toContain('underlined');
   });
 
-  it('writes literal docDefaults fonts BESIDE the theme attributes (preview-font regression)', async () => {
-    // The redundancy is load-bearing: Word resolves the THEME
-    // attributes (which supersede literals when both are present), so
-    // machine rendering — and Verbatim's style-level per-machine font
-    // customization — is untouched; theme-BLIND preview converters
-    // (Slack/Gmail render farms) read the literals instead of falling
-    // back to Liberation Serif. Removing either attribute family
-    // regresses one of the two worlds.
+  it('writes literal docDefaults fonts with NO latin theme attributes (preview-font regression)', async () => {
+    // The latin theme attrs must stay OUT of docDefaults: OOXML gives
+    // w:asciiTheme precedence over w:ascii, and the theme-aware
+    // LibreOffice on preview farms (Slack/Gmail) resolves the theme
+    // ref, finds no theme part in our package, and falls back to
+    // Liberation Serif — never reading the literal. Re-adding them
+    // re-breaks every preview. The eastAsia/cs theme refs stay so CJK
+    // and complex scripts keep engine-appropriate defaults. Verbatim
+    // per-machine fonts are unaffected either way (style-level
+    // definitions outrank docDefaults).
     const doc = schema.nodes['doc']!.createChecked(null, [
       schema.nodes['paragraph']!.create(null, schema.text('hi')),
     ]);
     // Default: Calibri, the ecosystem baseline (Debate.dotm's Normal).
     const plain = (await (await Docx.load(await toDocx(doc))).readText('word/styles.xml'))!;
     expect(plain).toContain(
-      '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:asciiTheme="minorHAnsi"',
+      '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsiaTheme="minorEastAsia" w:cstheme="minorBidi"/>',
     );
+    expect(plain).not.toContain('w:asciiTheme');
+    expect(plain).not.toContain('w:hAnsiTheme');
     // The editor passes the user's display font; XML-escaped.
     const custom = (
       await (
@@ -397,7 +401,7 @@ describe('exporter — full docx', () => {
       ).readText('word/styles.xml')
     )!;
     expect(custom).toContain(
-      '<w:rFonts w:ascii="Iowan &amp; Old Style" w:hAnsi="Iowan &amp; Old Style" w:asciiTheme="minorHAnsi"',
+      '<w:rFonts w:ascii="Iowan &amp; Old Style" w:hAnsi="Iowan &amp; Old Style" w:eastAsiaTheme="minorEastAsia"',
     );
   });
 
