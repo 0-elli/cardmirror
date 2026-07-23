@@ -1590,68 +1590,11 @@ describe('applyCite (F8)', () => {
     expect(apply(state, applyCite())).toBeNull();
   });
 
-  it('empty selection in an EMPTY paragraph: arms the mark for typing', () => {
-    // A node with nothing typed has no word to expand to — instead of the
-    // historical no-op, the style arms so the next typed character comes
-    // out styled (parity across single-pane and three-pane new docs,
-    // whose blank shapes differ; and parity with the Mod- chords).
+  it('empty selection in an empty paragraph: no-op (arming belongs to the Mod- chords)', () => {
     const doc = makeDoc([paragraph('')]);
     const base = EditorState.create({ doc });
     const state = base.apply(base.tr.setSelection(TextSelection.create(base.doc, 1)));
-    const armed = apply(state, applyCite());
-    expect(armed).not.toBeNull();
-    expect((armed!.storedMarks ?? []).some((m) => m.type.name === 'cite_mark')).toBe(true);
-    // Typing after arming produces cite-marked text.
-    const typed = armed!.apply(armed!.tr.insertText('x'));
-    let marked = false;
-    typed.doc.descendants((n) => {
-      if (n.isText && n.text === 'x') {
-        marked = n.marks.some((m) => m.type.name === 'cite_mark');
-      }
-    });
-    expect(marked).toBe(true);
-  });
-
-  it('empty selection in an EMPTY tag: still a no-op (skip block)', () => {
-    const doc = makeDoc([cardWithChildren(tag(''), cardBody('body'))]);
-    let pos = -1;
-    doc.descendants((n, p) => {
-      if (n.type.name === 'tag') pos = p + 1;
-      return true;
-    });
-    const base = EditorState.create({ doc });
-    const state = base.apply(base.tr.setSelection(TextSelection.create(base.doc, pos)));
     expect(apply(state, applyCite())).toBeNull();
-  });
-
-  it('applyUnderline arms in an empty paragraph (named) and an empty tag (direct)', () => {
-    const paraDoc = makeDoc([paragraph('')]);
-    const paraBase = EditorState.create({ doc: paraDoc });
-    const paraState = paraBase.apply(paraBase.tr.setSelection(TextSelection.create(paraBase.doc, 1)));
-    const paraArmed = apply(paraState, applyUnderline());
-    expect(paraArmed).not.toBeNull();
-    expect((paraArmed!.storedMarks ?? []).some((m) => m.type.name === 'underline_mark')).toBe(true);
-
-    const tagDoc = makeDoc([cardWithChildren(tag(''), cardBody('body'))]);
-    let pos = -1;
-    tagDoc.descendants((n, p) => {
-      if (n.type.name === 'tag') pos = p + 1;
-      return true;
-    });
-    const tagBase = EditorState.create({ doc: tagDoc });
-    const tagState = tagBase.apply(tagBase.tr.setSelection(TextSelection.create(tagBase.doc, pos)));
-    const tagArmed = apply(tagState, applyUnderline());
-    expect(tagArmed).not.toBeNull();
-    expect((tagArmed!.storedMarks ?? []).some((m) => m.type.name === 'underline_direct')).toBe(true);
-  });
-
-  it('applyEmphasis arms in an empty paragraph', () => {
-    const doc = makeDoc([paragraph('')]);
-    const base = EditorState.create({ doc });
-    const state = base.apply(base.tr.setSelection(TextSelection.create(base.doc, 1)));
-    const armed = apply(state, applyEmphasis());
-    expect(armed).not.toBeNull();
-    expect((armed!.storedMarks ?? []).some((m) => m.type.name === 'emphasis_mark')).toBe(true);
   });
 
   it('applies cite_mark to text in a body paragraph', () => {
@@ -2017,15 +1960,11 @@ describe('applyUnderline (F9 / Mod-U)', () => {
     expect(apply(state, applyUnderline())).toBeNull();
   });
 
-  it('empty selection in an EMPTY paragraph: arms underline for typing', () => {
-    // Nothing typed → no word to expand → arm instead of the historical
-    // no-op (single/three-pane new-doc parity; matches Mod-U).
+  it('empty selection in an empty paragraph: no-op (F9 is expand-to-word; Mod-U arms)', () => {
     const doc = makeDoc([paragraph('')]);
     const base = EditorState.create({ doc });
     const state = base.apply(base.tr.setSelection(TextSelection.create(base.doc, 1)));
-    const armed = apply(state, applyUnderline());
-    expect(armed).not.toBeNull();
-    expect((armed!.storedMarks ?? []).some((m) => m.type.name === 'underline_mark')).toBe(true);
+    expect(apply(state, applyUnderline())).toBeNull();
   });
 });
 
@@ -2186,15 +2125,11 @@ describe('applyEmphasis (F10)', () => {
     expect(apply(state, applyEmphasis())).toBeNull();
   });
 
-  it('empty selection in an EMPTY paragraph: arms emphasis for typing', () => {
-    // Nothing typed → no word to expand → arm instead of the historical
-    // no-op (single/three-pane new-doc parity; matches Mod- chords).
+  it('empty selection in an empty paragraph: no-op (arming belongs to the Mod- chords)', () => {
     const doc = makeDoc([paragraph('')]);
     const base = EditorState.create({ doc });
     const state = base.apply(base.tr.setSelection(TextSelection.create(base.doc, 1)));
-    const armed = apply(state, applyEmphasis());
-    expect(armed).not.toBeNull();
-    expect((armed!.storedMarks ?? []).some((m) => m.type.name === 'emphasis_mark')).toBe(true);
+    expect(apply(state, applyEmphasis())).toBeNull();
   });
 
   it('applies emphasis_mark to text in a body paragraph', () => {

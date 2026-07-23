@@ -1136,18 +1136,7 @@ function applyBodyMark(
     if (opRanges.length === 0) {
       if (!opts.expandToWordWhenEmpty) return false;
       const word = wordRangeAtCursor(state);
-      if (!word) {
-        // EMPTY textblock (nothing typed yet): no word to expand to, so
-        // arm the mark for TYPING — the next character comes out styled,
-        // matching the Mod- chords' collapsed-cursor behavior. Scoped to
-        // truly empty blocks: a cursor sitting in whitespace between
-        // words keeps the historical no-op. Structural blocks skip named
-        // body styles here exactly as the range path below does.
-        const parent = state.selection.$from.parent;
-        if (!parent.isTextblock || parent.content.size > 0) return false;
-        if (NAMED_STYLE_SKIP_BLOCKS.has(parent.type.name)) return false;
-        return toggleMark(markType)(state, dispatch);
-      }
+      if (!word) return false;
       opRanges = [word];
     }
 
@@ -1734,20 +1723,14 @@ export function applyUnderline(
     const directMark = schema.marks['underline_direct']!;
 
     // Operating ranges: PM selection > shadow ranges > word-at-cursor.
+    // A collapsed cursor with NO word (empty block, whitespace) is a
+    // deliberate no-op: F9's contract is expand-to-word; arming for
+    // typing belongs to Mod-U (toggleUnderlineTyping) alone.
     const op = getOperatingRangesForFormatting(state);
     let opRanges = op.ranges;
     if (opRanges.length === 0) {
       const word = wordRangeAtCursor(state);
-      if (!word) {
-        // EMPTY textblock: arm underline for typing instead of the
-        // historical no-op — same structural-vs-body mark rule as Mod-U
-        // (underline_direct in tag/analytic/…, the named style in body).
-        // A cursor in whitespace between words still no-ops.
-        const parent = state.selection.$from.parent;
-        if (!parent.isTextblock || parent.content.size > 0) return false;
-        const structural = STRUCTURAL_TEXTBLOCKS_FOR_UNDERLINE.has(parent.type.name);
-        return toggleMark(structural ? directMark : namedMark)(state, dispatch);
-      }
+      if (!word) return false;
       opRanges = [word];
     }
 
