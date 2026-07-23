@@ -2029,6 +2029,10 @@ properly, with a real on-switch, once it's ready. What's in the preview:
   recipients for one-drop sends. Everything is end-to-end encrypted — the relay
   server only ever sees opaque ciphertext, never your cards, who sent them, or to
   whom — and cards are deleted from the server after 3 hours. Desktop only.
+  (The feature was conceived and prototyped by
+  [Q Cooper](https://github.com/mosuqc) of Missouri State University —
+  his proof-of-concept demonstrated the cross-machine send-and-receive
+  flow this built-in version is based on.)
 
 ## 0.1.0-alpha.17 — 2026-06-20
 

@@ -169,26 +169,38 @@ instead.
 
 ## (Optional) Set up AI features
 
-A few features call out to Anthropic's Claude API:
+A few features call out to an AI model:
 
 - AI-formatted citations from a pasted URL or freeform quote.
 - AI repair of OCR / PDF extraction errors in a selection (Mod-Shift-R).
 - AI image alt-text and table-from-image (right-click an image).
 - AI commenting / explain features in the comments column.
 
+Two providers are supported; pick either one:
+
+- **Anthropic** (the default) talks directly to Anthropic's Claude
+  API. Get an API key from
+  [console.anthropic.com](https://console.anthropic.com/) (you'll
+  need to top up a small amount of credit — Anthropic doesn't have
+  a free tier for the API).
+- **OpenRouter** talks to [openrouter.ai](https://openrouter.ai/),
+  which fronts models from many labs behind one key — use it if you
+  already have OpenRouter credit or want a specific non-Claude
+  model. You choose the model by its id (e.g.
+  `anthropic/claude-sonnet-4.6` or `openai/gpt-4o`) in the
+  **OpenRouter model** field.
+
 To enable them:
 
-1. Get an API key from
-   [console.anthropic.com](https://console.anthropic.com/) (you'll
-   need to top up a small amount of credit — Anthropic doesn't have
-   a free tier for the API).
+1. Get an API key from the provider you picked.
 2. In CardMirror, click the ⚙ gear icon in the ribbon.
-3. Toggle **AI features** on and paste your API key into the
-   **Anthropic API key** field.
+3. Toggle **AI features** on, choose your provider under
+   **AI provider**, and paste your key into that provider's key
+   field (**Anthropic API key** or **OpenRouter API key**).
 
 The key is stored locally on your machine and is sent directly to
-Anthropic when you trigger an AI feature. It doesn't travel through
-a third-party server.
+the provider you picked when you trigger an AI feature. It doesn't
+travel through a third-party server.
 
 **Translation** (Mod-Shift-T on a selection → copied to the clipboard)
 also has an Anthropic backend, but it works **without** any AI setup: the
@@ -425,20 +437,15 @@ hands-free-editing community — [Talon](https://talonvoice.com/),
 [Cursorless](https://www.cursorless.org/), and
 [Pokey Rule](https://github.com/pokey).
 
-The card sharing feature was conceived and prototyped by
-[Q Cooper](https://github.com/mosuqc) of Missouri State University; his
-proof-of-concept demonstrated the cross-machine send-and-receive flow the
-built-in version is based on. Thanks also to Shreeram Modi, whose
-[debate-scripts](https://github.com/shreerammodi/debate-scripts) for
-Verbatim inspired a few features here — notably the customizable
-acronym marking.
+Features and code have been contributed by
+[Shreeram Modi](https://github.com/shreerammodi),
+[Q Cooper](https://github.com/mosuqc),
+[cora](https://github.com/coralynnkc), and
+[Neo Cai](https://github.com/caineoyuan). Each contribution is
+credited where it shipped in the [changelog](./CHANGELOG.md).
 
-The Word-style image resize handles were contributed by
-[Neo Cai](https://github.com/caineoyuan). The multi-doc nav rail's
-per-document outline close and vertical resize were contributed by
-[cora](https://github.com/coralynnkc). The find bar's viewport
-clamping on narrow windows was contributed by
-[Shreeram Modi](https://github.com/shreerammodi).
+Special thanks to Q Cooper and Missouri State debate for beta
+testing.
 
 The app's interface icons are from the
 [Untitled UI free icons](https://www.untitledui.com/free-icons),
