@@ -26,7 +26,7 @@
  * declares its view, the controller treats it as cross-view.
  */
 
-import { EditorState, TextSelection } from 'prosemirror-state';
+import { EditorState, Selection, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { setViewDocPath } from './transclusion-doc-path.js';
 import { Node as PMNode } from 'prosemirror-model';
@@ -2552,6 +2552,14 @@ class MultiPaneShell {
       format: null,
     });
     slot.push(record);
+    // Caret into the empty BODY paragraph (doc end), not the "Untitled"
+    // pocket the default doc-start selection would land in, and focus —
+    // so typing (or arming a style for typing) works immediately with
+    // no extra click. Every other slot-populating path already focuses;
+    // this one also needs the caret moved past the pocket.
+    const tr = record.view.state.tr.setSelection(Selection.atEnd(record.view.state.doc));
+    record.view.dispatch(tr);
+    record.view.focus();
   }
 
   /** Create a fresh unsaved doc to hold a joining/resuming co-editing

@@ -1896,6 +1896,9 @@ async function onNewDocClicked(): Promise<void> {
   // Treat as non-pristine so subsequent Opens spawn.
   markNonPristineStarter();
   updateWindowTitle();
+  // The user asked for a doc to type into — put the caret there so
+  // typing works with no extra click.
+  view?.focus();
 }
 
 /** Join-session doc swap: the web edition's New-in-place path, minus
@@ -8213,6 +8216,11 @@ async function initSingleDocBoot(): Promise<void> {
   // is both confusing and useless.
   mountView(currentDoc);
   syncSingleDocSpeechRegistration();
+  // A window spawned by "New document" exists to be typed into — focus
+  // the editor so typing works with no extra click. Gated on the home
+  // overlay: when it's covering the editor (fresh launches that land on
+  // Home), keystrokes belong to it, not to the doc underneath.
+  if (!homeScreen.isVisible()) view?.focus();
   let isFirst = true;
   try {
     isFirst = await getHost().isFirstWindow();
