@@ -26,10 +26,16 @@
  *  3. ATOMIC WRITES + PER-PATH SERIALIZATION (all doc writes): bytes
  *     stage into a hidden sibling `.cmtmp` file, then rename over the
  *     real path — a crash mid-write can never leave a half-written
- *     document (same pattern as the crash-recovery journals). Writes
- *     to the same path chain onto each other, so a manual ⌘S landing
- *     while an autosave write is still in flight can't interleave
- *     (see the kernel-race note above `host:write-journal` in main.ts).
+ *     document (same pattern as the crash-recovery journals). The
+ *     atomicity is best-effort, not absolute: when the rename stays
+ *     blocked by another process's hold on the target (a Dropbox
+ *     upload on Windows can hold for many seconds), the write falls
+ *     back to a plain in-place overwrite rather than failing the save
+ *     — the Word model: safety when the filesystem cooperates,
+ *     functionality always. Writes to the same path chain onto each
+ *     other, so a manual ⌘S landing while an autosave write is still
+ *     in flight can't interleave (see the kernel-race note above
+ *     `host:write-journal` in main.ts).
  *
  * The state map is keyed by resolved path and shared across windows —
  * which matches the cross-window duplicate-open guard's invariant that
@@ -59,8 +65,11 @@ export const FILE_LOCKED_MARKER = 'ELOCKED';
  *  file within milliseconds to sync/scan it. Field report 2026-07-16
  *  (Max U., Windows + Dropbox): two saves seconds apart — the second
  *  save's rename hit Dropbox's upload handle on the FIRST save's
- *  output → EPERM. Those holds are sub-second, so a short backoff
- *  absorbs nearly all of them; ~1.5s total before giving up. */
+ *  output → EPERM. Scanner holds are sub-second, so this backoff
+ *  (~1.5s) absorbs nearly all of them and keeps the write atomic; a
+ *  hold that outlives it (a Dropbox upload of a large doc on a slow
+ *  uplink runs many seconds) routes to the in-place fallback in
+ *  `writeAtomic` instead of failing the save. */
 const RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800];
 
 function isTransientRenameCode(err: unknown): boolean {
@@ -127,8 +136,19 @@ export async function recordDiskStateFromDisk(filePath: string): Promise<void> {
 /** Stage-then-rename write. The tmp file is dot-prefixed (hidden in
  *  Finder) and lives in the target's own directory so the rename stays
  *  on one filesystem (atomic on POSIX; MoveFileEx-replace on Windows).
- *  On rename failure the tmp file is cleaned up best-effort and the
- *  original error propagates. */
+ *
+ *  When a transient sharing violation outlives the whole retry backoff,
+ *  the write falls back to a plain in-place overwrite: replacing an open
+ *  file's directory entry needs delete-sharing from EVERY holder of the
+ *  file (which sync clients and scanners don't grant), but writing its
+ *  bytes needs only write-sharing (which they do) — so the overwrite
+ *  succeeds against the same hold that blocks the rename. The tmp file
+ *  survives until the overwrite lands: it holds the complete new bytes,
+ *  so a crash that tears the non-atomic overwrite still leaves a full
+ *  copy on disk next to the (journal-covered) torn target. Only when
+ *  even the overwrite fails is the save reported failed, with the
+ *  ELOCKED-marked message. Non-transient rename errors clean the tmp
+ *  and propagate unchanged. */
 async function writeAtomic(filePath: string, buf: Buffer, mode?: number): Promise<void> {
   const dir = path.dirname(filePath);
   const tmpPath = path.join(dir, `.${path.basename(filePath)}.cmtmp`);
@@ -148,17 +168,30 @@ async function writeAtomic(filePath: string, buf: Buffer, mode?: number): Promis
       }
     }
   } catch (err) {
-    await fs.unlink(tmpPath).catch(() => {});
-    if (isTransientRenameCode(err)) {
-      const code = (err as NodeJS.ErrnoException).code;
+    if (!isTransientRenameCode(err)) {
+      await fs.unlink(tmpPath).catch(() => {});
+      throw err;
+    }
+    try {
+      // `mode` only applies if the overwrite has to CREATE the target
+      // (possible on the saveNewDoc path); an existing file keeps its
+      // own bits, which is the point of writing in place.
+      await fs.writeFile(filePath, buf, mode !== undefined ? { mode } : {});
+    } catch (fallbackErr) {
+      const code =
+        (fallbackErr as NodeJS.ErrnoException).code ??
+        (err as NodeJS.ErrnoException).code;
       throw new Error(
-        `${FILE_LOCKED_MARKER}: "${path.basename(filePath)}" is temporarily ` +
-          `locked by another program — often Dropbox or an antivirus scanner ` +
-          `still processing the previous save. Wait a few seconds and save ` +
+        `${FILE_LOCKED_MARKER}: "${path.basename(filePath)}" is locked by ` +
+          `another program — often Dropbox or an antivirus scanner still ` +
+          `processing the previous save. Wait a few seconds and save ` +
           `again. (${code})`,
       );
     }
-    throw err;
+    // Best-effort: the same scanner hold that blocked the rename may
+    // still pin the tmp; the next save rewrites the same tmp path, so
+    // a leftover never accumulates.
+    await fs.unlink(tmpPath).catch(() => {});
   }
 }
 
