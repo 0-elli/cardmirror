@@ -2799,9 +2799,22 @@ export function refreshZoomStatus(): void {
 // focused pane's view (the shell keeps `view` pointed there via
 // setActiveView), so its nearest scroller is the right one in both modes.
 
-const ZOOM_COMMIT_DELAY_MS = 70; // coalesces a burst; imperceptible on one step
+// 120ms covers the default key-repeat interval (~90ms on macOS), so a HELD
+// zoom key coalesces into one gesture instead of committing per repeat; the
+// badge shows the target instantly, so the extra latency stays imperceptible.
+const ZOOM_COMMIT_DELAY_MS = 120;
+// How long a committed gesture's anchor stays reusable. Must outlive the
+// restore's refine window (up to 6 rAFs ≈ 100ms): a zoom step that lands
+// while the previous restore is still refining must NOT capture a fresh
+// anchor — it would snapshot a transient, half-corrected layout (the
+// rapid-zoom viewport jump). Reusing the burst's original anchor instead
+// pins one doc position to one screen Y across the whole burst, so drift
+// can't accumulate either. Rapid +/- CLICKS (~150-300ms apart) are the
+// case that never coalesces, so the hold is what protects them.
+const ZOOM_ANCHOR_HOLD_MS = 250;
 let zoomTarget: number | null = null; // pending target during a gesture
-let zoomAnchor: ViewportAnchor | null = null; // captured at gesture start
+let zoomAnchor: ViewportAnchor | null = null; // captured at burst start, held across commits
+let zoomAnchorReleaseTimer: number | null = null;
 let zoomCommitTimer: number | null = null;
 let zoomBadgeEl: HTMLElement | null = null;
 let zoomBadgeHideTimer: number | null = null;
@@ -2826,29 +2839,50 @@ function hideZoomBadgeSoon(): void {
   }, 550);
 }
 
-/** Apply the pending zoom target once, then pin the viewport back. */
+/** Drop the held burst anchor once the burst has gone quiet. Re-armed on
+ *  every commit, cancelled when a new step keeps the burst alive. */
+function releaseZoomAnchorSoon(): void {
+  if (zoomAnchorReleaseTimer !== null) window.clearTimeout(zoomAnchorReleaseTimer);
+  zoomAnchorReleaseTimer = window.setTimeout(() => {
+    zoomAnchorReleaseTimer = null;
+    zoomAnchor = null;
+  }, ZOOM_ANCHOR_HOLD_MS);
+}
+
+/** Apply the pending zoom target once, then pin the viewport back. The
+ *  anchor is HELD (not cleared) so steps landing while the restore still
+ *  refines continue the same burst against the same baseline. */
 function commitZoomGesture(): void {
   zoomCommitTimer = null;
   const target = zoomTarget;
-  const anchor = zoomAnchor;
   zoomTarget = null;
-  zoomAnchor = null;
   if (target === null) return;
   if (multiDocActive && multiDocZoomBy) {
     multiDocZoomBy(target - zoomStateForActive());
   } else {
     setZoom(target);
   }
-  if (anchor) restoreViewportAnchor(anchor);
+  if (zoomAnchor) restoreViewportAnchor(zoomAnchor);
+  releaseZoomAnchorSoon();
   hideZoomBadgeSoon();
 }
 
 /** Preview a zoom target: update the % readout now, defer the reflow. */
 function zoomPreviewTo(pct: number): void {
   const target = clampZoom(pct);
-  if (zoomTarget === null) {
-    // Gesture start — anchor to the current (committed) layout.
+  // A held anchor only carries across the burst within ONE view — a pane
+  // focus change mid-burst must re-anchor against the new pane.
+  if (zoomAnchor && zoomAnchor.view !== view) zoomAnchor = null;
+  if (zoomTarget === null && !zoomAnchor) {
+    // Burst start — anchor to the current (committed, settled) layout.
+    // A held anchor from a just-committed step is deliberately reused
+    // instead: capturing here mid-refine would pin a transient layout.
     zoomAnchor = view ? captureViewportAnchor(view) : null;
+  }
+  // The burst is alive again — don't let the hold expire under it.
+  if (zoomAnchorReleaseTimer !== null) {
+    window.clearTimeout(zoomAnchorReleaseTimer);
+    zoomAnchorReleaseTimer = null;
   }
   zoomTarget = target;
   updateZoomStatus(target);
@@ -2871,8 +2905,14 @@ function zoomActiveReset(): void {
     zoomCommitTimer = null;
   }
   zoomTarget = null;
-  zoomAnchor = null;
-  const anchor = view ? captureViewportAnchor(view) : null;
+  // Mid-burst reset (rapid +/- then Reset): the previous commit's restore
+  // may still be refining, so a FRESH capture here would pin a transient
+  // layout — the exact trap the burst hold exists to avoid. Reuse the
+  // held anchor when it belongs to this view; capture fresh only when
+  // the gesture machinery is idle.
+  if (zoomAnchor && zoomAnchor.view !== view) zoomAnchor = null;
+  const anchor = zoomAnchor ?? (view ? captureViewportAnchor(view) : null);
+  zoomAnchor = anchor;
   if (multiDocActive && multiDocZoomResetHook) {
     multiDocZoomResetHook();
   } else {
@@ -2881,6 +2921,7 @@ function zoomActiveReset(): void {
   showZoomBadge(100);
   hideZoomBadgeSoon();
   if (anchor) restoreViewportAnchor(anchor);
+  releaseZoomAnchorSoon();
 }
 
 /** Chrome scale — the whole-page zoom analog of `setZoom`. Wired
