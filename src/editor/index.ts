@@ -246,6 +246,7 @@ import {
   clearRecoveredDraftMark,
   autosaveBlockedForRecoveredDraft,
 } from './journal-staleness.js';
+import { makeBlankDoc } from './blank-doc.js';
 import { indentParagraph, outdentParagraph } from './indent-keymap.js';
 import {
   registerRibbonTooltip,
@@ -4714,9 +4715,9 @@ function makeStarterDoc(): PMNode {
  *  docs and newly spawned windows mount this instead of the
  *  welcome guide. */
 function makeBlankNewDoc(): PMNode {
-  return schema.nodes['doc']!.createChecked(null, [
-    schema.nodes['paragraph']!.create(),
-  ]);
+  // Shared with the three-pane shell's New — one definition so the two
+  // modes' blank docs cannot drift.
+  return makeBlankDoc();
 }
 
 /** Mobile-view onboarding doc — the desktop starter is all ribbon

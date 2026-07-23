@@ -65,6 +65,7 @@ import {
   autosaveBlockedForRecoveredDraft,
   recoveredDraftJournalSavedAt,
 } from './journal-staleness.js';
+import { makeBlankDoc } from './blank-doc.js';
 import { captureCleanToken } from './save-clean-token.js';
 import { scheduleIdle, cancelIdle, type IdleHandle } from './idle-scheduler.js';
 import { getSpeechDocResolver } from './speech-doc-registry.js';
@@ -2552,11 +2553,9 @@ class MultiPaneShell {
       format: null,
     });
     slot.push(record);
-    // Caret into the empty BODY paragraph (doc end), not the "Untitled"
-    // pocket the default doc-start selection would land in, and focus —
-    // so typing (or arming a style for typing) works immediately with
-    // no extra click. Every other slot-populating path already focuses;
-    // this one also needs the caret moved past the pocket.
+    // Caret into the empty paragraph + focus, so typing (or arming a
+    // style for typing) works immediately with no extra click. Every
+    // other slot-populating path focuses too.
     const tr = record.view.state.tr.setSelection(Selection.atEnd(record.view.state.doc));
     record.view.dispatch(tr);
     record.view.focus();
@@ -2739,14 +2738,6 @@ class MultiPaneShell {
   }
 }
 
-/** Minimal valid doc — one empty paragraph. Used by `createNewDoc`
- *  so the freshly-routed slot has something to put a cursor into. */
-function makeBlankDoc(): PMNode {
-  return schema.nodes['doc']!.createChecked(null, [
-    schema.nodes['pocket']!.create({ id: newHeadingId() }, schema.text('Untitled')),
-    schema.nodes['paragraph']!.create(null),
-  ]);
-}
 
 /** Speech-doc variant of `makeBlankDoc`. Same Pocket + trailing
  *  paragraph shape, but the Pocket carries the user-supplied
