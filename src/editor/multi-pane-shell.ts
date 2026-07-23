@@ -66,6 +66,7 @@ import {
   recoveredDraftJournalSavedAt,
 } from './journal-staleness.js';
 import { makeBlankDoc } from './blank-doc.js';
+import { homeScreen } from './home-screen.js';
 import { captureCleanToken } from './save-clean-token.js';
 import { scheduleIdle, cancelIdle, type IdleHandle } from './idle-scheduler.js';
 import { getSpeechDocResolver } from './speech-doc-registry.js';
@@ -2290,6 +2291,10 @@ class MultiPaneShell {
    *  the populated slot is the expanded one (or if expand mode is
    *  off), show it. */
   notifySlotPopulated(slot: Slot): void {
+    // A doc landing in any slot ends the empty-workspace state — the
+    // home screen (shown at empty boot / after the last close) yields
+    // to the workspace. No-op when home isn't up.
+    homeScreen.hide();
     if (this.expandedSlot && this.expandedSlot !== slot) {
       slot.paneEl.hidden = true;
     } else {
@@ -2304,6 +2309,14 @@ class MultiPaneShell {
   /** Handle a slot becoming empty — if it had focus, transfer to
    *  the next active slot (or clear focus). */
   handleSlotEmptied(slot: Slot): void {
+    // Workspace fully empty → land on the home screen rather than a
+    // blank window (parity with single-pane's close-to-home). Checked
+    // BEFORE the focus bookkeeping: that path early-returns when the
+    // emptied slot wasn't the focused one, and the last doc can close
+    // from an unfocused slot (clean-doc ✕ needs no focus first).
+    if (!SLOT_IDS.some((id) => this.slots[id].stack.length > 0)) {
+      homeScreen.show();
+    }
     if (this.focusedSlot !== slot) return;
     this.focusedSlot = null;
     for (const id of SLOT_IDS) {

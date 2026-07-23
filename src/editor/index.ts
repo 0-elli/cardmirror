@@ -1804,9 +1804,13 @@ const ribbonContext: RibbonContext = {
     void openSelectSpeechDocModal();
   },
   goHome: () => {
-    // Open home over the current doc (return-to-doc enabled), same
-    // as clicking the ribbon Home button.
-    homeScreen.show({ canReturnToDoc: true });
+    // Open home over the current doc (return-to-doc enabled) — except a
+    // multi-pane workspace with nothing open: "Return to doc" there
+    // would just dismiss home back to the blank window.
+    const canReturnToDoc =
+      !multiDocActive ||
+      (multiDocGetAllFilenames?.().some((f) => f !== null) ?? false);
+    homeScreen.show({ canReturnToDoc });
   },
   openHighlightPicker: () => colorPanel?.openPicker('highlight'),
   openShadingPicker: () => colorPanel?.openPicker('shading'),
@@ -8181,10 +8185,12 @@ if (BOOT_MULTI_DOC_WORKSPACE) {
         subtree: true,
       });
     }
-    // Home screen is available in multi-pane too (reachable via the
-    // Home button). Its actions route through the shell's slot
-    // picker rather than loading in-place. Not auto-shown on
-    // multi-pane launch — the workspace is the landing surface.
+    // Home screen in multi-pane: mounted here; its actions route
+    // through the shell's slot picker rather than loading in-place.
+    // Auto-shown whenever the workspace is EMPTY (blank launch below,
+    // and the shell re-shows it when the last doc closes) — an empty
+    // workspace would otherwise land on a bare window with no
+    // affordances. Any doc entering a slot hides it.
     homeScreen.mount(document.body, homeCallbacks);
     // Tell main this window can take OS-opened files into its slot
     // picker (so "Open with…" reuses it instead of spawning a blank
@@ -8196,7 +8202,14 @@ if (BOOT_MULTI_DOC_WORKSPACE) {
     // blank. Skip recovery when we did — a spawned-for-a-file window
     // isn't the place to surface unrelated drafts (matches single-doc).
     const routedInitialDoc = await routeInitialDocIntoWorkspace();
-    if (!routedInitialDoc) await runStartupRecovery();
+    if (!routedInitialDoc) {
+      // Blank multi-pane launch → land on the home screen, matching
+      // single-pane. Shown BEFORE recovery (same order as single-pane):
+      // the recovery sidebar overlays it, and a mode-switch reload's
+      // auto-reopened docs hide it via the slot-populated hook.
+      homeScreen.show();
+      await runStartupRecovery();
+    }
   })();
 } else {
   // Home screen is a single-doc-mode feature (multi-pane has its
