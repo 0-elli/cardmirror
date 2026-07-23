@@ -374,6 +374,32 @@ describe('exporter — full docx', () => {
     expect(docContent).toContain('underlined');
   });
 
+  it('declares compatibilityMode 15 after the attached template (no Compatibility Mode banner)', async () => {
+    // A docx with no declared compatibilityMode opens as Word-2007-era:
+    // "[Compatibility Mode]" in the title bar, modern margin comments
+    // disabled, and a Convert prompt whose re-save reflows the doc. The
+    // ORDER also matters: CT_Settings is a schema-ordered sequence and
+    // w:compat must follow w:attachedTemplate, or Word rejects the whole
+    // package — the same failure class as the commentsExtended content
+    // type below.
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['paragraph']!.create(null, schema.text('hi')),
+    ]);
+    const bytes = await toDocx(doc);
+    const settings = (await (await Docx.load(bytes)).readText('word/settings.xml'))!;
+    expect(settings).toContain(
+      '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>',
+    );
+    const templateAt = settings.indexOf('<w:attachedTemplate');
+    const compatAt = settings.indexOf('<w:compat>');
+    expect(templateAt).toBeGreaterThan(-1);
+    expect(compatAt).toBeGreaterThan(templateAt);
+    // The Verbatim-recognition payload rides in the SAME part — the
+    // compat addition must not disturb it.
+    const rels = await (await Docx.load(bytes)).readText('word/_rels/settings.xml.rels');
+    expect(rels).toContain('Debate.dotm');
+  });
+
   it('declares the comments parts with the exact SDK content types (Word repair regression)', async () => {
     // Word validates each part's declared content type against its
     // relationship; ANY mismatch fails the whole package with the

@@ -224,13 +224,28 @@ const EMPTY_DOCUMENT_XML = `${XML_PROLOG}
   </w:body>
 </w:document>`;
 
-// `word/settings.xml` — minimum Verbatim-recognition payload: a
-// single <w:attachedTemplate> element. The r:id resolves against
-// `word/_rels/settings.xml.rels`, NOT document.xml.rels — an easy
-// mix-up.
+// `word/settings.xml` — two payloads:
+//
+//  - The minimum Verbatim-recognition element, <w:attachedTemplate>.
+//    Its r:id resolves against `word/_rels/settings.xml.rels`, NOT
+//    document.xml.rels — an easy mix-up.
+//  - <w:compat> declaring compatibilityMode 15. Word treats a file
+//    with no declared mode as Word-2007-era (val 12) and opens it in
+//    Compatibility Mode: "[Compatibility Mode]" in the title bar, the
+//    modern margin-comments UI disabled, and a File → Convert prompt
+//    whose re-save subtly reflows the document. 15 marks the file as
+//    modern docx — the same mode every Word-authored and
+//    Verbatim-template document already uses.
+//
+// ORDER CONSTRAINT: CT_Settings is a schema-ordered sequence, and
+// w:compat must come AFTER w:attachedTemplate — Word rejects the whole
+// package as unreadable when settings children are out of sequence.
 const SETTINGS_XML = `${XML_PROLOG}
 <w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:attachedTemplate r:id="rId1"/>
+  <w:compat>
+    <w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>
+  </w:compat>
 </w:settings>`;
 
 // `word/_rels/settings.xml.rels` — Verbatim's `GetRibbonVisibility`
