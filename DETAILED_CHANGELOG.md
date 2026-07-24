@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 0.1.0-beta.19 — 2026-07-24
 
 - **Enter below a live view**
   (`src/editor/self-transclusion-commands.ts` `enterBelowSelfRef`,
