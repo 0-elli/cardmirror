@@ -8053,13 +8053,29 @@ if (!BOOT_MOBILE) {
   });
   // Cross-machine card sharing: Send + Receive pills + config wiring.
   // No-ops gracefully off Electron (web edition). The view resolver
-  // reports NO view while the home screen is up: the receive pill stays
-  // visible there (collab invites join a NEW doc, so they must not
-  // require one open — see the html.pmd-home-active tray CSS), but
-  // card INSERTS target the focused doc, which home is covering — the
-  // pill toasts instead of writing into a document the user can't see.
-  mountPairingPills(pillTray, () => (homeScreen.isVisible() ? null : getActiveView()));
+  // reports NO view while the home screen is up: card INSERTS target
+  // the focused doc, which home is covering — the pill toasts instead
+  // of writing into a document the user can't see.
+  const { receivePillEl } = mountPairingPills(
+    pillTray,
+    () => (homeScreen.isVisible() ? null : getActiveView()),
+  );
   initPairingWiring();
+  // The receive pill lives in the HOME SCREEN'S own dock while home is
+  // visible — collab invites join a NEW doc, so seeing/accepting them
+  // must not require one open, and the pill's home position should be
+  // the hub's layout, not wherever the editor layer underneath anchored
+  // the tray. Re-parenting moves the live node (listeners ride along);
+  // the send pill + dropzone stay tray-only, covered by the overlay.
+  if (receivePillEl) {
+    const placeReceivePill = (homeVisible: boolean): void => {
+      const dock = homeScreen.pillDock();
+      if (homeVisible && dock) dock.appendChild(receivePillEl);
+      else if (receivePillEl.parentElement !== pillTray) pillTray.appendChild(receivePillEl);
+    };
+    homeScreen.onVisibilityChange(placeReceivePill);
+    placeReceivePill(homeScreen.isVisible());
+  }
 }
 
 // Fast Debate Paste integration — subscribe to `external:insert-text`

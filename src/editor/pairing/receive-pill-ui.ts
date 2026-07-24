@@ -56,6 +56,13 @@ export class ReceivePillController {
     altKey: boolean;
   } | null = null;
 
+  /** The pill's root element — re-parented by the shell between the
+   *  editor pill tray and the home screen's dock (listeners ride along
+   *  with the node, so the pill works identically in either host). */
+  rootEl(): HTMLElement | null {
+    return this.root ?? null;
+  }
+
   mount(opts: ReceivePillMountOptions): void {
     this.getFocusedView = opts.getFocusedView;
 
