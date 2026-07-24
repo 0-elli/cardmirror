@@ -8186,9 +8186,9 @@ async function initPlugins(): Promise<void> {
     }),
     { onRegistered: rebuildKeymapsForPluginCommands },
   );
-  let installed: { id: string; name: string }[];
+  let installed: { id: string; name: string; incompatible?: string }[];
   try {
-    installed = (await host.pluginList()) as { id: string; name: string }[];
+    installed = (await host.pluginList()) as { id: string; name: string; incompatible?: string }[];
   } catch (err) {
     console.warn('[plugins] could not list installed plugins:', err);
     showToast('Plugins failed to load.');
@@ -8196,6 +8196,9 @@ async function initPlugins(): Promise<void> {
   }
   for (const p of installed) {
     if (!isPluginEnabled(p.id)) continue;
+    // Listed-but-incompatible (needs a newer CardMirror): main refuses to
+    // serve its bundle anyway; skipping here avoids a spurious failure toast.
+    if (p.incompatible) continue;
     // A rejecting IPC call must not skip the remaining plugins (or escape
     // the un-awaited initPlugins() as an unhandled rejection).
     const r = await host.pluginLoad(p.id).catch((err: unknown) => ({

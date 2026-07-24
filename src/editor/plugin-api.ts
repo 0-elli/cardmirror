@@ -112,8 +112,10 @@ export function createPluginApi(pluginId: string, deps: PluginApiDeps): CardMirr
       if (!res.ok) return res;
       if (ident.docId) return res;
       // First-ever successful extraction on an unstamped doc: mint + stamp,
-      // then re-walk so the emitted tokens carry the real docId.
-      // ponytail: double extraction on first-ever run; cache if it ever shows up in profiles
+      // then re-walk so the emitted tokens carry the real docId. The
+      // double walk happens exactly once per document LIFETIME (the stamp
+      // persists), so caching the first walk's items isn't worth the
+      // staleness risk.
       const docId = deps.ensureDocId();
       if (!docId) return { ok: false, error: 'no-active-doc' };
       return extractSelection(view, { docId, docTitle: ident.docTitle });

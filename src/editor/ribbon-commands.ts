@@ -6381,15 +6381,23 @@ export function buildRibbonKeymap(
   // Collision is judged on the FOLDED key so a case-only variant
   // ('Mod-Shift-D' vs static 'Mod-Shift-d') can't slip past.
   const staticFolded = foldedStaticKeys(overrides);
+  const pluginFolded = new Set<string>();
   for (const id of pluginCommandIds()) {
     const explicit = overrides[id] != null;
     const spec = overrides[id] ?? pluginDefaultKey(id) ?? [];
     const cmd: Command = () => runPluginCommand(id);
     for (const key of keysArray(spec)) {
       if (!key) continue;
-      // ponytail: plugin-vs-plugin collision (out[key]) still compares raw,
-      // unlike the folded static check; fold it too if two plugins ever collide
-      if (!explicit && (staticFolded.has(foldKeyString(key)) || out[key])) continue;
+      // Collisions are judged on the FOLDED key against BOTH pools —
+      // the static set and earlier plugin bindings — so a case-only
+      // variant ('Mod-Shift-D' vs an earlier 'Mod-Shift-d') can't
+      // double-bind between two plugins any more than against a
+      // static command.
+      const folded = foldKeyString(key);
+      if (!explicit && (staticFolded.has(folded) || pluginFolded.has(folded) || out[key])) {
+        continue;
+      }
+      pluginFolded.add(folded);
       out[key] = cmd;
     }
   }

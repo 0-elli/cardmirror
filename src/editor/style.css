@@ -5890,6 +5890,12 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   font-weight: 500;
 }
 
+/* An install that needs a newer CardMirror: listed (so it's visible and
+   uninstallable) but muted, with its toggle disabled. */
+.pmd-plugins-row-incompatible .pmd-plugins-name {
+  opacity: 0.55;
+}
+
 .pmd-plugins-dev {
   display: flex;
   flex-direction: column;

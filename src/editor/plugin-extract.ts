@@ -93,7 +93,10 @@ function collectItems(
     // attribution, so skip the whole subtree - same guard collectHeadings
     // uses for self_ref.
     if (node.type.name === 'self_ref' || node.type.name === 'transclusion_ref') return false;
-    // ponytail: item-granularity emission; a grazed heading emits in full
+    // Emission is per-TEXTBLOCK: a selection that merely grazes a block
+    // still emits that block's full text. Deliberate — the emitted text
+    // doubles as the jump anchor's quote, and a partial-line quote would
+    // fail to re-resolve after ordinary edits.
     if (!node.isTextblock) return true; // descend into card / analytic_unit / etc.
     const type = node.type.name;
     let kind: ExtractedKind | null = null;

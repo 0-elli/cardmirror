@@ -264,10 +264,12 @@ export async function broadcastJump(
   const wins = BrowserWindow.getAllWindows().filter(
     (w) =>
       !w.isDestroyed() &&
-      // ponytail: heuristic — skip windows that have no jump listener and
-      // would just burn the full ack timeout. The timer pop-out loads
-      // timer.html (main.ts:openTimerWindow); add other non-doc window
-      // URLs here if more such windows appear.
+      // Doc windows all install a jump listener; the timer pop-out
+      // (timer.html, main.ts:openTimerWindow) is the one window kind
+      // that doesn't, and broadcasting to it would just burn the full
+      // ack timeout. Skip it by URL — a future non-doc window kind that
+      // isn't added here costs only that timeout (it can never mis-ack,
+      // so correctness doesn't depend on this list being complete).
       !w.webContents.getURL().endsWith('timer.html'),
   );
   const acks = await Promise.all(

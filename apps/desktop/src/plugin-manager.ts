@@ -273,14 +273,17 @@ export function discardPendingInstall(token: string): void {
   pendingInstalls.delete(String(token));
 }
 
-export async function listInstalled(): Promise<PluginManifest[]> {
+/** A listed install, possibly flagged incompatible with this app build. */
+export type InstalledPluginInfo = PluginManifest & { incompatible?: string };
+
+export async function listInstalled(): Promise<InstalledPluginInfo[]> {
   let entries: { name: string; isDirectory(): boolean }[];
   try {
     entries = await fs.readdir(pluginsRootDir(), { withFileTypes: true });
   } catch {
     return [];
   }
-  const out: PluginManifest[] = [];
+  const out: InstalledPluginInfo[] = [];
   for (const e of entries) {
     if (!e.isDirectory()) continue; // skips cardcutter.global.js
     try {
@@ -289,9 +292,12 @@ export async function listInstalled(): Promise<PluginManifest[]> {
       if (!v.ok || v.manifest.id !== e.name) continue;
       // The version gate applies at load too, not just install: an app
       // downgrade must not boot a plugin built for a newer CardMirror.
-      // ponytail: incompatible installs hidden, not listed as disabled
+      // Incompatible installs are LISTED (flagged) rather than hidden —
+      // hidden, the plugin silently vanishes from the settings tab, which
+      // reads as data loss and leaves no way to uninstall it. The load
+      // path refuses on the flag; only the row's enable toggle disables.
       if (v.manifest.minAppVersion && compareVersions(app.getVersion(), v.manifest.minAppVersion) < 0) {
-        console.warn(`[plugins] ${e.name} needs CardMirror ${v.manifest.minAppVersion}; skipping`);
+        out.push({ ...v.manifest, incompatible: v.manifest.minAppVersion });
         continue;
       }
       out.push(v.manifest);
@@ -305,6 +311,15 @@ export async function listInstalled(): Promise<PluginManifest[]> {
 export async function readPluginSource(id: string): Promise<string | null> {
   if (!ID_RE.test(id)) return null;
   try {
+    // The load-path half of the version gate: an incompatible install is
+    // listed in the UI but its bundle is never served for execution.
+    const manifest = await readInstalledManifest(id);
+    if (
+      manifest?.minAppVersion &&
+      compareVersions(app.getVersion(), manifest.minAppVersion) < 0
+    ) {
+      return null;
+    }
     return await fs.readFile(path.join(pluginDir(id), BUNDLE_NAME), 'utf8');
   } catch {
     return null;

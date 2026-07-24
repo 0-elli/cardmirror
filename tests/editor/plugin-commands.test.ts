@@ -118,3 +118,37 @@ describe('plugin commands in the chokepoints', () => {
     ]);
   });
 });
+
+describe('plugin-vs-plugin key collisions', () => {
+  it('two plugins whose defaults differ only in case bind exactly one command', () => {
+    const runA = vi.fn();
+    const runB = vi.fn();
+    installPluginRegistry(() => stubApi);
+    registerPluginDefinition({
+      id: 'alpha',
+      name: 'Alpha',
+      apiVersion: 1,
+      commands: [{ id: 'alpha.go', label: 'Go A', defaultKey: 'Mod-Alt-7', run: runA }],
+    });
+    registerPluginDefinition({
+      id: 'beta',
+      name: 'Beta',
+      apiVersion: 1,
+      // Case-only variant of alpha's default: judged on the FOLDED key,
+      // so it must lose exactly as it would against a static command.
+      commands: [{ id: 'beta.go', label: 'Go B', defaultKey: 'Mod-Alt-U', run: runB }],
+    });
+    registerPluginDefinition({
+      id: 'gamma',
+      name: 'Gamma',
+      apiVersion: 1,
+      commands: [{ id: 'gamma.go', label: 'Go C', defaultKey: 'Mod-Alt-u', run: vi.fn() }],
+    });
+    const km = buildRibbonKeymap({});
+    // gamma's 'Mod-Alt-u' folds equal to beta's 'Mod-Alt-U' — only the
+    // first-registered binding survives.
+    expect(km['Mod-Alt-U']).toBeDefined();
+    expect(km['Mod-Alt-u']).toBeUndefined();
+    expect(km['Mod-Alt-7']).toBeDefined();
+  });
+});

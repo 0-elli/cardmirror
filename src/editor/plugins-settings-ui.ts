@@ -17,6 +17,10 @@ interface InstalledPlugin {
   author?: string;
   description?: string;
   repo?: string;
+  /** Set when the install needs a newer CardMirror (the required
+   *  version). Listed disabled rather than hidden — an invisible
+   *  install looks like data loss and can't be uninstalled. */
+  incompatible?: string;
 }
 
 /** Surface an IPC rejection as a toast instead of an unhandled rejection. */
@@ -132,11 +136,19 @@ export function renderPluginsPanel(container: HTMLElement): void {
       const label = document.createElement('span');
       label.className = 'pmd-plugins-name';
       label.textContent = `${p.name} v${p.version}${p.author ? ` — ${p.author}` : ''}`;
+      if (p.incompatible) {
+        // Listed but inert: main refuses to serve its bundle, so the
+        // toggle would lie. The row stays so the user can see it and
+        // uninstall it (hidden reads as data loss).
+        label.textContent += ` — needs CardMirror ${p.incompatible} or newer`;
+        row.classList.add('pmd-plugins-row-incompatible');
+      }
       const enable = document.createElement('input');
       enable.type = 'checkbox';
       enable.className = 'pmd-settings-toggle';
       enable.setAttribute('aria-label', `Enable ${p.name}`);
-      enable.checked = isPluginEnabled(p.id);
+      enable.checked = !p.incompatible && isPluginEnabled(p.id);
+      enable.disabled = !!p.incompatible;
       enable.addEventListener('change', () => {
         setPluginEnabled(p.id, enable.checked);
         if (enable.checked) {
