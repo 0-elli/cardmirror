@@ -14077,8 +14077,13 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
    (e.g. "Back up settings"): a top divider, then title / description /
    action button using the shared settings-row classes. */
 .pmd-settings-benchmark {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
+  /* Same boundary rhythm as .pmd-settings-section-title: the preceding
+     row's 0.75rem padding-bottom, the divider, 0.75rem to the header.
+     (This block is hand-built, not a settings row — its old extra
+     margin+padding stacked ON TOP of the row rhythm and read as a
+     mystery gap below the last Timer row.) */
+  margin-top: 0;
+  padding-top: 0.75rem;
   border-top: 1px solid var(--pmd-c-divider-faint);
   display: flex;
   flex-direction: column;
