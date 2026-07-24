@@ -2552,15 +2552,15 @@ function buildMenu(): Menu {
                 label: 'Minimize',
                 accelerator: menuAccelerator('minimizeWindow'),
                 click: () => {
-                  // The timer pop-out has no renderer command listener —
-                  // minimize it directly. Doc windows go through the
-                  // renderer so menu and keyboard share one path.
-                  const w = BrowserWindow.getFocusedWindow();
-                  if (w && w.webContents.getURL().endsWith('timer.html')) {
-                    w.minimize();
-                    return;
-                  }
-                  dispatchMenuCommand('minimizeWindow');
+                  // Direct main-side minimize. Only the ACCELERATOR needs
+                  // the rebinding machinery (menuAccelerator, main-side);
+                  // the action touches no editor state, and routing it
+                  // through the renderer added a main→renderer→main round
+                  // trip that read as lag whenever the renderer was busy
+                  // (feel-test, beta.21). The renderer command path still
+                  // serves the palette and the Win/Linux keymap — single
+                  // hop there. Also covers the timer pop-out for free.
+                  BrowserWindow.getFocusedWindow()?.minimize();
                 },
               },
               { type: 'separator' as const },
