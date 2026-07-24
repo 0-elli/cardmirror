@@ -2310,6 +2310,17 @@ remove one, **↺** to restore its default. A few window-level shortcuts
   navigation, comments), separate from the body font; includes
   dyslexia-friendly options.
 
+**Plugins (beta).** Settings → General → **Enable plugins** (restart
+required) reveals a Plugins tab where you can install extensions —
+initially the companion integration for the ebb flowing app. Plugins
+run with **full access to CardMirror and your documents**, so installs
+are limited to a curated list and every install shows a consent prompt
+naming the exact GitHub repository it comes from. A plugin's commands
+appear in the command palette and can be rebound in Keyboard shortcuts
+like any other command. Uninstalling removes the plugin, its settings,
+and its shortcuts immediately. Developers: see the repository README
+for the plugin API.
+
 ---
 
 ## 18. Appearance and accessibility

@@ -5,6 +5,46 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **A plugin system (beta).** Turn on Settings → General → Enable
+  plugins to reveal a Plugins tab. Plugins extend CardMirror with new
+  commands — searchable in the palette and rebindable like built-ins —
+  and can talk to companion apps such as the ebb flowing app over a
+  local bridge. Because plugins run with full access to the editor and
+  your documents, installs are limited to a curated list, and every
+  install asks for consent naming the exact GitHub repository it comes
+  from. Developers: the API and bridge protocol are documented in the
+  repository. Thanks to Shreeram Modi for building the plugin API and
+  the cardmirror-bridge.
+
+- **Cmd+M minimizes on macOS.** The standard Window menu is back
+  (Minimize, Bring All to Front), and Minimize is a real command —
+  rebindable in Keyboard shortcuts, searchable in the palette, with
+  the menu shortcut following your binding.
+
+### Changed
+
+- **Collaboration uses far less data.** Sessions now verify their
+  sync-safety bookkeeping locally instead of re-downloading the whole
+  session history every half hour, cursor updates are lighter and no
+  longer echo back to their sender, unchanged session snapshots are
+  not re-sent, and responses are compressed. Nothing about how
+  sessions look or behave changes — they just stop consuming
+  gigabytes of bandwidth on busy days.
+
+- **Damaged files are refused cleanly.** A corrupted or hand-crafted
+  `.cmir` whose internal structure is invalid now fails to open with
+  a clear "file is damaged" message instead of loading broken state
+  that misbehaved later.
+
+- **Self-hosting additions.** A self-hosted relay now serves the same
+  data-saving endpoints as the official one, and its operator can
+  curate which plugin repositories their users' installers accept
+  (`RELAY_PLUGIN_ALLOWLIST` — see `relay/README.md`).
+
 ## 0.1.0-beta.20 — 2026-07-24
 
 ### Fixed

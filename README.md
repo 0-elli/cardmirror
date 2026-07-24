@@ -410,6 +410,32 @@ formatting `bold`, `italic`, `strikethrough`, `superscript`,
 See [`src/schema/`](./src/schema/) for full specs and
 [`ARCHITECTURE.md §4`](./ARCHITECTURE.md) for design rationale.
 
+## Plugin API (beta)
+
+The desktop app can load plugins — one GitHub repo per plugin,
+publishing a manifest + built bundle as release assets. A plugin
+registers commands that appear in the command palette, the keybindings
+editor, and the printed shortcut reference like native ones, and can
+extract structured card data from the current selection, jump back to
+a card's source, and exchange messages with companion apps (such as a
+flowing app) over the local **cardmirror-bridge** — a loopback HTTP
+handshake, never the network.
+
+Two things to know before writing one:
+
+- **Plugins are full-trust code.** They run inside the editor with the
+  same access the editor has, so installs are limited to a curated
+  allowlist (served by the relay; self-hosted relay operators curate
+  their own via `RELAY_PLUGIN_ALLOWLIST`). For development, use
+  "Load plugin from file…" in Settings → Plugins, or unlock arbitrary
+  repos with `__plugins('community-on')` in the developer console.
+- **The plugin-facing API surface is a draft** (a sandboxed v2 may
+  change it); the bridge handshake and HTTP routes are frozen.
+
+The full contract — manifest fields, install flow, the capability API,
+and the bridge protocol — lives in
+[`reference-docs/cardmirror-plugin-api.md`](./reference-docs/cardmirror-plugin-api.md).
+
 ## Acknowledgements
 
 CardMirror is built on [ProseMirror](https://prosemirror.net/), the

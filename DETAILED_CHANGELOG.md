@@ -5,6 +5,56 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+- **Plugin API v1 + cardmirror-bridge** (PR #25 by Shreeram Modi, merged
+  with the agreed modification set; ~4k LOC. Spec:
+  `reference-docs/cardmirror-plugin-api.md` — bridge sections frozen,
+  plugin-API sections draft). Plugins are one-GitHub-repo packages
+  (manifest + bundle release assets) loaded into the renderer main
+  world — FULL-TRUST, which drives the guardrails: installs gate on a
+  curated allowlist enforced in MAIN and served by the relay
+  (`/plugin-allowlist`, cached, baked floor; self-hosted relays serve
+  their own via RELAY_PLUGIN_ALLOWLIST; community installs behind
+  `__plugins('community-on')`); install is two-phase (stage in memory →
+  consent naming the actual owner/repo → commit; declining a reinstall
+  deletes nothing); registration enforces `<pluginId>.`-namespaced
+  command ids and rebuilds live keymaps both on load and on the new
+  immediate deregistration at uninstall, which also purges the
+  plugin's key overrides — with boot reconciliation pruning leftovers
+  keyed strictly on install-directory absence. The bridge: a shared
+  handshake directory with per-app PERSISTENT identity files +
+  session-scoped port/token files (0700/0600), so closed apps stay
+  selectable and sends fail at runtime (`app-not-running`), with a
+  pid-liveness probe before every send (a dead writer proves a stale
+  file; cheaper than a ping and catches what a ping can't). Hardening
+  that rode along: `parseNative` runs `doc.check()` after the heal
+  passes (reject-invalid on the OS-file-association attack path), and
+  `read-file-at-path` is scoped to a main-side grant registry (library
+  roots + dialog/OS/drop grants + persisted journal + one-shot recents
+  import).
+
+- **Relay egress ×5-6 reduction** (2026-07-24 audit: 12-15 GB/day,
+  ~65% of it `auditRoomHistory` re-downloading entire rooms every 30
+  min). Client: the audit folds version-vector maxima from bytes
+  already in flight and verifies compaction epochs at most once each
+  (`snapCovers` tag), escalating to the ground-truth full scan only on
+  suspected loss — P14 semantics preserved; cursor presence throttled
+  120→250ms with identical-frame dedupe; stream `?sid`/presence
+  `?from` stop sender echo. Server (official + self-hosted, contract
+  suite 42→47): negotiated gzip on blob-heavy JSON, conditional
+  snapshots (`haveSnap`), presence no-echo.
+
+- **`minimizeWindow` command + macOS Window menu**
+  (`ribbon-commands.ts`, main.ts). The custom app menu never carried
+  the standard Window menu, so Cmd+M (which exists only as its
+  Minimize accelerator) did nothing. Minimize is a first-class
+  rebindable command (default Mod-m, desktop-only) routed through the
+  renderer-driven menuBindings rebuild, so the menu accelerator
+  follows rebinds live; Bring All to Front ships as the native role
+  with no accelerator; Zoom deliberately omitted (collides with the
+  app's text-zoom commands).
+
 ## 0.1.0-beta.20 — 2026-07-24
 
 - **Live-view read-only filter: per-step coordinate spaces**
