@@ -4390,6 +4390,19 @@ html.pmd-undoredo-hidden #undo-redo-stack {
 .pmd-pill-tray > * {
   pointer-events: auto;
 }
+/* Home screen up: the RECEIVE pill stays reachable above the overlay —
+   collab invites join a NEW doc, so seeing/accepting them must not
+   require one already open. The dropzone and send pill act on the
+   OBSCURED doc, so they stay hidden until home dismisses (visibility,
+   not display, so the tray row keeps the receive pill in its usual
+   spot). The pill's insert actions self-interdict while home is up
+   (the view resolver reports no view). */
+html.pmd-home-active .pmd-pill-tray {
+  z-index: 510;
+}
+html.pmd-home-active .pmd-pill-tray > :not(.pmd-receive-pill) {
+  visibility: hidden;
+}
 
 /* When any tray pill (dropzone / send / receive) is showing it floats
    over the editor's bottom-left, covering whatever doc content is there —

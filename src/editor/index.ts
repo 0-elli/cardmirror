@@ -54,7 +54,7 @@ import { openSelectSpeechDocModal } from './select-speech-doc-ui.js';
 import { dropzoneStore, deriveDropzoneLabel } from './dropzone-store.js';
 import { DropzoneController } from './dropzone-ui.js';
 import { mountPairingPills, initPairingWiring } from './pairing/pairing-wiring.js';
-import { insertMostRecentReceived } from './pairing/inbox-insert.js';
+import { insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
 import { installExternalInsertHost } from './external-insert-host.js';
 import {
@@ -1674,9 +1674,20 @@ const ribbonContext: RibbonContext = {
     if (view) void sendViewToStarred(view);
   },
   insertReceivedAtCursor: () => {
+    // The home screen covers the destination doc — same interdiction as
+    // the receive pill's rows (the keyboard path must not silently write
+    // into a document the user can't see).
+    if (homeScreen.isVisible()) {
+      showToast(RECEIVE_NEEDS_DOC_MESSAGE);
+      return;
+    }
     if (view) insertMostRecentReceived(view, false);
   },
   insertReceivedAtEnd: () => {
+    if (homeScreen.isVisible()) {
+      showToast(RECEIVE_NEEDS_DOC_MESSAGE);
+      return;
+    }
     if (view) insertMostRecentReceived(view, true);
   },
   // Source-only operations on the focused view — no cross-doc
@@ -1932,6 +1943,10 @@ async function replaceWithSessionDoc(): Promise<boolean> {
   syncSingleDocSpeechRegistration();
   markNonPristineStarter();
   updateWindowTitle();
+  // Joining from the home screen (the receive pill's Join is reachable
+  // there): the session doc just replaced the content — home must yield
+  // to it, like every other doc-mounting path.
+  homeScreen.hide();
   return true;
 }
 
@@ -8037,8 +8052,13 @@ if (!BOOT_MOBILE) {
     getFocusedView: () => getActiveView(),
   });
   // Cross-machine card sharing: Send + Receive pills + config wiring.
-  // No-ops gracefully off Electron (web edition).
-  mountPairingPills(pillTray, () => getActiveView());
+  // No-ops gracefully off Electron (web edition). The view resolver
+  // reports NO view while the home screen is up: the receive pill stays
+  // visible there (collab invites join a NEW doc, so they must not
+  // require one open — see the html.pmd-home-active tray CSS), but
+  // card INSERTS target the focused doc, which home is covering — the
+  // pill toasts instead of writing into a document the user can't see.
+  mountPairingPills(pillTray, () => (homeScreen.isVisible() ? null : getActiveView()));
   initPairingWiring();
 }
 
