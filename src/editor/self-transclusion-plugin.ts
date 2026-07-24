@@ -46,11 +46,22 @@ function enclosingSelfRefContent(doc: PMNode, pos: number): { from: number; to: 
 /** Does any step edit the INTERIOR of a live view? Both endpoints inside the same
  *  view's content = an interior edit (the view node itself is untouched). A step
  *  that reaches out of the view (delete/move the whole unit) has an endpoint past
- *  the content, so it's allowed. */
-function editsInsideView(doc: PMNode, tr: Transaction): boolean {
-  for (const step of tr.steps) {
-    const s = step as unknown as { from?: number; to?: number };
+ *  the content, so it's allowed.
+ *
+ *  Each step is checked against `tr.docs[i]` — the doc that step actually
+ *  applies to — NOT the pre-transaction doc: steps after the first are
+ *  expressed in intermediate coordinates. Checking them all against the
+ *  original doc rejected legitimate multi-step transactions whose later
+ *  steps happened to land numerically inside a view's ORIGINAL span — a
+ *  drag's delete-then-insert dropping just past a view (the insert,
+ *  shifted down by the delete, read as an interior edit), and the undo of
+ *  moving a view by less than its own size (the re-insert read as inside
+ *  the not-yet-restored span), which silently killed the undo chain. */
+function editsInsideView(tr: Transaction): boolean {
+  for (let i = 0; i < tr.steps.length; i++) {
+    const s = tr.steps[i] as unknown as { from?: number; to?: number };
     if (typeof s.from !== 'number' || typeof s.to !== 'number') continue;
+    const doc = tr.docs[i]!;
     const range = enclosingSelfRefContent(doc, s.from);
     if (range && s.from >= range.from && s.to <= range.to) return true;
   }
@@ -86,10 +97,10 @@ function rederiveTransaction(state: EditorState): Transaction | null {
 export function makeSelfRefPlugin(): Plugin {
   return new Plugin({
     key: selfRefPluginKey,
-    filterTransaction(tr, state) {
+    filterTransaction(tr) {
       if (tr.getMeta(SELF_REF_REDERIVE)) return true;
       if (!tr.docChanged) return true;
-      return !editsInsideView(state.doc, tr);
+      return !editsInsideView(tr);
     },
     appendTransaction(trs, _old, newState) {
       if (!trs.some((t) => t.docChanged)) return null;

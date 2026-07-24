@@ -1731,6 +1731,9 @@ export function applyUnderline(
     const directMark = schema.marks['underline_direct']!;
 
     // Operating ranges: PM selection > shadow ranges > word-at-cursor.
+    // A collapsed cursor with NO word (empty block, whitespace) is a
+    // deliberate no-op: F9's contract is expand-to-word; arming for
+    // typing belongs to Mod-U (toggleUnderlineTyping) alone.
     const op = getOperatingRangesForFormatting(state);
     let opRanges = op.ranges;
     if (opRanges.length === 0) {

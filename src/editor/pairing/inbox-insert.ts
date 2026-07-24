@@ -14,6 +14,13 @@ import { readModePlugin } from '../read-mode-plugin.js';
 import { READ_MODE_DRAG_META } from '../reading-marker.js';
 import { inboxStore, type InboxItem } from './inbox-store.js';
 
+/** Shown when a receive-pill insert has no visible destination — the home
+ *  screen is covering the doc, or no doc is open at all. Shared by the
+ *  pill rows and the insert-most-recent keyboard commands so the two
+ *  surfaces explain the same rule the same way. */
+export const RECEIVE_NEEDS_DOC_MESSAGE =
+  'Open a document first — received cards insert into the open document.';
+
 /** Insert a received card into `view`: at the cursor by default, or at the end
  *  of the document when `atEnd` (or whenever read mode is on — there's no
  *  editing caret to target then). Heading ids are rewritten so they can't

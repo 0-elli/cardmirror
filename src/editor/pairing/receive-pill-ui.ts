@@ -19,7 +19,8 @@ import { setIcon } from '../icons';
 import { typeBadge, dropzoneDragLevel } from '../dropzone-ui.js';
 import { settings } from '../settings.js';
 import { inboxStore, type InboxItem } from './inbox-store.js';
-import { insertReceivedItem } from './inbox-insert.js';
+import { insertReceivedItem, RECEIVE_NEEDS_DOC_MESSAGE } from './inbox-insert.js';
+import { showToast } from '../toast.js';
 import { parseRoomInvite } from './room-invite.js';
 import { collabEnabled } from '../collab/collab-gate.js';
 import { collabInviteJoiner } from '../collab/collab-hooks.js';
@@ -54,6 +55,13 @@ export class ReceivePillController {
     started: boolean;
     altKey: boolean;
   } | null = null;
+
+  /** The pill's root element — re-parented by the shell between the
+   *  editor pill tray and the home screen's dock (listeners ride along
+   *  with the node, so the pill works identically in either host). */
+  rootEl(): HTMLElement | null {
+    return this.root ?? null;
+  }
 
   mount(opts: ReceivePillMountOptions): void {
     this.getFocusedView = opts.getFocusedView;
@@ -426,7 +434,13 @@ export class ReceivePillController {
 
   private insertItem(item: InboxItem, atEnd: boolean): void {
     const view = this.getFocusedView();
-    if (!view) return;
+    if (!view) {
+      // No visible destination: the home screen covers the doc, or the
+      // workspace is empty. Say so instead of silently doing nothing —
+      // the item stays in the inbox for when a doc is open.
+      showToast(RECEIVE_NEEDS_DOC_MESSAGE);
+      return;
+    }
     insertReceivedItem(view, item, atEnd);
   }
 

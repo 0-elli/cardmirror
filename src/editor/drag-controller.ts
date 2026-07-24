@@ -405,6 +405,7 @@ export function buildMoveTransaction(
   items: DragItem[],
   insertPos: number,
 ): Transaction | null {
+  items = dedupeRanges(items);
   if (items.length === 0) return null;
   // Reject if target is strictly inside any source range. Boundary
   // positions (= from or = to) are valid drop slots — for multi-item
@@ -438,6 +439,21 @@ export function buildMoveTransaction(
   // section — its first heading — so the viewport follows the move.
   selectTopOfInsert(tr, insertStart);
   return tr;
+}
+
+/** Collapse items sharing an identical [from,to] range down to one. A nav
+ *  multi-select of several headings INSIDE the same live zone promotes each
+ *  of them to the same whole-zone range (`zoneRangeForEntry`) — without the
+ *  dedup, the move path would delete that range once per duplicate, eating
+ *  whatever content slid into the range after the first cut. */
+function dedupeRanges(items: DragItem[]): DragItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.from}:${item.to}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Put the selection at the top of just-inserted content (`insertStart`
@@ -487,6 +503,7 @@ export function buildCopyTransaction(
   items: DragItem[],
   insertPos: number,
 ): Transaction | null {
+  items = dedupeRanges(items);
   if (items.length === 0) return null;
   for (const item of items) {
     if (insertPos > item.from && insertPos < item.to) return null;

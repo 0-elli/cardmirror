@@ -4390,6 +4390,28 @@ html.pmd-undoredo-hidden #undo-redo-stack {
 .pmd-pill-tray > * {
   pointer-events: auto;
 }
+/* Home screen's own dock for the receive pill (the pill node is
+   re-parented here while home is visible — collab invites join a NEW
+   doc, so they must not require one open). Bottom-centered strip on
+   the hub's layout, independent of wherever the editor layer anchored
+   the pill tray. The pill's insert actions self-interdict while home
+   is up (the view resolver reports no view). */
+.pmd-home-pill-dock {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: none;
+  /* Within the home root's stacking context: above the hub content,
+     still far below dialogs (route overlays sit at 1400). */
+  z-index: 5;
+}
+.pmd-home-pill-dock > * {
+  pointer-events: auto;
+}
 
 /* When any tray pill (dropzone / send / receive) is showing it floats
    over the editor's bottom-left, covering whatever doc content is there —

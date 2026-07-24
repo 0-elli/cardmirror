@@ -54,7 +54,7 @@ import { openSelectSpeechDocModal } from './select-speech-doc-ui.js';
 import { dropzoneStore, deriveDropzoneLabel } from './dropzone-store.js';
 import { DropzoneController } from './dropzone-ui.js';
 import { mountPairingPills, initPairingWiring } from './pairing/pairing-wiring.js';
-import { insertMostRecentReceived } from './pairing/inbox-insert.js';
+import { insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
 import { installExternalInsertHost } from './external-insert-host.js';
 import { installPluginRegistry } from './plugin-registry.js';
@@ -155,6 +155,7 @@ import {
 import { markUnreadPlugin, MARK_UNREAD_TOGGLE } from './mark-unread-plugin.js';
 import { makeSelfRefPlugin } from './self-transclusion-plugin.js';
 import {
+  enterBelowSelfRef,
   openInsertSelfRef,
   openInsertInDocCopy,
   selfRefSelectionPos,
@@ -251,6 +252,7 @@ import {
   clearRecoveredDraftMark,
   autosaveBlockedForRecoveredDraft,
 } from './journal-staleness.js';
+import { makeBlankDoc } from './blank-doc.js';
 import { indentParagraph, outdentParagraph } from './indent-keymap.js';
 import {
   registerRibbonTooltip,
@@ -615,7 +617,7 @@ async function runNewSpeechDocumentSingleDoc(): Promise<void> {
   let docBytes: Uint8Array;
   try {
     docBytes =
-      format === 'cmir' ? serializeNative(docNode) : await toDocx(docNode);
+      format === 'cmir' ? serializeNative(docNode) : await toDocx(docNode, { defaultFont: settings.get('bodyFont') });
   } catch (err) {
     console.error('Speech-doc serialization failed:', err);
     void alertDialog(
@@ -1097,6 +1099,16 @@ function flushSelectionChrome(): void {
 /** Used by the multi-pane shell: route the shared ribbon /
  *  chrome through the currently-focused pane's view. */
 export function setActiveView(v: EditorView | null): void {
+  if (v !== view) {
+    // A real focus change — pane switch, stack switch, home screen — not
+    // the per-transaction re-run (same view). An open find bar belongs to
+    // the outgoing pane: close it now, while it can still clear that
+    // pane's match decorations and nav hit markers. Left open, closing it
+    // from the new pane clears the NEW pane's (empty) state and the old
+    // pane's highlights are stuck until find is reopened there. No
+    // refocus — focus is already moving.
+    findReplaceBar?.close({ refocusEditor: false });
+  }
   view = v;
   if (v) {
     currentDoc = v.state.doc;
@@ -1687,9 +1699,20 @@ const ribbonContext: RibbonContext = {
     if (view) void sendViewToStarred(view);
   },
   insertReceivedAtCursor: () => {
+    // The home screen covers the destination doc — same interdiction as
+    // the receive pill's rows (the keyboard path must not silently write
+    // into a document the user can't see).
+    if (homeScreen.isVisible()) {
+      showToast(RECEIVE_NEEDS_DOC_MESSAGE);
+      return;
+    }
     if (view) insertMostRecentReceived(view, false);
   },
   insertReceivedAtEnd: () => {
+    if (homeScreen.isVisible()) {
+      showToast(RECEIVE_NEEDS_DOC_MESSAGE);
+      return;
+    }
     if (view) insertMostRecentReceived(view, true);
   },
   // Source-only operations on the focused view — no cross-doc
@@ -1817,9 +1840,13 @@ const ribbonContext: RibbonContext = {
     void openSelectSpeechDocModal();
   },
   goHome: () => {
-    // Open home over the current doc (return-to-doc enabled), same
-    // as clicking the ribbon Home button.
-    homeScreen.show({ canReturnToDoc: true });
+    // Open home over the current doc (return-to-doc enabled) — except a
+    // multi-pane workspace with nothing open: "Return to doc" there
+    // would just dismiss home back to the blank window.
+    const canReturnToDoc =
+      !multiDocActive ||
+      (multiDocGetAllFilenames?.().some((f) => f !== null) ?? false);
+    homeScreen.show({ canReturnToDoc });
   },
   openHighlightPicker: () => colorPanel?.openPicker('highlight'),
   openShadingPicker: () => colorPanel?.openPicker('shading'),
@@ -1910,6 +1937,9 @@ async function onNewDocClicked(): Promise<void> {
   // Treat as non-pristine so subsequent Opens spawn.
   markNonPristineStarter();
   updateWindowTitle();
+  // The user asked for a doc to type into — put the caret there so
+  // typing works with no extra click.
+  view?.focus();
 }
 
 /** Join-session doc swap: the web edition's New-in-place path, minus
@@ -1938,6 +1968,10 @@ async function replaceWithSessionDoc(): Promise<boolean> {
   syncSingleDocSpeechRegistration();
   markNonPristineStarter();
   updateWindowTitle();
+  // Joining from the home screen (the receive pill's Join is reachable
+  // there): the session doc just replaced the content — home must yield
+  // to it, like every other doc-mounting path.
+  homeScreen.hide();
   return true;
 }
 
@@ -2809,9 +2843,22 @@ export function refreshZoomStatus(): void {
 // focused pane's view (the shell keeps `view` pointed there via
 // setActiveView), so its nearest scroller is the right one in both modes.
 
-const ZOOM_COMMIT_DELAY_MS = 70; // coalesces a burst; imperceptible on one step
+// 120ms covers the default key-repeat interval (~90ms on macOS), so a HELD
+// zoom key coalesces into one gesture instead of committing per repeat; the
+// badge shows the target instantly, so the extra latency stays imperceptible.
+const ZOOM_COMMIT_DELAY_MS = 120;
+// How long a committed gesture's anchor stays reusable. Must outlive the
+// restore's refine window (up to 6 rAFs ≈ 100ms): a zoom step that lands
+// while the previous restore is still refining must NOT capture a fresh
+// anchor — it would snapshot a transient, half-corrected layout (the
+// rapid-zoom viewport jump). Reusing the burst's original anchor instead
+// pins one doc position to one screen Y across the whole burst, so drift
+// can't accumulate either. Rapid +/- CLICKS (~150-300ms apart) are the
+// case that never coalesces, so the hold is what protects them.
+const ZOOM_ANCHOR_HOLD_MS = 250;
 let zoomTarget: number | null = null; // pending target during a gesture
-let zoomAnchor: ViewportAnchor | null = null; // captured at gesture start
+let zoomAnchor: ViewportAnchor | null = null; // captured at burst start, held across commits
+let zoomAnchorReleaseTimer: number | null = null;
 let zoomCommitTimer: number | null = null;
 let zoomBadgeEl: HTMLElement | null = null;
 let zoomBadgeHideTimer: number | null = null;
@@ -2836,29 +2883,50 @@ function hideZoomBadgeSoon(): void {
   }, 550);
 }
 
-/** Apply the pending zoom target once, then pin the viewport back. */
+/** Drop the held burst anchor once the burst has gone quiet. Re-armed on
+ *  every commit, cancelled when a new step keeps the burst alive. */
+function releaseZoomAnchorSoon(): void {
+  if (zoomAnchorReleaseTimer !== null) window.clearTimeout(zoomAnchorReleaseTimer);
+  zoomAnchorReleaseTimer = window.setTimeout(() => {
+    zoomAnchorReleaseTimer = null;
+    zoomAnchor = null;
+  }, ZOOM_ANCHOR_HOLD_MS);
+}
+
+/** Apply the pending zoom target once, then pin the viewport back. The
+ *  anchor is HELD (not cleared) so steps landing while the restore still
+ *  refines continue the same burst against the same baseline. */
 function commitZoomGesture(): void {
   zoomCommitTimer = null;
   const target = zoomTarget;
-  const anchor = zoomAnchor;
   zoomTarget = null;
-  zoomAnchor = null;
   if (target === null) return;
   if (multiDocActive && multiDocZoomBy) {
     multiDocZoomBy(target - zoomStateForActive());
   } else {
     setZoom(target);
   }
-  if (anchor) restoreViewportAnchor(anchor);
+  if (zoomAnchor) restoreViewportAnchor(zoomAnchor);
+  releaseZoomAnchorSoon();
   hideZoomBadgeSoon();
 }
 
 /** Preview a zoom target: update the % readout now, defer the reflow. */
 function zoomPreviewTo(pct: number): void {
   const target = clampZoom(pct);
-  if (zoomTarget === null) {
-    // Gesture start — anchor to the current (committed) layout.
+  // A held anchor only carries across the burst within ONE view — a pane
+  // focus change mid-burst must re-anchor against the new pane.
+  if (zoomAnchor && zoomAnchor.view !== view) zoomAnchor = null;
+  if (zoomTarget === null && !zoomAnchor) {
+    // Burst start — anchor to the current (committed, settled) layout.
+    // A held anchor from a just-committed step is deliberately reused
+    // instead: capturing here mid-refine would pin a transient layout.
     zoomAnchor = view ? captureViewportAnchor(view) : null;
+  }
+  // The burst is alive again — don't let the hold expire under it.
+  if (zoomAnchorReleaseTimer !== null) {
+    window.clearTimeout(zoomAnchorReleaseTimer);
+    zoomAnchorReleaseTimer = null;
   }
   zoomTarget = target;
   updateZoomStatus(target);
@@ -2881,8 +2949,14 @@ function zoomActiveReset(): void {
     zoomCommitTimer = null;
   }
   zoomTarget = null;
-  zoomAnchor = null;
-  const anchor = view ? captureViewportAnchor(view) : null;
+  // Mid-burst reset (rapid +/- then Reset): the previous commit's restore
+  // may still be refining, so a FRESH capture here would pin a transient
+  // layout — the exact trap the burst hold exists to avoid. Reuse the
+  // held anchor when it belongs to this view; capture fresh only when
+  // the gesture machinery is idle.
+  if (zoomAnchor && zoomAnchor.view !== view) zoomAnchor = null;
+  const anchor = zoomAnchor ?? (view ? captureViewportAnchor(view) : null);
+  zoomAnchor = anchor;
   if (multiDocActive && multiDocZoomResetHook) {
     multiDocZoomResetHook();
   } else {
@@ -2891,6 +2965,7 @@ function zoomActiveReset(): void {
   showZoomBadge(100);
   hideZoomBadgeSoon();
   if (anchor) restoreViewportAnchor(anchor);
+  releaseZoomAnchorSoon();
 }
 
 /** Chrome scale — the whole-page zoom analog of `setZoom`. Wired
@@ -4725,9 +4800,9 @@ function makeStarterDoc(): PMNode {
  *  docs and newly spawned windows mount this instead of the
  *  welcome guide. */
 function makeBlankNewDoc(): PMNode {
-  return schema.nodes['doc']!.createChecked(null, [
-    schema.nodes['paragraph']!.create(),
-  ]);
+  // Shared with the three-pane shell's New — one definition so the two
+  // modes' blank docs cannot drift.
+  return makeBlankDoc();
 }
 
 /** Mobile-view onboarding doc — the desktop starter is all ribbon
@@ -4845,9 +4920,14 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
         // Mirror of the Backspace guard: never forward-node-select a card/body.
         blockDeleteNodeSelect(state, dispatch, view),
       Enter: (state, dispatch, view) =>
-        // "New paragraph on Enter" settings run first: returns false
-        // (untouched pipeline) unless the cursor is at the end of a
-        // structural block whose enterAfter* setting picks a style.
+        // Live-view bottom edge first: inside the read-only mirror the
+        // handlers below would claim the key and have their splits
+        // filtered (a dead key), so the escape-below-the-window path
+        // must win before any of them run.
+        enterBelowSelfRef(state, dispatch) ||
+        // "New paragraph on Enter" settings: returns false (untouched
+        // pipeline) unless the cursor is at the end of a structural
+        // block whose enterAfter* setting picks a style.
         enterWithConfiguredStyle(state, dispatch, view) ||
         enterAtTagEnd(state, dispatch, view) ||
         enterAtZoneStart(state, dispatch, view) ||
@@ -6657,7 +6737,7 @@ async function serializeForSave(
   // Word has no live-window concept: materialize each self_ref window to real
   // cards (resolved from the source, ids re-stamped) before export.
   const docxNode = flattenSelfRefs(exportDocNode, newHeadingId);
-  return toDocx(docxNode, { ...threadsOpt, ...(docId ? { docId } : {}) });
+  return toDocx(docxNode, { ...threadsOpt, ...(docId ? { docId } : {}), defaultFont: settings.get('bodyFont') });
 }
 
 /**
@@ -8010,9 +8090,30 @@ if (!BOOT_MOBILE) {
     getFocusedView: () => getActiveView(),
   });
   // Cross-machine card sharing: Send + Receive pills + config wiring.
-  // No-ops gracefully off Electron (web edition).
-  mountPairingPills(pillTray, () => getActiveView());
+  // No-ops gracefully off Electron (web edition). The view resolver
+  // reports NO view while the home screen is up: card INSERTS target
+  // the focused doc, which home is covering — the pill toasts instead
+  // of writing into a document the user can't see.
+  const { receivePillEl } = mountPairingPills(
+    pillTray,
+    () => (homeScreen.isVisible() ? null : getActiveView()),
+  );
   initPairingWiring();
+  // The receive pill lives in the HOME SCREEN'S own dock while home is
+  // visible — collab invites join a NEW doc, so seeing/accepting them
+  // must not require one open, and the pill's home position should be
+  // the hub's layout, not wherever the editor layer underneath anchored
+  // the tray. Re-parenting moves the live node (listeners ride along);
+  // the send pill + dropzone stay tray-only, covered by the overlay.
+  if (receivePillEl) {
+    const placeReceivePill = (homeVisible: boolean): void => {
+      const dock = homeScreen.pillDock();
+      if (homeVisible && dock) dock.appendChild(receivePillEl);
+      else if (receivePillEl.parentElement !== pillTray) pillTray.appendChild(receivePillEl);
+    };
+    homeScreen.onVisibilityChange(placeReceivePill);
+    placeReceivePill(homeScreen.isVisible());
+  }
 }
 
 // Fast Debate Paste integration — subscribe to `external:insert-text`
@@ -8225,10 +8326,12 @@ if (BOOT_MULTI_DOC_WORKSPACE) {
         subtree: true,
       });
     }
-    // Home screen is available in multi-pane too (reachable via the
-    // Home button). Its actions route through the shell's slot
-    // picker rather than loading in-place. Not auto-shown on
-    // multi-pane launch — the workspace is the landing surface.
+    // Home screen in multi-pane: mounted here; its actions route
+    // through the shell's slot picker rather than loading in-place.
+    // Auto-shown whenever the workspace is EMPTY (blank launch below,
+    // and the shell re-shows it when the last doc closes) — an empty
+    // workspace would otherwise land on a bare window with no
+    // affordances. Any doc entering a slot hides it.
     homeScreen.mount(document.body, homeCallbacks);
     // Tell main this window can take OS-opened files into its slot
     // picker (so "Open with…" reuses it instead of spawning a blank
@@ -8240,7 +8343,14 @@ if (BOOT_MULTI_DOC_WORKSPACE) {
     // blank. Skip recovery when we did — a spawned-for-a-file window
     // isn't the place to surface unrelated drafts (matches single-doc).
     const routedInitialDoc = await routeInitialDocIntoWorkspace();
-    if (!routedInitialDoc) await runStartupRecovery();
+    if (!routedInitialDoc) {
+      // Blank multi-pane launch → land on the home screen, matching
+      // single-pane. Shown BEFORE recovery (same order as single-pane):
+      // the recovery sidebar overlays it, and a mode-switch reload's
+      // auto-reopened docs hide it via the slot-populated hook.
+      homeScreen.show();
+      await runStartupRecovery();
+    }
   })();
 } else {
   // Home screen is a single-doc-mode feature (multi-pane has its
@@ -8302,6 +8412,11 @@ async function initSingleDocBoot(): Promise<void> {
   // is both confusing and useless.
   mountView(currentDoc);
   syncSingleDocSpeechRegistration();
+  // A window spawned by "New document" exists to be typed into — focus
+  // the editor so typing works with no extra click. Gated on the home
+  // overlay: when it's covering the editor (fresh launches that land on
+  // Home), keystrokes belong to it, not to the doc underneath.
+  if (!homeScreen.isVisible()) view?.focus();
   let isFirst = true;
   try {
     isFirst = await getHost().isFirstWindow();
@@ -8971,10 +9086,10 @@ async function reserializeJournalAs(
     markedCardsOnly: false,
     markUnreadAfterMarker: settings.get('markUnreadAfterMarker'),
   });
-  return toDocx(
-    exportDoc,
-    parsed.threads.length > 0 ? { threads: parsed.threads } : undefined,
-  );
+  return toDocx(exportDoc, {
+    ...(parsed.threads.length > 0 ? { threads: parsed.threads } : {}),
+    defaultFont: settings.get('bodyFont'),
+  });
 }
 
 /** Silently open every journal entry as part of a mode-switch

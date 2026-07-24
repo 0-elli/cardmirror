@@ -304,8 +304,13 @@ describe('rename retry — transiently locked target (Dropbox/antivirus holds)',
     expect(await fs.readFile(target, 'utf8')).toBe('v2');
   });
 
-  it('exhausted retries throw the friendly ELOCKED error and clean the tmp file', async () => {
-    const target = docPath('stuck.docx');
+  it('a hold outliving every retry falls back to an in-place overwrite — the save still lands', async () => {
+    // The nora field case (2026-07-22, Windows + Dropbox): the upload
+    // hold on a multi-MB doc outlives the whole ~1.5s backoff, and
+    // waiting + re-saving stays inside the next upload's hold. A plain
+    // overwrite only needs write-sharing (which Dropbox grants), so the
+    // save must degrade to it instead of failing with ELOCKED.
+    const target = docPath('held.docx');
     await fs.writeFile(target, 'v1');
     await recordDiskStateFromDisk(target);
     const realRename = fs.rename;
@@ -314,6 +319,43 @@ describe('rename retry — transiently locked target (Dropbox/antivirus holds)',
       err.code = 'EPERM';
       throw err;
     };
+    try {
+      await saveExistingDoc(target, Buffer.from('v2'));
+    } finally {
+      (fs as { rename: typeof fs.rename }).rename = realRename;
+    }
+    expect(await fs.readFile(target, 'utf8')).toBe('v2');
+    // Fallback landed → the tmp breadcrumb is no longer needed.
+    const leftovers = (await fs.readdir(caseDir)).filter((f) => f.includes('cmtmp'));
+    expect(leftovers).toEqual([]);
+    // The overwrite re-baselined the path: the next ordinary save passes.
+    await saveExistingDoc(target, Buffer.from('v3'));
+    expect(await fs.readFile(target, 'utf8')).toBe('v3');
+  }, 15000);
+
+  it('ELOCKED only when even the in-place fallback fails — and the tmp survives as a breadcrumb', async () => {
+    const target = docPath('stuck.docx');
+    await fs.writeFile(target, 'v1');
+    await recordDiskStateFromDisk(target);
+    const realRename = fs.rename;
+    const realWrite = fs.writeFile;
+    (fs as { rename: typeof fs.rename }).rename = async () => {
+      const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException;
+      err.code = 'EPERM';
+      throw err;
+    };
+    // Tmp writes pass through; the fallback's write to the TARGET fails
+    // (a genuinely exclusive hold that refuses even write-sharing).
+    (fs as { writeFile: typeof fs.writeFile }).writeFile = (async (
+      p: Parameters<typeof fs.writeFile>[0],
+      data: Parameters<typeof fs.writeFile>[1],
+      opts?: Parameters<typeof fs.writeFile>[2],
+    ) => {
+      if (String(p).includes('.cmtmp')) return realWrite(p, data, opts);
+      const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException;
+      err.code = 'EPERM';
+      throw err;
+    }) as typeof fs.writeFile;
     let message = '';
     try {
       await saveExistingDoc(target, Buffer.from('v2'));
@@ -321,14 +363,17 @@ describe('rename retry — transiently locked target (Dropbox/antivirus holds)',
       message = (err as Error).message;
     } finally {
       (fs as { rename: typeof fs.rename }).rename = realRename;
+      (fs as { writeFile: typeof fs.writeFile }).writeFile = realWrite;
     }
     expect(message).toContain(FILE_LOCKED_MARKER);
-    expect(message).toContain('temporarily');
     expect(message).toContain('stuck.docx');
-    // Old contents intact; tmp sibling cleaned up.
+    expect(message).toContain('EPERM');
+    // Old contents intact; the tmp is KEPT — it holds the complete new
+    // bytes in case the failed overwrite tore the target.
     expect(await fs.readFile(target, 'utf8')).toBe('v1');
     const leftovers = (await fs.readdir(caseDir)).filter((f) => f.includes('cmtmp'));
-    expect(leftovers).toEqual([]);
+    expect(leftovers).toHaveLength(1);
+    expect(await fs.readFile(path.join(caseDir, leftovers[0]!), 'utf8')).toBe('v2');
   }, 15000);
 
   it('non-transient rename errors propagate immediately (no retry loop)', async () => {
@@ -354,5 +399,10 @@ describe('rename retry — transiently locked target (Dropbox/antivirus holds)',
     expect(calls).toBe(1);
     expect(message).toContain('EXDEV');
     expect(message).not.toContain(FILE_LOCKED_MARKER);
+    // Non-transient errors don't get the in-place fallback: the target
+    // is untouched and the tmp is cleaned, not kept as a breadcrumb.
+    expect(await fs.readFile(target, 'utf8')).toBe('v1');
+    const leftovers = (await fs.readdir(caseDir)).filter((f) => f.includes('cmtmp'));
+    expect(leftovers).toEqual([]);
   });
 });

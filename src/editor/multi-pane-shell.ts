@@ -26,7 +26,7 @@
  * declares its view, the controller treats it as cross-view.
  */
 
-import { EditorState, TextSelection } from 'prosemirror-state';
+import { EditorState, Selection, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { setViewDocPath } from './transclusion-doc-path.js';
 import { Node as PMNode } from 'prosemirror-model';
@@ -65,6 +65,8 @@ import {
   autosaveBlockedForRecoveredDraft,
   recoveredDraftJournalSavedAt,
 } from './journal-staleness.js';
+import { makeBlankDoc } from './blank-doc.js';
+import { homeScreen } from './home-screen.js';
 import { captureCleanToken } from './save-clean-token.js';
 import { scheduleIdle, cancelIdle, type IdleHandle } from './idle-scheduler.js';
 import { getSpeechDocResolver } from './speech-doc-registry.js';
@@ -1526,13 +1528,18 @@ class MultiPaneShell {
         ) {
           const targetSlot = this.findSlotByView(lastTargetView);
           if (targetSlot?.visible) {
-            // Flush the pane's debounced heavy update so this runs
-            // against the post-drop doc and the new IDs are visible
-            // (flush, not just cancel — the timer also owes the
-            // word-count refresh).
             const rec = targetSlot.visible;
-            flushHeavyUpdateNow(rec);
+            // ORDER CONSTRAINT: the collapse diff must run BEFORE any
+            // render of the post-drop doc — every render refreshes the
+            // nav's seen-ids baseline, so a render first makes the
+            // dropped headings look "already seen" and the collapse
+            // no-ops (the drop then lands fully expanded, ignoring the
+            // pane's depth setting). applyMaxLevelToNewHeadings reads
+            // view.state.doc directly and re-renders itself; the flush
+            // afterwards still pays the caret resync + word count the
+            // debounced timer owes.
             rec.navPanel.applyMaxLevelToNewHeadings();
+            flushHeavyUpdateNow(rec);
           }
         }
         lastSourceView = null;
@@ -2315,6 +2322,10 @@ class MultiPaneShell {
    *  the populated slot is the expanded one (or if expand mode is
    *  off), show it. */
   notifySlotPopulated(slot: Slot): void {
+    // A doc landing in any slot ends the empty-workspace state — the
+    // home screen (shown at empty boot / after the last close) yields
+    // to the workspace. No-op when home isn't up.
+    homeScreen.hide();
     if (this.expandedSlot && this.expandedSlot !== slot) {
       slot.paneEl.hidden = true;
     } else {
@@ -2329,6 +2340,14 @@ class MultiPaneShell {
   /** Handle a slot becoming empty — if it had focus, transfer to
    *  the next active slot (or clear focus). */
   handleSlotEmptied(slot: Slot): void {
+    // Workspace fully empty → land on the home screen rather than a
+    // blank window (parity with single-pane's close-to-home). Checked
+    // BEFORE the focus bookkeeping: that path early-returns when the
+    // emptied slot wasn't the focused one, and the last doc can close
+    // from an unfocused slot (clean-doc ✕ needs no focus first).
+    if (!SLOT_IDS.some((id) => this.slots[id].stack.length > 0)) {
+      homeScreen.show();
+    }
     if (this.focusedSlot !== slot) return;
     this.focusedSlot = null;
     for (const id of SLOT_IDS) {
@@ -2578,6 +2597,12 @@ class MultiPaneShell {
       format: null,
     });
     slot.push(record);
+    // Caret into the empty paragraph + focus, so typing (or arming a
+    // style for typing) works immediately with no extra click. Every
+    // other slot-populating path focuses too.
+    const tr = record.view.state.tr.setSelection(Selection.atEnd(record.view.state.doc));
+    record.view.dispatch(tr);
+    record.view.focus();
   }
 
   /** Create a fresh unsaved doc to hold a joining/resuming co-editing
@@ -2757,14 +2782,6 @@ class MultiPaneShell {
   }
 }
 
-/** Minimal valid doc — one empty paragraph. Used by `createNewDoc`
- *  so the freshly-routed slot has something to put a cursor into. */
-function makeBlankDoc(): PMNode {
-  return schema.nodes['doc']!.createChecked(null, [
-    schema.nodes['pocket']!.create({ id: newHeadingId() }, schema.text('Untitled')),
-    schema.nodes['paragraph']!.create(null),
-  ]);
-}
 
 /** Speech-doc variant of `makeBlankDoc`. Same Pocket + trailing
  *  paragraph shape, but the Pocket carries the user-supplied

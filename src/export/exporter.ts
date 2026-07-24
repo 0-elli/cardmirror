@@ -81,6 +81,15 @@ export interface ExportOptions {
    *  custom document property (`docProps/custom.xml`) for the Learn
    *  annotation layer. `exportDoc` itself ignores it. */
   docId?: string;
+  /** Literal docDefaults font for the packaged styles.xml — the editor
+   *  passes the user's display font so previews (Slack/Gmail's
+   *  theme-blind converters) approximate what the author sees. Word
+   *  never reads it (the theme attributes beside it win), so machine
+   *  rendering and Verbatim's per-machine style customization are
+   *  untouched. Defaults to Calibri, the ecosystem baseline
+   *  (Debate.dotm's own Normal). `exportDoc` itself ignores it —
+   *  `toDocx` applies it at packaging time. */
+  defaultFont?: string;
 }
 
 /** Map common image MIME types to file extensions. */

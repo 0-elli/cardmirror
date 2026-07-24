@@ -55,6 +55,7 @@ afterEach(() => {
   // The suite flips display settings; restore the defaults for neighbors.
   settings.set('showCardNumbering', true);
   settings.set('cardNumberingFormat', 'period');
+  settings.set('navMaxLevel', 3);
 });
 
 describe('NavigationPanel — card number glyphs', () => {
@@ -71,6 +72,41 @@ describe('NavigationPanel — card number glyphs', () => {
       ['Second', '2.'],
       // Note the default separators differ by kind: number `period`, sub `paren`.
       ['Sub under second', 'a)'],
+    ]);
+    view.destroy();
+  });
+
+  it('live-view (self_ref) projected rows carry the same host-contextual numbers as the editor', () => {
+    // Regression: windowed rows were skipped entirely, so a numbered card
+    // inside a live view showed its number in the editor but not the nav.
+    // The projection now carries each mirrored card's REAL doc position —
+    // the key computeNumbering files the window's labels under.
+    // Fully expand the outline — navMaxLevel defaults to 3, which starts
+    // blocks collapsed and would hide every card row from this assertion.
+    settings.set('navMaxLevel', 4);
+    const srcId = newHeadingId();
+    const srcBlock = schema.nodes['block']!.create({ id: srcId }, schema.text('Source'));
+    const srcCards = [card('One', 'number'), card('Two', 'number')];
+    // The live view holds MIRRORED copies as real children (the content
+    // plugin's invariant: children ≡ the projection, which is the source
+    // section's content WITHOUT the heading itself) — so shapes and
+    // positions line up between the nav's projection walk and
+    // computeNumbering's walk of the real children.
+    const mirror = schema.nodes['self_ref']!.create({ source_heading_id: srcId }, [
+      card('One', 'number'),
+      card('Two', 'number'),
+    ]);
+    const { view, nav } = setup(srcBlock, ...srcCards, mirror);
+    expect(rows(nav)).toEqual([
+      ['Source', null],
+      ['One', '1.'],
+      ['Two', '2.'],
+      // The projected window continues the HOST count (no block inside
+      // the window to reset it): 3 and 4 — exactly what the editor
+      // renders inside the window. The glyphs must appear on the
+      // WINDOWED rows.
+      ['One', '3.'],
+      ['Two', '4.'],
     ]);
     view.destroy();
   });

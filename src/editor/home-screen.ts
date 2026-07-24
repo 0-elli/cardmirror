@@ -82,6 +82,27 @@ class HomeScreen {
   private canReturnToDoc = false;
   /** Index-aligned action runners for the 1 / 2 / 3 shortcuts. */
   private actionRunners: Array<() => void> = [];
+  private pillDockEl: HTMLDivElement | null = null;
+  private visibilityListeners: Array<(visible: boolean) => void> = [];
+
+  /** Bottom-centered strip on the home overlay that hosts the receive
+   *  pill while home is visible (the pill is re-parented in, so its
+   *  position is the hub's own layout — not wherever the editor layer
+   *  underneath happened to anchor the pill tray). Null before mount. */
+  pillDock(): HTMLElement | null {
+    return this.pillDockEl;
+  }
+
+  /** Notified on every show/hide TRANSITION (not on redundant calls).
+   *  Used to move the receive pill between the editor tray and the
+   *  home dock without home-screen knowing about pairing. */
+  onVisibilityChange(cb: (visible: boolean) => void): void {
+    this.visibilityListeners.push(cb);
+  }
+
+  private notifyVisibility(visible: boolean): void {
+    for (const cb of this.visibilityListeners) cb(visible);
+  }
 
   mount(parent: HTMLElement, callbacks: HomeScreenCallbacks): void {
     this.callbacks = callbacks;
@@ -89,6 +110,10 @@ class HomeScreen {
     this.root = document.createElement('div');
     this.root.className = 'pmd-home-screen';
     this.root.hidden = true;
+
+    this.pillDockEl = document.createElement('div');
+    this.pillDockEl.className = 'pmd-home-pill-dock';
+    this.root.appendChild(this.pillDockEl);
 
     const inner = document.createElement('div');
     inner.className = 'pmd-home-inner';
@@ -312,6 +337,7 @@ class HomeScreen {
     this.renderRecents();
     void this.renderSessions();
     this.renderLearn();
+    this.notifyVisibility(true);
   }
 
   hide(): void {
@@ -320,6 +346,7 @@ class HomeScreen {
     this.root.hidden = true;
     document.documentElement.classList.remove('pmd-home-active');
     document.removeEventListener('keydown', this.onKeyDown);
+    this.notifyVisibility(false);
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {

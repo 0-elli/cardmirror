@@ -27,6 +27,13 @@ import { showToast } from '../toast.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion, type EditLease } from './edit-coordinator.js';
 import { setRepairFlashes, clearRepairFlashes } from '../repair-highlight-plugin.js';
+import {
+  FOLDABLE_SPACES_RE,
+  UNICODE_BREAKS_RE,
+  collectExoticWhitespaceFixes,
+  isFoldableSpace,
+  isUnicodeBreak,
+} from '../exotic-whitespace.js';
 
 export const DEFAULT_REPAIR_PROMPT = `You are a specialized text repair tool. Your task is to identify and fix common OCR and PDF text-extraction errors while preserving the original meaning and content exactly.
 
@@ -275,7 +282,7 @@ function foldWithMap(s: string, lower = true): { norm: string; map: number[] } {
     if (ch === '‘' || ch === '’' || ch === '‚') out = "'";
     else if (ch === '“' || ch === '”' || ch === '„') out = '"';
     else if (ch === '—' || ch === '–' || ch === '‒') out = '-';
-    else if (ch === '\u00A0' || ch === '\t' || ch === '\n') out = ' ';
+    else if (ch === '\t' || ch === '\n' || isFoldableSpace(ch) || isUnicodeBreak(ch)) out = ' ';
     else if (ch === 'ﬀ') out = 'ff';
     else if (ch === 'ﬁ') out = 'fi';
     else if (ch === 'ﬂ') out = 'fl';
@@ -557,7 +564,8 @@ export function normalizeForDiagnosis(s: string): string {
     .replace(/[‘’‚]/g, "'")
     .replace(/[“”„]/g, '"')
     .replace(/[—–‒]/g, '--')
-    .replace(/\u00A0/g, ' ')
+    .replace(FOLDABLE_SPACES_RE, ' ')
+    .replace(UNICODE_BREAKS_RE, ' ')
     .replace(/[\u00B6\u00AD\u200B\u200C\u200D\uFEFF]/g, '');
 }
 
@@ -739,7 +747,29 @@ export function runRepairText(view: EditorView): void {
 
   void (async () => {
     let applied = 0;
+    let cleaned = 0;
     try {
+      // PASS 0 — deterministic, no model: fold the PDF-extraction
+      // whitespace artifacts in the selection (exotic spaces → plain
+      // space, soft hyphens / zero-widths dropped — see
+      // exotic-whitespace.ts). Non-breaking spaces like U+2007 FIGURE
+      // SPACE render as fake mid-word line breaks, and the model can't
+      // reliably echo them in its find-strings, so they must be fixed
+      // here rather than left to passes 1–2 — which also hands those
+      // passes clean text their quotes can match verbatim.
+      const rPre = lease.region();
+      if (rPre) {
+        const wsFixes = collectExoticWhitespaceFixes(view.state.doc, rPre.from, rPre.to);
+        if (wsFixes.length) {
+          cleaned = wsFixes.reduce((n, f) => n + (f.to - f.from), 0);
+          const { tr } = buildRepairTransaction(view.state, wsFixes);
+          tr.setMeta('addToHistory', false);
+          lease.apply(tr);
+          const r = lease.region();
+          if (r) activity.setRange(r);
+        }
+      }
+
       // PASS 1. Bounds come from the lease so edits elsewhere in the doc
       // (while the request was in flight) are accounted for.
       const r0 = lease.region();
@@ -771,24 +801,31 @@ export function runRepairText(view: EditorView): void {
         }
       }
 
-      if (applied === 0) {
+      if (applied === 0 && cleaned === 0) {
         showToast(p1.fixesReturned === 0 ? 'No OCR errors found.' : 'Could not place any of the suggested fixes.');
         return;
       }
 
-      // Let the final batch flash play out, then fold every edit into
-      // one undo item.
-      await delay(FLASH_MS + 200);
-      clearRepairFlashes(view);
+      // Let the final batch flash play out (whitespace-only repairs
+      // flash nothing, so they skip the wait), then fold every edit —
+      // pass 0 included — into one undo item.
+      if (applied > 0) {
+        await delay(FLASH_MS + 200);
+        clearRepairFlashes(view);
+      }
       collapseToSingleUndo(view, startDoc, origSelFrom, origSelTo, lease);
 
-      showToast(
-        `Repaired ${applied} ${applied === 1 ? 'spot' : 'spots'}` +
-          (skipped > 0 ? ` (${skipped} couldn't be placed)` : '') + '.',
-      );
+      const parts: string[] = [];
+      if (applied > 0) parts.push(`Repaired ${applied} ${applied === 1 ? 'spot' : 'spots'}`);
+      if (cleaned > 0) {
+        parts.push(
+          `${applied > 0 ? 'normalized' : 'Normalized'} ${cleaned} stray whitespace ${cleaned === 1 ? 'character' : 'characters'}`,
+        );
+      }
+      showToast(parts.join(', ') + (skipped > 0 ? ` (${skipped} couldn't be placed)` : '') + '.');
     } catch (e) {
       // Make whatever landed undoable in one step before surfacing the error.
-      if (applied > 0) {
+      if (applied > 0 || cleaned > 0) {
         clearRepairFlashes(view);
         try {
           collapseToSingleUndo(view, startDoc, origSelFrom, origSelTo, lease);

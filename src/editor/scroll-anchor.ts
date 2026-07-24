@@ -109,16 +109,28 @@ export function captureViewportAnchor(
 const MAX_ANCHOR_REFINE = 6;
 const ANCHOR_TOLERANCE_PX = 1;
 
+/** Monotonic claim ticket: each restore takes the next value and every
+ *  refine step aborts once a newer restore exists — "latest wins", the
+ *  same philosophy as precise-scroll's `scrollGeneration`. Without it,
+ *  two refine loops (rapid zoom steps, or a zoom racing a read-mode
+ *  toggle) run concurrently and alternate `scrollTop` writes toward
+ *  DIFFERENT targets — the visible viewport fight under fast zooming. */
+let restoreGeneration = 0;
+
 /** Restore a captured anchor after the layout change: nudge the
  *  scroller so `pos` returns to `topBefore`. Runs across
  *  `requestAnimationFrame`s so it measures post-relayout, and refines a
  *  few times against cv:auto materialization (same philosophy as
- *  `preciseScrollIntoView`). No-op when the anchor had no scroller. */
+ *  `preciseScrollIntoView`). Only the LATEST restore's loop may write —
+ *  starting a new restore silently retires any in-flight one. No-op
+ *  when the anchor had no scroller. */
 export function restoreViewportAnchor(anchor: ViewportAnchor): void {
   const { view, scroller, pos, topBefore } = anchor;
   if (!scroller) return;
+  const generation = ++restoreGeneration;
   let iterations = 0;
   const step = (): void => {
+    if (generation !== restoreGeneration) return; // superseded — latest wins
     if (!(view.dom as HTMLElement).isConnected) return;
     let topAfter: number;
     try {

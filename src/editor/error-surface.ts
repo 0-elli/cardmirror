@@ -57,13 +57,16 @@ export function isFileChangedOnDiskError(err: unknown): boolean {
   return typeof message === 'string' && message.includes('EMODIFIED');
 }
 
-/** The friendly text of a "file temporarily locked" save failure, or
- *  null for every other error. Raised by the atomic-write rename in
- *  the Electron main process (doc-writes.ts) after its retry backoff
- *  is exhausted — marked 'ELOCKED' in the message because only the
- *  message survives the IPC boundary (same convention as EMODIFIED /
- *  ENOENT above). Returns just the human sentence so callers can show
- *  it WITHOUT Electron's "Error invoking remote method …" wrapper. */
+/** The friendly text of a "file locked" save failure, or null for
+ *  every other error. Raised by the write pipeline in the Electron
+ *  main process (doc-writes.ts) only when the atomic rename's retry
+ *  backoff AND the plain in-place-overwrite fallback both fail — a
+ *  genuinely exclusive hold, not the ordinary Dropbox/antivirus
+ *  share-lock the fallback absorbs. Marked 'ELOCKED' in the message
+ *  because only the message survives the IPC boundary (same convention
+ *  as EMODIFIED / ENOENT above). Returns just the human sentence so
+ *  callers can show it WITHOUT Electron's "Error invoking remote
+ *  method …" wrapper. */
 export function fileLockedMessage(err: unknown): string | null {
   if (typeof err !== 'object' || err === null) return null;
   const { message } = err as { message?: unknown };

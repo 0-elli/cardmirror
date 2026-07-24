@@ -23,7 +23,7 @@ export type { ExportResult, ExportOptions } from './exporter.js';
  */
 export async function toDocx(doc: PMNode, opts: ExportOptions = {}): Promise<Uint8Array> {
   const result = exportDoc(doc, opts);
-  const docx = Docx.empty();
+  const docx = Docx.empty(opts.defaultFont ? { defaultFont: opts.defaultFont } : undefined);
   docx.writeText('word/document.xml', result.documentXml);
   docx.writeText('word/_rels/document.xml.rels', result.relsXml);
   for (const part of result.mediaParts) {
@@ -74,8 +74,14 @@ export async function toDocx(doc: PMNode, opts: ExportOptions = {}): Promise<Uin
         contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
       },
       {
+        // The exact string from the Open XML SDK's WordprocessingCommentsExPart —
+        // Word validates each part's declared content type against its
+        // relationship, and a mismatch here fails the WHOLE package
+        // ("unreadable content", recoverable), even though every part's
+        // XML is valid. Field report 2026-07-23 (Lily S., mac Word).
         partName: '/word/commentsExtended.xml',
-        contentType: 'application/vnd.ms-word.commentsExtended+xml',
+        contentType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml',
       },
     ]);
   }

@@ -123,6 +123,25 @@ describe('condenseBranchC — paragraph integrity preserved', () => {
     expect(next!.doc.firstChild!.textContent).toBe('a b c d');
   });
 
+  it('folds PDF-extraction exotic spaces and strips soft hyphens (the nora figure-space case)', () => {
+    // U+2007 FIGURE SPACE word gaps from a PDF paste are NON-breaking,
+    // so the card renders fake mid-word line breaks; condense must fold
+    // them to plain spaces and collapse the runs. The soft hyphen and
+    // zero-width are dropped outright — a space there would split the
+    // word they sit inside.
+    const doc = makeDoc([paragraph('offensive\u2007mari\u00ADtime\u2007 \u2009power a\u200Bb')]);
+    const state = setSelectionRange(doc, 'offensive', 0, 'b', 1);
+    const next = apply(state, condenseBranchC());
+    expect(next!.doc.firstChild!.textContent).toBe('offensive maritime power ab');
+  });
+
+  it('a zero-width between two spaces does not stop the run from collapsing', () => {
+    const doc = makeDoc([paragraph('a \u200B b')]);
+    const state = setSelectionRange(doc, 'a', 0, 'b', 1);
+    const next = apply(state, condenseBranchC());
+    expect(next!.doc.firstChild!.textContent).toBe('a b');
+  });
+
   it('strips leading spaces but preserves trailing', () => {
     const doc = makeDoc([paragraph('   hello ')]);
     const state = setSelectionRange(doc, 'hello', -3, 'hello', 6);

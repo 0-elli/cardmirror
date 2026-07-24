@@ -95,6 +95,51 @@ describe('restoreViewportAnchor (drift elimination)', () => {
       restoreViewportAnchor({ view, scroller: null, pos: 1, topBefore: 0 }),
     ).not.toThrow();
   });
+
+  it('a newer restore retires an in-flight refine loop (latest wins)', () => {
+    // Rapid zoom steps start restore B while restore A's multi-frame
+    // refine loop is still running. Without the generation guard both
+    // loops keep writing scrollTop toward DIFFERENT topBefore targets and
+    // the viewport visibly fights. Queue rAFs so the interleave is
+    // scripted: A starts, runs one frame, B starts, then all frames flush
+    // — only B's target may win, and A's loop must stop touching scroll.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    const flushOne = () => frames.shift()?.(0);
+
+    const scroller = { scrollTop: 500 } as unknown as HTMLElement;
+    const st = () => (scroller as unknown as { scrollTop: number }).scrollTop;
+    const docY = 800; // anchor's document-space y; viewport y = docY - scrollTop
+    const mkView = () =>
+      ({
+        dom: { isConnected: true },
+        coordsAtPos: () => ({ top: docY - st(), bottom: 0, left: 0, right: 0 }),
+      }) as unknown as EditorView;
+
+    // A wants the anchor at viewport y=300 (scrollTop 500); B wants y=250
+    // (scrollTop 550). Their corrections differ, so a surviving A loop
+    // would drag scroll back toward A's target after B finishes.
+    const anchorA: ViewportAnchor = { view: mkView(), scroller, pos: 42, topBefore: 300 };
+    const anchorB: ViewportAnchor = { view: mkView(), scroller, pos: 42, topBefore: 250 };
+
+    restoreViewportAnchor(anchorA);
+    // Drift A's world so its loop has work to do across several frames.
+    (scroller as unknown as { scrollTop: number }).scrollTop = 400; // anchor at y=400, A wants 300
+    flushOne(); // A's frame 1: corrects toward 300 → scrollTop 500
+    expect(st()).toBe(500);
+
+    restoreViewportAnchor(anchorB); // supersedes A mid-loop
+    // Flush every queued frame (A's continuation + B's loop).
+    for (let i = 0; i < 12 && frames.length > 0; i++) flushOne();
+
+    // B's target holds: anchor at viewport y=250 → scrollTop 550. A
+    // surviving A loop would have pulled it back toward 500.
+    expect(st()).toBe(550);
+    expect(docY - st()).toBe(250);
+  });
 });
 
 describe('nearestReadKeptPos (read-mode anchor target)', () => {

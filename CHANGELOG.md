@@ -5,6 +5,119 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.19 — 2026-07-24
+
+### Changed
+
+- **Enter continues below a live view.** With the cursor at the very
+  bottom of a live view, Enter used to do nothing — the mirrored
+  content is read-only, so there was nowhere for a new line to go. It
+  now starts a new line just below the live view and moves the cursor
+  there.
+
+### Fixed
+
+- **Live views show their card numbers in the navigation pane.** With
+  numbering on, numbered cards inside a live view showed their numbers
+  in the editor but not in the outline (linked copies were fine). A
+  live view's outline rows now carry the same numbers the editor
+  shows.
+
+- **Sections dragged between panes respect the outline depth.** A
+  heading dragged from one pane to another landed fully expanded in
+  the destination's navigation pane, ignoring its default expansion
+  level. Dropped sections now collapse to the destination pane's
+  depth; sections you had expanded yourself stay as they were.
+
+- **Find closes when you switch panes.** Leaving find (or
+  find/replace) open in one pane and clicking into another could
+  leave the first pane's search highlights stuck — closing the bar
+  from the new pane cleared the wrong one. Switching focus to a
+  different pane or document now closes the find bar and clears its
+  highlights and navigation-pane markers.
+
+## 0.1.0-beta.18 — 2026-07-23
+
+### Added
+
+- **The home screen comes to the three-pane workspace.** An empty
+  workspace — a fresh three-pane launch, or closing the last open
+  document — used to leave a bare window. It now lands on the home
+  screen, just like single-pane; opening or creating any document
+  dismisses it.
+
+- **Collaboration invites are joinable from the home screen.** The
+  Receive pill now appears on the home screen (bottom center), so you
+  can see and accept session invitations without opening an unrelated
+  document first — joining opens its own document anyway. Received
+  *cards* still need an open document: while the home screen is up,
+  inserting shows a note instead (the card stays in the pill), since
+  the destination document is hidden behind the home screen.
+
+### Changed
+
+- **Word exports are modern documents now.** Exported `.docx` files
+  used to open in Word's Compatibility Mode — the title-bar banner,
+  classic-only comment rendering, and a File → Convert prompt whose
+  re-save reflowed the document. Exports now declare the modern format,
+  so the banner is gone and Word's margin comment cards work.
+
+- **File previews show your font.** Slack, Gmail, and similar preview
+  thumbnails rendered exports in a generic serif no matter what your
+  display font was. Exports now carry your display font as the
+  document's base font, so previews approximate what you see in
+  CardMirror. Verbatim users still see their own configured fonts
+  exactly as before (per-machine style definitions always win); plain
+  Word without Verbatim now shows the author's font for
+  otherwise-unstyled text instead of Word's own default.
+
+- **Appearance settings, tidied.** Theme (light / dark / follow
+  system) is now the first thing in the Appearance tab, "Turn text
+  after a mark red" lives with the other Document typography settings,
+  and two sections ("Theme & chrome", "Nav pane & indicators") no
+  longer appear twice with stray rows.
+
+### Fixed
+
+- **Saving into a Dropbox folder no longer fails over and over.** On
+  Windows, the "temporarily locked by another program" error could
+  appear on nearly every save — Dropbox holds the just-saved file for
+  upload longer than the save's retry window, so the safe-save rename
+  kept losing. When the rename stays blocked, saving now falls back to
+  writing the file in place (the same thing pre-beta.16 saves did), so
+  the save lands instead of failing. The error now only appears when
+  even that is impossible.
+
+- **Documents with comments no longer trigger Word's repair prompt.**
+  Any file saved with a comment showed "unreadable content" when opened
+  in Word, with recovery bringing the comments back — a wrong
+  content-type declaration for one of the comment parts made Word
+  reject the whole package. Files saved from this version open clean.
+
+- **Fake line breaks from PDF pastes can now be cleaned.** Text copied
+  out of some PDFs arrives with exotic non-breaking spaces between
+  words, so pasted cards wrap mid-word at "line breaks" that backspace
+  can't remove. F2 plain paste now folds these to normal spaces on the
+  way in, and **Condense** or **Repair OCR/PDF text** cleans documents
+  that already have them.
+
+- **New documents are ready to type in.** Creating a document — in
+  either mode — now places the cursor in it and focuses the editor, so
+  typing (or arming a style) works immediately without clicking into
+  the page first.
+
+- **Three-pane New matches single-pane.** A new three-pane document
+  used to open with an "Untitled" pocket heading nobody asked for; it's
+  now the same bare paragraph single-pane creates. (This also fixes
+  new *speech* documents ignoring the "Seed new speech docs with a
+  Pocket heading" toggle when it's off.)
+
+- **Zooming quickly no longer jumps the page.** Rapid zooming — holding
+  the shortcut, spinning the wheel, or fast +/− clicks — could make the
+  viewport lurch as competing scroll corrections fought each other. A
+  whole zoom burst now holds one anchor and the latest correction wins,
+  so the text under your eyes stays put.
+
 ## 0.1.0-beta.17 — 2026-07-22
 
 ### Added
@@ -43,10 +156,11 @@ see `DETAILED_CHANGELOG.md`.
   controls; blank keeps the font's automatic weight. Applies to
   underlines, emphasis, and underlined cites.
 
-- **Cites without the bold** (Settings → Appearance → Accessibility).
-  An option to render cite-marked text at normal weight, for readers
-  who find dense bold runs visually crowding. Display-only — exports
-  and collaborators still see the standard bold cite.
+- **An option to unbold your cites** (Settings → Appearance →
+  Accessibility). An option to render cite-marked text at normal
+  weight, for readers who find dense bold runs visually crowding.
+  Display-only — exports and collaborators still see the standard
+  bold cite.
 
 ### Changed
 
@@ -55,7 +169,7 @@ see `DETAILED_CHANGELOG.md`.
   warnings — and stays that way until you re-arm the clock (load a
   preset, hit Reset, or type a new time). Pausing or switching clocks
   doesn't dismiss it, so a glance always tells you that time expired.
-  The sound, if on, is still a single double beep, never repeated.
+  The sound, if on, is still a single double beep.
 
 - **Every AI-backed command now says (AI).** Commands that send text to
   the AI provider are labeled uniformly — Format cite from selection,
@@ -73,23 +187,19 @@ see `DETAILED_CHANGELOG.md`.
 ### Fixed
 
 - **A leftover recovery draft can no longer silently overwrite newer
-  work.** The reported disaster: a launch offered old crash-recovery
-  drafts, and clicking Save wrote them straight over files that had
-  been edited and saved in the sessions since — destroying the newer
-  work. Now, whenever a recovered draft is older than the file it
-  would save over, CardMirror stops and asks — keep the newer file,
-  save the draft elsewhere (keeping both), or explicitly replace the
-  file — with the safe choice as the default. Autosave also leaves a
-  recovered draft alone until you've saved it once by hand, and the
-  protection survives restarts and layout switches. Recovering
-  normally (your unsaved edits are newer than the file) never triggers
-  the extra question.
+  work.** Whenever a recovered draft is older than the file it would
+  save over, CardMirror stops and asks — keep the newer file, save
+  the draft elsewhere (keeping both), or explicitly replace the file —
+  with the safe choice as the default. Autosave also leaves a
+  recovered draft alone until you've saved it once by hand. Recovering
+  normally (your unsaved edits are newer than the file) works the same
+  as before.
 
 - **Backspace can no longer swallow a whole card.** At certain card
   boundaries — most easily at the very end of the document — Backspace
-  silently selected an entire card body, so the next keystroke deleted
-  it wholesale. Backspace and Delete now move into the neighboring
-  card and edit normally instead.
+  could select an entire card body, so the next keystroke deleted it
+  completely. Backspace and Delete now work normally in that situation
+  instead.
 
 - **Highlighting across an emphasis box no longer leaves a white gap**
   in the three-pane workspace. The single-document editor was already
@@ -102,9 +212,7 @@ see `DETAILED_CHANGELOG.md`.
 
 - **Boxes no longer cut through images.** Applying emphasis (or any
   boxed style) across an inline image drew a text-height box straight
-  through the picture. Images now stay clean — and documents saved
-  with the old marks heal themselves on open. (Word output was never
-  affected.)
+  through the picture. Images no longer show formatting marks.
 
 - **Each document remembers its own scroll position in the three-pane
   workspace.** Switching between the documents stacked in a pane now
@@ -2034,6 +2142,10 @@ properly, with a real on-switch, once it's ready. What's in the preview:
   recipients for one-drop sends. Everything is end-to-end encrypted — the relay
   server only ever sees opaque ciphertext, never your cards, who sent them, or to
   whom — and cards are deleted from the server after 3 hours. Desktop only.
+  (The feature was conceived and prototyped by
+  [Q Cooper](https://github.com/mosuqc) of Missouri State University —
+  his proof-of-concept demonstrated the cross-machine send-and-receive
+  flow this built-in version is based on.)
 
 ## 0.1.0-alpha.17 — 2026-06-20
 

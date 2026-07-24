@@ -37,9 +37,20 @@ function collectOutlineWithWindows(doc: PMNode): HeadingEntry[] {
     if (proj.missing || proj.content.size === 0) return false;
     const wrapped = doc.type.create(null, proj.content);
     for (const e of collectHeadings(wrapped)) {
+      // Numbering lookup key: the mirrored card's REAL doc position. The
+      // projection's coordinate space maps 1:1 onto the self_ref's child
+      // content (the content plugin keeps them equal), whose positions
+      // start at pos + 1 — the same positions computeNumbering keys the
+      // window's cards under, so the nav can show the host-contextual
+      // number the editor shows.
+      let windowCardPos: number | null = null;
+      if (e.type === 'tag' || e.type === 'analytic') {
+        const $e = wrapped.resolve(e.pos);
+        if ($e.parentOffset === 0) windowCardPos = pos + 1 + $e.before();
+      }
       // Point every projected row at the window and mark it windowed: no real
       // doc node backs it, so id must be null and it's read-only in the nav.
-      projected.push({ ...e, pos, zonePos: pos, id: null, windowed: true });
+      projected.push({ ...e, pos, zonePos: pos, id: null, windowed: true, windowCardPos });
     }
     return false; // atom — nothing to descend into
   });
@@ -707,7 +718,11 @@ export class NavigationPanel {
    * entries. Existing user-expanded parents are preserved.
    *
    * Also triggers a synchronous re-render and updates the latest doc
-   * snapshot — call after a transaction has applied.
+   * snapshot — call after the transaction has applied but BEFORE any
+   * other render of the post-drop doc: every render refreshes
+   * `lastSeenIds`, so an intervening render (a flushed debounce, a
+   * settings repaint) makes the new headings look already-seen and
+   * this becomes a silent no-op.
    */
   applyMaxLevelToNewHeadings(): void {
     const view = this.view;
@@ -868,17 +883,24 @@ export class NavigationPanel {
       // wrapping card/analytic_unit. Only the wrapper's FIRST heading
       // row carries it (parentOffset 0), matching the editor, which
       // decorates the tag line — an in-card analytic under a numbered
-      // tag stays bare. Windowed (live-view projection) rows skip:
-      // their pos points at the window, not the mirrored card.
-      if (numberLabels && !entry.windowed && (entry.type === 'tag' || entry.type === 'analytic')) {
-        const $pos = doc.resolve(entry.pos);
-        if ($pos.parentOffset === 0) {
-          const numLabel = numberLabels.get($pos.before());
-          if (numLabel) {
-            const glyph = createNumberGlyph(numLabel);
-            glyph.classList.add('pmd-nav-card-number');
-            li.appendChild(glyph);
-          }
+      // tag stays bare. Windowed (live-view projection) rows carry the
+      // mirrored card's REAL position precomputed at projection time —
+      // computeNumbering keys a live view's cards by those positions
+      // (host-contextual, the same numbers the editor renders in the
+      // window), so projected rows number like everything else.
+      if (numberLabels && (entry.type === 'tag' || entry.type === 'analytic')) {
+        let cardPos: number | null = null;
+        if (entry.windowed) {
+          cardPos = entry.windowCardPos ?? null;
+        } else {
+          const $pos = doc.resolve(entry.pos);
+          if ($pos.parentOffset === 0) cardPos = $pos.before();
+        }
+        const numLabel = cardPos != null ? numberLabels.get(cardPos) : undefined;
+        if (numLabel) {
+          const glyph = createNumberGlyph(numLabel);
+          glyph.classList.add('pmd-nav-card-number');
+          li.appendChild(glyph);
         }
       }
 
@@ -1659,11 +1681,16 @@ export class NavigationPanel {
     // Must match the editor surface's test: a self_ref is picked up at level 0,
     // so omitting it here made `entry.level > 0` skip EVERY heading, leaving only
     // the end-of-doc slot as a drop target for a live view.
-    const srcItem = dragController.getSession()?.items[0];
-    const srcNode = srcItem
-      ? dragController.getSession()!.view.state.doc.nodeAt(srcItem.from)
-      : null;
-    const srcIsZone = !!srcNode && (isTransclusionNode(srcNode) || isSelfRef(srcNode));
+    // Checked across ALL items, not items[0]: a mixed multi-select (a promoted
+    // whole zone + a plain heading) must scope its slots the same way
+    // regardless of which item sits first in doc order.
+    const session = dragController.getSession();
+    const srcIsZone =
+      !!session &&
+      session.items.some((it) => {
+        const n = session.view.state.doc.nodeAt(it.from);
+        return !!n && (isTransclusionNode(n) || isSelfRef(n));
+      });
 
     for (const li of items) {
       const entry = this.liEntries.get(li);

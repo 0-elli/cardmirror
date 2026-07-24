@@ -373,6 +373,117 @@ describe('exporter — full docx', () => {
     expect(docContent).toContain('Tag');
     expect(docContent).toContain('underlined');
   });
+
+  it('writes literal docDefaults fonts with NO latin theme attributes (preview-font regression)', async () => {
+    // The latin theme attrs must stay OUT of docDefaults: OOXML gives
+    // w:asciiTheme precedence over w:ascii, and the theme-aware
+    // LibreOffice on preview farms (Slack/Gmail) resolves the theme
+    // ref, finds no theme part in our package, and falls back to
+    // Liberation Serif — never reading the literal. Re-adding them
+    // re-breaks every preview. The eastAsia/cs theme refs stay so CJK
+    // and complex scripts keep engine-appropriate defaults. Verbatim
+    // per-machine fonts are unaffected either way (style-level
+    // definitions outrank docDefaults).
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['paragraph']!.create(null, schema.text('hi')),
+    ]);
+    // Default: Calibri, the ecosystem baseline (Debate.dotm's Normal).
+    const plain = (await (await Docx.load(await toDocx(doc))).readText('word/styles.xml'))!;
+    expect(plain).toContain(
+      '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsiaTheme="minorEastAsia" w:cstheme="minorBidi"/>',
+    );
+    expect(plain).not.toContain('w:asciiTheme');
+    expect(plain).not.toContain('w:hAnsiTheme');
+    // The editor passes the user's display font; XML-escaped.
+    const custom = (
+      await (
+        await Docx.load(await toDocx(doc, { defaultFont: 'Iowan & Old Style' }))
+      ).readText('word/styles.xml')
+    )!;
+    expect(custom).toContain(
+      '<w:rFonts w:ascii="Iowan &amp; Old Style" w:hAnsi="Iowan &amp; Old Style" w:eastAsiaTheme="minorEastAsia"',
+    );
+  });
+
+  it('declares compatibilityMode 15 after the attached template (no Compatibility Mode banner)', async () => {
+    // A docx with no declared compatibilityMode opens as Word-2007-era:
+    // "[Compatibility Mode]" in the title bar, modern margin comments
+    // disabled, and a Convert prompt whose re-save reflows the doc. The
+    // ORDER also matters: CT_Settings is a schema-ordered sequence and
+    // w:compat must follow w:attachedTemplate, or Word rejects the whole
+    // package — the same failure class as the commentsExtended content
+    // type below.
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['paragraph']!.create(null, schema.text('hi')),
+    ]);
+    const bytes = await toDocx(doc);
+    const settings = (await (await Docx.load(bytes)).readText('word/settings.xml'))!;
+    expect(settings).toContain(
+      '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>',
+    );
+    const templateAt = settings.indexOf('<w:attachedTemplate');
+    const compatAt = settings.indexOf('<w:compat>');
+    expect(templateAt).toBeGreaterThan(-1);
+    expect(compatAt).toBeGreaterThan(templateAt);
+    // The Verbatim-recognition payload rides in the SAME part — the
+    // compat addition must not disturb it.
+    const rels = await (await Docx.load(bytes)).readText('word/_rels/settings.xml.rels');
+    expect(rels).toContain('Debate.dotm');
+  });
+
+  it('declares the comments parts with the exact SDK content types (Word repair regression)', async () => {
+    // Word validates each part's declared content type against its
+    // relationship; ANY mismatch fails the whole package with the
+    // "unreadable content" repair prompt even though every part parses.
+    // Field report 2026-07-23 (mac Word): every file saved with a
+    // comment triggered repair-on-open because commentsExtended.xml was
+    // declared as the invented "application/vnd.ms-word." type. Pin
+    // both strings to the constants in the Open XML SDK
+    // (WordprocessingCommentsPart / WordprocessingCommentsExPart).
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['card']!.create(null, [
+        schema.nodes['tag']!.create({ id: newHeadingId() }, schema.text('T')),
+        schema.nodes['card_body']!.create(null, [
+          schema.text('commented', [
+            schema.marks['comment_range']!.create({ threadId: '1' }),
+          ]),
+        ]),
+      ]),
+    ]);
+    const threads = [
+      {
+        id: '1',
+        comments: [
+          {
+            id: '1',
+            author: 'A',
+            initials: 'A',
+            date: '2026-07-23T00:00:00Z',
+            text: 'note',
+            kind: 'human' as const,
+            parentId: null,
+          },
+        ],
+      },
+    ];
+    const bytes = await toDocx(doc, { threads });
+    const reloaded = await Docx.load(bytes);
+    const contentTypes = await reloaded.readText('[Content_Types].xml');
+    expect(contentTypes).toContain(
+      '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>',
+    );
+    expect(contentTypes).toContain(
+      '<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"/>',
+    );
+    expect(contentTypes).not.toContain('vnd.ms-word.commentsExtended');
+    // The wiring the content types describe: both parts present, both
+    // relationships declared.
+    expect(await reloaded.readText('word/comments.xml')).toContain('note');
+    expect(await reloaded.readText('word/commentsExtended.xml')).toContain('commentEx');
+    const rels = await reloaded.readText('word/_rels/document.xml.rels');
+    expect(rels).toContain('relationships/comments"');
+    expect(rels).toContain('office/2011/relationships/commentsExtended');
+  });
 });
 
 describe('image alt text round-trip', () => {

@@ -26,9 +26,15 @@ import { ReceivePillController } from './receive-pill-ui.js';
 export function mountPairingPills(
   tray: HTMLElement,
   getFocusedView: () => EditorView | null,
-): void {
+): { receivePillEl: HTMLElement | null } {
   new SendPillController().mount({ parent: tray });
-  new ReceivePillController().mount({ parent: tray, getFocusedView });
+  const receive = new ReceivePillController();
+  receive.mount({ parent: tray, getFocusedView });
+  // Returned so the shell can re-parent the receive pill into the home
+  // screen's dock while home is up (invites must be joinable with no
+  // doc open); the send pill and dropzone stay tray-only — they act on
+  // the doc home covers.
+  return { receivePillEl: receive.rootEl() };
 }
 
 /** Push the current settings to the main-process poller/sender. The main
