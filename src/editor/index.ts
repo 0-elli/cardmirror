@@ -60,7 +60,7 @@ import { installExternalInsertHost } from './external-insert-host.js';
 import { installPluginRegistry } from './plugin-registry.js';
 import { createPluginApi } from './plugin-api.js';
 import { installPluginJumpHost } from './plugin-jump-host.js';
-import { isPluginEnabled } from './plugins-store.js';
+import { isPluginEnabled, reconcilePluginState } from './plugins-store.js';
 import { appVersion } from './install-info.js';
 import {
   decodeModeSwitchMarker,
@@ -8184,7 +8184,7 @@ async function initPlugins(): Promise<void> {
         }
       },
     }),
-    { onRegistered: rebuildKeymapsForPluginCommands },
+    { onCommandsChanged: rebuildKeymapsForPluginCommands },
   );
   let installed: { id: string; name: string; incompatible?: string }[];
   try {
@@ -8194,6 +8194,10 @@ async function initPlugins(): Promise<void> {
     showToast('Plugins failed to load.');
     return;
   }
+  // Drop leftovers (enabled flags, storage bags, key overrides) from
+  // plugins whose install DIRECTORY is gone — the one unambiguous
+  // "really uninstalled" signal; a mere load failure prunes nothing.
+  reconcilePluginState(new Set(installed.map((p) => p.id)));
   for (const p of installed) {
     if (!isPluginEnabled(p.id)) continue;
     // Listed-but-incompatible (needs a newer CardMirror): main refuses to

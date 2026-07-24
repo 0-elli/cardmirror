@@ -2,10 +2,20 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const hostState = vi.hoisted(() => ({ host: {} as Record<string, unknown> }));
+const settingsState = vi.hoisted(() => ({
+  overrides: {} as Record<string, string | string[]>,
+}));
 
 vi.mock('../../src/editor/toast.js', () => ({ showToast: vi.fn() }));
 vi.mock('../../src/editor/text-prompt.js', () => ({ confirmDialog: vi.fn() }));
-vi.mock('../../src/editor/settings.js', () => ({ settings: { get: () => true } }));
+vi.mock('../../src/editor/settings.js', () => ({
+  settings: {
+    get: (k: string) => (k === 'ribbonKeyOverrides' ? settingsState.overrides : true),
+    set: (k: string, v: unknown) => {
+      if (k === 'ribbonKeyOverrides') settingsState.overrides = v as Record<string, string>;
+    },
+  },
+}));
 vi.mock('../../src/editor/host/index.js', () => ({
   getElectronHost: () => hostState.host,
 }));
@@ -18,6 +28,7 @@ const settled = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  settingsState.overrides = {};
   hostState.host = {
     pluginList: () => Promise.resolve([{ id: 'demo', name: 'Demo', version: '1.0.0' }]),
   };
@@ -113,5 +124,45 @@ describe('install consent flow (two-phase)', () => {
     expect(messages[0]).toContain('github.com/somebody/thing');
     expect(messages[0]).toContain('full access');
     expect(calls).toContain('commit:tok-1');
+  });
+});
+
+describe('uninstall cleans up completely (Shreeram review, 2026-07-24)', () => {
+  it('deregisters live commands and purges the plugin\'s key overrides', async () => {
+    const { installPluginRegistry, registerPluginDefinition, pluginCommandIds, resetPluginRegistryForTests } =
+      await import('../../src/editor/plugin-registry.js');
+    resetPluginRegistryForTests();
+    installPluginRegistry(() => ({}) as never);
+    registerPluginDefinition({
+      id: 'demo',
+      name: 'Demo',
+      apiVersion: 1,
+      commands: [{ id: 'demo.hello', label: 'Hi', run: () => {} }],
+    });
+    settingsState.overrides = { 'demo.hello': 'Mod-Alt-5', openSettings: 'Mod-Alt-6' };
+    const calls: string[] = [];
+    hostState.host = {
+      pluginList: () => Promise.resolve([{ id: 'demo', name: 'Demo', version: '1.0.0' }]),
+      pluginUninstall: (id: string) => {
+        calls.push(`uninstall:${id}`);
+        return Promise.resolve();
+      },
+    };
+    vi.mocked(confirmDialog).mockResolvedValue(true);
+    window.__registerCardMirrorPlugin = (() => ({ ok: true })) as never;
+    const el = document.createElement('div');
+    renderPluginsPanel(el);
+    await settled();
+    const uninstallBtn = [...el.querySelectorAll('button')].find(
+      (b) => b.textContent === 'Uninstall',
+    )!;
+    uninstallBtn.click();
+    await settled();
+    await settled();
+    expect(calls).toContain('uninstall:demo');
+    expect(pluginCommandIds()).toEqual([]); // deregistered NOW, not at restart
+    expect(settingsState.overrides['demo.hello']).toBeUndefined();
+    expect(settingsState.overrides['openSettings']).toBe('Mod-Alt-6'); // static untouched
+    resetPluginRegistryForTests();
   });
 });

@@ -68,6 +68,12 @@ reached the relay. An empty or malformed server response is treated as
 a failed fetch (cache/baked fallback), never as "block everything". To
 get a plugin listed, contact the CardMirror maintainer.
 
+Self-hosted relays serve the same endpoint (see `relay/README.md`):
+the fetch goes to whichever relay the client is configured to use, so
+a self-hosting operator curates their own users' allowlist via
+`RELAY_PLUGIN_ALLOWLIST` on their relay. Its default matches the app's
+baked list, so an unconfigured self-hosted relay changes nothing.
+
 Users who understand the trust model can unlock arbitrary-repo installs
 from the developer console with `__plugins('community-on')` (persisted;
 `__plugins('community-off')` reverts, `__plugins('status')` reports).
@@ -97,6 +103,19 @@ the allowlist.
 
 A developer path exists: "Load plugin from file..." in the Plugins tab
 loads a local `plugin.js` without an install.
+
+### Uninstall
+
+Uninstalling removes the install directory, the plugin's enabled flag
+and storage bag, the user's key overrides for its commands, AND its
+live registration — palette rows, keybinding rows, and hotkeys vanish
+immediately. One caveat: bundle code that already executed this
+session cannot be unloaded; with its commands deregistered it is inert
+and fully gone on the next launch. As a backstop, launch reconciles
+stored state against the install directories on disk, so a plugin
+folder deleted outside the app also gets its leftovers pruned (a
+plugin that merely fails to LOAD is still installed and loses
+nothing).
 
 ### Version gates
 

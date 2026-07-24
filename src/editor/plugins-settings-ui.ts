@@ -5,6 +5,7 @@
  * off Electron this panel never mounts (category is electronOnly).
  */
 import { getElectronHost } from './host/index.js';
+import { unregisterPlugin } from './plugin-registry.js';
 import { isPluginEnabled, setPluginEnabled } from './plugins-store.js';
 import { settings } from './settings.js';
 import { confirmDialog } from './text-prompt.js';
@@ -213,7 +214,31 @@ export function renderPluginsPanel(container: HTMLElement): void {
           setPluginEnabled(p.id, false);
           // Drop the plugin's storage bag so a reinstall starts clean.
           localStorage.removeItem(`plugin:${p.id}`);
-          showToast(`${p.name} uninstalled. Restart to fully unload it.`);
+          // Deregister NOW: palette rows, keybinding rows, and hotkeys
+          // vanish immediately (the onCommandsChanged hook rebuilds live
+          // keymaps) instead of lingering until restart. Already-executed
+          // bundle code can't be unloaded — inert until the next launch.
+          const removedCmds = unregisterPlugin(p.id);
+          // Purge the user's key overrides for this plugin's commands —
+          // both the just-unregistered ids and (prefix match) any from a
+          // session where it never loaded. Without this they'd sit in
+          // settings forever.
+          const overrides = settings.get('ribbonKeyOverrides');
+          const kept: typeof overrides = {};
+          let dropped = 0;
+          for (const [cmdId, key] of Object.entries(overrides)) {
+            if (removedCmds.includes(cmdId) || cmdId.startsWith(`${p.id}.`)) {
+              dropped++;
+              continue;
+            }
+            if (key !== undefined) kept[cmdId] = key;
+          }
+          if (dropped > 0) settings.set('ribbonKeyOverrides', kept);
+          showToast(
+            removedCmds.length > 0
+              ? `${p.name} uninstalled. Its background code stops on the next launch.`
+              : `${p.name} uninstalled.`,
+          );
           guarded(refresh);
         });
       });

@@ -4,6 +4,8 @@ import {
   installPluginRegistry,
   registerPluginDefinition,
   resetPluginRegistryForTests,
+  unregisterPlugin,
+  pluginCommandIds,
 } from '../../src/editor/plugin-registry.js';
 import {
   buildRibbonKeymap,
@@ -150,5 +152,37 @@ describe('plugin-vs-plugin key collisions', () => {
     expect(km['Mod-Alt-U']).toBeDefined();
     expect(km['Mod-Alt-u']).toBeUndefined();
     expect(km['Mod-Alt-7']).toBeDefined();
+  });
+});
+
+describe('unregisterPlugin (immediate uninstall)', () => {
+  it('removes the plugin\'s commands, keys, and rows in one call', () => {
+    registerDemoWithKey('Mod-Alt-9');
+    expect(buildRibbonKeymap({})['Mod-Alt-9']).toBeDefined();
+    const removed = unregisterPlugin('demo');
+    expect(removed).toEqual(['demo.hello']);
+    expect(pluginCommandIds()).toEqual([]);
+    expect(availableRibbonCommandIds()).not.toContain('demo.hello');
+    expect(buildRibbonKeymap({})['Mod-Alt-9']).toBeUndefined();
+  });
+
+  it('fires the onCommandsChanged hook so live keymaps rebuild', () => {
+    const changed: string[] = [];
+    installPluginRegistry(() => stubApi, { onCommandsChanged: (id) => changed.push(id) });
+    registerPluginDefinition({
+      id: 'demo',
+      name: 'Demo',
+      apiVersion: 1,
+      commands: [{ id: 'demo.hello', label: 'Hi', run: () => {} }],
+    });
+    unregisterPlugin('demo');
+    // Direct registerPluginDefinition bypasses the window-global wrapper
+    // (which is what fires the hook on REGISTRATION in production);
+    // unregisterPlugin fires it itself, which is what this pins.
+    expect(changed).toEqual(['demo']);
+  });
+
+  it('is a silent no-op for a plugin that never registered', () => {
+    expect(unregisterPlugin('ghost')).toEqual([]);
   });
 });

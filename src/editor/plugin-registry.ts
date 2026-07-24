@@ -117,29 +117,62 @@ export function registerPluginDefinition(
   return { ok: true };
 }
 
+/** Fired after any registration OR unregistration changes the command
+ *  set — the host rebuilds live keymaps (views bake their keymaps at
+ *  construction, and both plugin load and uninstall happen after). */
+let commandsChangedHook: ((pluginId: string) => void) | null = null;
+
+function fireCommandsChanged(pluginId: string): void {
+  try {
+    commandsChangedHook?.(pluginId);
+  } catch (err) {
+    console.error('[plugins] onCommandsChanged hook failed:', err);
+  }
+}
+
+/** Remove a plugin's registration and every command it owns — the
+ *  UNINSTALL half of the lifecycle, so its palette rows, keybinding
+ *  rows, and hotkeys vanish immediately instead of lingering until
+ *  restart. (Already-executed bundle code can't be unloaded; with its
+ *  commands gone it is inert until the next launch.) Returns the
+ *  removed command ids so the caller can purge their key overrides. */
+export function unregisterPlugin(pluginId: string): string[] {
+  const removed: string[] = [];
+  for (const [id, entry] of [...commands.entries()]) {
+    if (entry.pluginId === pluginId) {
+      commands.delete(id);
+      removed.push(id);
+    }
+  }
+  const had = plugins.delete(pluginId);
+  if (had || removed.length > 0) {
+    console.log(`[plugins] unregistered ${pluginId} (${removed.length} commands)`);
+    fireCommandsChanged(pluginId);
+  }
+  return removed;
+}
+
 /** Install the window global. `createApi` mints one capability object
  *  per plugin id (dependency-injected so tests can stub it).
- *  `opts.onRegistered` fires after each SUCCESSFUL registration — the
- *  host uses it to rebuild live keymaps, since every editor view built
- *  before this plugin registered baked its keymap without the plugin's
- *  `defaultKey`s (initPlugins runs async after boot, so on a cold
- *  launch that is EVERY open view — without the rebuild the keys stay
- *  dead until an unrelated reconfigure). */
+ *  `opts.onCommandsChanged` fires after each successful registration
+ *  AND after every unregistration — the host uses it to rebuild live
+ *  keymaps, since every editor view built before the change baked its
+ *  keymap without it (initPlugins runs async after boot, so on a cold
+ *  launch that is EVERY open view — without the rebuild new defaultKeys
+ *  stay dead, and uninstalled ones stay live, until an unrelated
+ *  reconfigure). */
 export function installPluginRegistry(
   createApi: (pluginId: string) => CardMirrorPluginApi,
-  opts: { onRegistered?: (pluginId: string) => void } = {},
+  opts: { onCommandsChanged?: (pluginId: string) => void } = {},
 ): void {
   makeApi = createApi;
+  commandsChangedHook = opts.onCommandsChanged ?? null;
   window.__registerCardMirrorPlugin = (def) => {
     const res = registerPluginDefinition(def);
     if (res.ok) {
       const count = [...commands.values()].filter((c) => c.pluginId === def.id).length;
       console.log(`[plugins] registered ${def.id} (${count} commands)`);
-      try {
-        opts.onRegistered?.(String(def.id));
-      } catch (err) {
-        console.error('[plugins] onRegistered hook failed:', err);
-      }
+      fireCommandsChanged(String(def.id));
     } else {
       console.warn(`[plugins] registration rejected: ${res.error}`);
       showToast(`Plugin failed to load: ${res.error}`);
@@ -194,5 +227,6 @@ export function resetPluginRegistryForTests(): void {
   plugins.clear();
   commands.clear();
   makeApi = null;
+  commandsChangedHook = null;
   if (typeof window !== 'undefined') delete window.__registerCardMirrorPlugin;
 }
