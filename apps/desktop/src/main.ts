@@ -3121,5 +3121,7 @@ app.on('before-quit', () => {
 // cancelled quit. Stale-file tolerance still covers a hard exit.
 app.on('will-quit', () => {
   void stopFastPasteBridge();
+  // Clears only the SESSION half (port/token); the identity file persists
+  // so flow-app pickers can still list a closed CardMirror.
   void deleteCardmirrorHandshake();
 });

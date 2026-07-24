@@ -49,6 +49,12 @@ export interface FlowAppInfo {
   appVersion: string;
   schema: number;
   kind: 'flow';
+  /** Whether the app answered a liveness ping just now. Closed apps are
+   *  LISTED (their identity registration persists) — selection never
+   *  requires the app to be running; sends to a closed app fail at
+   *  runtime with `app-not-running`. Keep in sync with the main-process
+   *  declaration in apps/desktop/src/bridge-handshake.ts. */
+  running: boolean;
 }
 
 export type FlowPostResult =

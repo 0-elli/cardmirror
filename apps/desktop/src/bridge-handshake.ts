@@ -1,11 +1,29 @@
 /**
  * cardmirror-bridge — the published cross-app handshake standard.
- * A shared per-platform directory where each debate app writes
- * `<appId>.json` on launch (atomic), deletes it on quit, and rotates
- * its token per session. CardMirror mirrors its fast-paste endpoint
- * here as kind "editor"; flowing apps register as kind "flow".
- * All cross-app transport is brokered HERE — renderer plugins never
- * see tokens or sockets.
+ *
+ * A shared per-platform directory where each debate app writes TWO files:
+ *
+ *   `<appId>.json`          IDENTITY — schema/app/appVersion/kind. Written on
+ *                           first launch, NEVER deleted. This is what app
+ *                           pickers list, so a closed app stays selectable.
+ *   `<appId>.session.json`  SESSION — port/token/pid. Rotated per launch,
+ *                           deleted on quit. Its absence = the app isn't
+ *                           running right now.
+ *
+ * The split is the standing principle from the pairing work: a dead
+ * connection is a RUNTIME error (`app-not-running` at send time), never a
+ * settings blocker — with one combined file deleted on quit, an app could
+ * only be selected while it happened to be running. (The split ships as
+ * schema 1: nothing deployed reads this directory yet — the legacy Fast
+ * Debate Paste discovery file is a separate mechanism — so there is no
+ * combined-file cohort to migrate.)
+ *
+ * Tokens are secrets: the directory is created 0700 and both files 0600
+ * (best-effort on Windows, where POSIX modes don't map) — a shared Linux
+ * box must not leak another user's session token. CardMirror mirrors its
+ * fast-paste endpoint here as kind "editor"; flowing apps register as kind
+ * "flow". All cross-app transport is brokered HERE — renderer plugins
+ * never see tokens or sockets.
  */
 import { app } from 'electron';
 import { promises as fs } from 'node:fs';
@@ -25,16 +43,22 @@ export interface FlowAppInfo {
   appVersion: string;
   schema: number;
   kind: 'flow';
+  /** A session file exists AND the app answered /ping just now. A listed
+   *  app with `running: false` is selectable but not reachable — sends
+   *  fail at runtime with `app-not-running`. */
+  running: boolean;
 }
 export type FlowPostResult =
   | { ok: true; status: number; body: unknown }
   | { ok: false; error: 'no-such-app' | 'app-not-running' | 'timeout' | 'bad-response' };
 
-interface HandshakeFile {
+interface IdentityFile {
   schema: number;
   app: string;
   appVersion: string;
   kind: string;
+}
+interface SessionFile {
   port: number;
   token: string;
   pid: number;
@@ -49,55 +73,86 @@ export function bridgeDirPath(): string {
   return path.join(app.getPath('appData'), 'cardmirror-bridge');
 }
 
-export async function writeCardmirrorHandshake(port: number, token: string): Promise<void> {
+/** mkdir 0700 + chmod (an old dir may predate the mode) — the dir holds
+ *  session tokens, so other users must not traverse it. Best-effort:
+ *  Windows has no POSIX modes and chmod there is a near-no-op. */
+async function ensureBridgeDir(): Promise<string> {
   const dir = bridgeDirPath();
-  const data: HandshakeFile = {
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  await fs.chmod(dir, 0o700).catch(() => {});
+  return dir;
+}
+
+async function writeFileAtomic0600(finalPath: string, data: unknown): Promise<void> {
+  const tmpPath = `${finalPath}.tmp`;
+  await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+  await fs.rename(tmpPath, finalPath);
+}
+
+export async function writeCardmirrorHandshake(port: number, token: string): Promise<void> {
+  const dir = await ensureBridgeDir();
+  const identity: IdentityFile = {
     schema: BRIDGE_SCHEMA,
     app: 'cardmirror',
     appVersion: app.getVersion(),
     kind: 'editor',
-    port,
-    token,
-    pid: process.pid,
   };
-  const finalPath = path.join(dir, 'cardmirror.json');
-  const tmpPath = `${finalPath}.tmp`;
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(tmpPath, JSON.stringify(data, null, 2));
-  await fs.rename(tmpPath, finalPath);
+  const session: SessionFile = { port, token, pid: process.pid };
+  await writeFileAtomic0600(path.join(dir, 'cardmirror.json'), identity);
+  await writeFileAtomic0600(path.join(dir, 'cardmirror.session.json'), session);
 }
 
+/** Quit path: clear ONLY the session half. The identity file persists by
+ *  design — that's what keeps a closed CardMirror selectable in flow-app
+ *  pickers (and vice versa for flow apps in ours). */
 export async function deleteCardmirrorHandshake(): Promise<void> {
-  await fs.unlink(path.join(bridgeDirPath(), 'cardmirror.json')).catch(() => {});
+  await fs.unlink(path.join(bridgeDirPath(), 'cardmirror.session.json')).catch(() => {});
 }
 
-async function readHandshake(appId: string): Promise<HandshakeFile | null> {
-  if (!APP_ID_RE.test(appId)) return null;
+async function readJsonCapped<T>(filePath: string): Promise<Partial<T> | null> {
   try {
-    const filePath = path.join(bridgeDirPath(), `${appId}.json`);
     if ((await fs.stat(filePath)).size > MAX_HANDSHAKE_BYTES) return null;
-    const raw = await fs.readFile(filePath, 'utf8');
-    const obj = JSON.parse(raw) as Partial<HandshakeFile>;
-    if (
-      !Number.isInteger(obj.port) || (obj.port as number) < 1 || (obj.port as number) > 65535 ||
-      typeof obj.token !== 'string' ||
-      typeof obj.kind !== 'string' ||
-      typeof obj.app !== 'string'
-    ) {
-      return null;
-    }
-    return {
-      schema: typeof obj.schema === 'number' ? obj.schema : 0,
-      app: obj.app,
-      appVersion: typeof obj.appVersion === 'string' ? obj.appVersion : '',
-      kind: obj.kind,
-      port: obj.port as number,
-      token: obj.token,
-      pid: typeof obj.pid === 'number' ? obj.pid : 0,
-    };
+    return JSON.parse(await fs.readFile(filePath, 'utf8')) as Partial<T>;
   } catch {
     return null;
   }
+}
+
+function validSession(obj: Partial<SessionFile> | null): SessionFile | null {
+  if (!obj) return null;
+  if (!Number.isInteger(obj.port) || (obj.port as number) < 1 || (obj.port as number) > 65535) {
+    return null;
+  }
+  if (typeof obj.token !== 'string' || !obj.token) return null;
+  return {
+    port: obj.port as number,
+    token: obj.token,
+    pid: typeof obj.pid === 'number' ? obj.pid : 0,
+  };
+}
+
+async function readAppFiles(
+  appId: string,
+): Promise<{ identity: IdentityFile; session: SessionFile | null } | null> {
+  if (!APP_ID_RE.test(appId)) return null;
+  const dir = bridgeDirPath();
+  const idObj = await readJsonCapped<IdentityFile & Partial<SessionFile>>(
+    path.join(dir, `${appId}.json`),
+  );
+  if (!idObj || typeof idObj.app !== 'string' || typeof idObj.kind !== 'string') return null;
+  const identity: IdentityFile = {
+    schema: typeof idObj.schema === 'number' ? idObj.schema : 0,
+    app: idObj.app,
+    appVersion: typeof idObj.appVersion === 'string' ? idObj.appVersion : '',
+    kind: idObj.kind,
+  };
+  const session =
+    validSession(await readJsonCapped<SessionFile>(path.join(dir, `${appId}.session.json`))) ??
+    // A combined single file (identity fields + port/token together) reads
+    // as its own session — tolerated so a peer that writes the pre-split
+    // shape still works; the published contract is the two-file form.
+    validSession(idObj);
+  return { identity, session };
 }
 
 /** An aborted/timed-out fetch surfaces as AbortError, a nested
@@ -114,11 +169,11 @@ function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<R
   return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(timer));
 }
 
-async function ping(hs: HandshakeFile): Promise<boolean> {
+async function ping(session: SessionFile): Promise<boolean> {
   try {
     const res = await fetchWithTimeout(
-      `http://127.0.0.1:${hs.port}/ping`,
-      { headers: { [BRIDGE_TOKEN_HEADER]: hs.token } },
+      `http://127.0.0.1:${session.port}/ping`,
+      { headers: { [BRIDGE_TOKEN_HEADER]: session.token } },
       PING_TIMEOUT_MS,
     );
     return res.ok;
@@ -127,8 +182,10 @@ async function ping(hs: HandshakeFile): Promise<boolean> {
   }
 }
 
-/** Live flow apps only — a stale handshake (crashed app) fails the
- *  ping and is skipped. Tokens never leave this module. */
+/** EVERY registered flow app — closed ones included (identity files
+ *  persist), each with a live `running` flag. A stale session (crashed
+ *  app) fails the ping and reads as not-running, never as absent.
+ *  Tokens never leave this module. */
 export async function scanFlowApps(): Promise<FlowAppInfo[]> {
   let names: string[];
   try {
@@ -136,24 +193,23 @@ export async function scanFlowApps(): Promise<FlowAppInfo[]> {
   } catch {
     return [];
   }
-  const candidates: Array<{ id: string; hs: HandshakeFile }> = [];
+  const candidates: Array<{ id: string; identity: IdentityFile; session: SessionFile | null }> = [];
   for (const name of names) {
-    if (!name.endsWith('.json')) continue;
+    if (!name.endsWith('.json') || name.endsWith('.session.json')) continue;
     const id = name.slice(0, -'.json'.length);
-    const hs = await readHandshake(id);
-    if (!hs || hs.kind !== 'flow') continue;
-    candidates.push({ id, hs });
+    const files = await readAppFiles(id);
+    if (!files || files.identity.kind !== 'flow') continue;
+    candidates.push({ id, ...files });
   }
-  const alive = await Promise.all(candidates.map((c) => ping(c.hs)));
-  return candidates
-    .filter((_, i) => alive[i])
-    .map(({ id, hs }) => ({
-      id,
-      app: hs.app,
-      appVersion: hs.appVersion,
-      schema: hs.schema,
-      kind: 'flow' as const,
-    }));
+  const alive = await Promise.all(candidates.map((c) => (c.session ? ping(c.session) : false)));
+  return candidates.map(({ id, identity }, i) => ({
+    id,
+    app: identity.app,
+    appVersion: identity.appVersion,
+    schema: identity.schema,
+    kind: 'flow' as const,
+    running: alive[i]!,
+  }));
 }
 
 export async function flowPost(
@@ -161,8 +217,12 @@ export async function flowPost(
   route: string,
   body: unknown,
 ): Promise<FlowPostResult> {
-  const hs = await readHandshake(appId);
-  if (!hs || hs.kind !== 'flow') return { ok: false, error: 'no-such-app' };
+  const files = await readAppFiles(appId);
+  if (!files || files.identity.kind !== 'flow') return { ok: false, error: 'no-such-app' };
+  // Registered but no session = not launched right now. The runtime
+  // error, not a missing app — callers can tell the user to start it.
+  if (!files.session) return { ok: false, error: 'app-not-running' };
+  const { session } = files;
   const routePath = route.startsWith('/') ? route : `/${route}`;
   // One deadline covers connect, headers, AND the body read: a peer that
   // sends headers then stalls the body must still map to 'timeout'.
@@ -170,9 +230,9 @@ export async function flowPost(
   const timer = setTimeout(() => ctl.abort(), POST_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(`http://127.0.0.1:${hs.port}${routePath}`, {
+    res = await fetch(`http://127.0.0.1:${session.port}${routePath}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', [BRIDGE_TOKEN_HEADER]: hs.token },
+      headers: { 'Content-Type': 'application/json', [BRIDGE_TOKEN_HEADER]: session.token },
       body: JSON.stringify(body ?? {}),
       signal: ctl.signal,
     });

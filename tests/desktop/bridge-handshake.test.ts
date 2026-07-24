@@ -36,6 +36,8 @@ function listen(handler: http.RequestListener): Promise<{ port: number; close: (
   return promise;
 }
 
+/** Legacy pre-split shape: identity + port/token in ONE file. Kept as a
+ *  helper because the module tolerates it (reads as its own session). */
 async function writeFlowHandshake(id: string, port: number, token = 'tok'): Promise<void> {
   await fs.writeFile(
     path.join(dir, `${id}.json`),
@@ -43,33 +45,72 @@ async function writeFlowHandshake(id: string, port: number, token = 'tok'): Prom
   );
 }
 
+/** The published two-file contract: persistent identity + session. */
+async function writeSplitFlowApp(
+  id: string,
+  session: { port: number; token: string } | null,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(dir, `${id}.json`),
+    JSON.stringify({ schema: 1, app: id, appVersion: '1.0.0', kind: 'flow' }),
+  );
+  if (session) {
+    await fs.writeFile(
+      path.join(dir, `${id}.session.json`),
+      JSON.stringify({ port: session.port, token: session.token, pid: 1 }),
+    );
+  }
+}
+
 describe('handshake dir', () => {
   it('honors the CARDMIRROR_BRIDGE_DIR override', () => {
     expect(bridgeDirPath()).toBe(dir);
   });
-  it('writes and deletes the cardmirror mirror file', async () => {
+  it('splits identity from session; quit clears ONLY the session', async () => {
     await writeCardmirrorHandshake(17699, 'secret');
-    const raw = JSON.parse(await fs.readFile(path.join(dir, 'cardmirror.json'), 'utf8'));
-    expect(raw).toMatchObject({ app: 'cardmirror', kind: 'editor', port: 17699, token: 'secret' });
+    const identity = JSON.parse(await fs.readFile(path.join(dir, 'cardmirror.json'), 'utf8'));
+    // Identity must NOT leak the session secrets into the never-deleted file.
+    expect(identity).toMatchObject({ app: 'cardmirror', kind: 'editor' });
+    expect(identity.token).toBeUndefined();
+    expect(identity.port).toBeUndefined();
+    const session = JSON.parse(
+      await fs.readFile(path.join(dir, 'cardmirror.session.json'), 'utf8'),
+    );
+    expect(session).toMatchObject({ port: 17699, token: 'secret' });
     await deleteCardmirrorHandshake();
-    await expect(fs.readFile(path.join(dir, 'cardmirror.json'))).rejects.toThrow();
+    // Session gone, identity persists — that's what keeps a closed app
+    // selectable in a peer's picker.
+    await expect(fs.readFile(path.join(dir, 'cardmirror.session.json'))).rejects.toThrow();
+    await expect(fs.readFile(path.join(dir, 'cardmirror.json'))).resolves.toBeDefined();
+  });
+  it('protects the token: dir 0700, files 0600 (POSIX)', async () => {
+    if (process.platform === 'win32') return; // no POSIX modes there
+    await writeCardmirrorHandshake(17699, 'secret');
+    expect(((await fs.stat(dir)).mode & 0o777).toString(8)).toBe('700');
+    const sess = await fs.stat(path.join(dir, 'cardmirror.session.json'));
+    expect((sess.mode & 0o777).toString(8)).toBe('600');
   });
 });
 
 describe('scanFlowApps', () => {
-  it('returns live flow apps only, with the token sent on ping', async () => {
+  it('lists closed apps too, with a live running flag; token sent on ping', async () => {
     let sawToken = '';
     const live = await listen((req, res) => {
       sawToken = String(req.headers[BRIDGE_TOKEN_HEADER.toLowerCase()] ?? '');
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ ok: true }));
     });
-    await writeFlowHandshake('ebb', live.port, 'tok-live');
-    await writeFlowHandshake('dead', 1, 'tok-dead'); // nothing listens on port 1
+    await writeSplitFlowApp('ebb', { port: live.port, token: 'tok-live' });
+    await writeSplitFlowApp('closed', null); // identity only — not launched
+    await writeFlowHandshake('dead', 1, 'tok-dead'); // stale session (port 1)
     await fs.writeFile(path.join(dir, 'broken.json'), '{not json');
     await writeCardmirrorHandshake(17699, 's'); // kind editor — excluded
     const apps = await scanFlowApps();
-    expect(apps.map((a) => a.id)).toEqual(['ebb']);
+    const byId = new Map(apps.map((a) => [a.id, a.running]));
+    expect([...byId.keys()].sort()).toEqual(['closed', 'dead', 'ebb']);
+    expect(byId.get('ebb')).toBe(true);
+    expect(byId.get('closed')).toBe(false); // listed — selection must not require running
+    expect(byId.get('dead')).toBe(false); // stale session reads as not-running, not absent
     expect(sawToken).toBe('tok-live');
     live.close();
   });
@@ -93,16 +134,22 @@ describe('flowPost', () => {
     expect(got).toMatchObject({ url: '/flow/send', token: 'tok', body: { mode: 'column' } });
     live.close();
   });
-  it('maps a missing app and a dead app to typed errors', async () => {
+  it('maps a missing app, a not-launched app, and a dead app to typed errors', async () => {
     expect(await flowPost('nope', '/x', {})).toEqual({ ok: false, error: 'no-such-app' });
+    // Registered (identity on disk) but not launched: the RUNTIME error —
+    // callers can tell the user to start the app, not "no such app".
+    await writeSplitFlowApp('closed', null);
+    expect(await flowPost('closed', '/x', {})).toEqual({ ok: false, error: 'app-not-running' });
     await writeFlowHandshake('dead', 1);
     expect(await flowPost('dead', '/x', {})).toEqual({ ok: false, error: 'app-not-running' });
   });
-  it('rejects out-of-range and non-integer ports', async () => {
+  it('treats out-of-range and non-integer ports as no session (not-running)', async () => {
+    // The identity half of these files is legible — only the session part
+    // is garbage — so the app is "registered but unreachable".
     await writeFlowHandshake('badport', 0); // helper writes port 0
     await writeFlowHandshake('floatport', 1.5 as any);
-    expect(await flowPost('badport', '/x', {})).toEqual({ ok: false, error: 'no-such-app' });
-    expect(await flowPost('floatport', '/x', {})).toEqual({ ok: false, error: 'no-such-app' });
+    expect(await flowPost('badport', '/x', {})).toEqual({ ok: false, error: 'app-not-running' });
+    expect(await flowPost('floatport', '/x', {})).toEqual({ ok: false, error: 'app-not-running' });
   });
   it('ignores oversized handshake files even when otherwise valid', async () => {
     let pinged = false;
