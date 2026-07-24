@@ -718,7 +718,11 @@ export class NavigationPanel {
    * entries. Existing user-expanded parents are preserved.
    *
    * Also triggers a synchronous re-render and updates the latest doc
-   * snapshot — call after a transaction has applied.
+   * snapshot — call after the transaction has applied but BEFORE any
+   * other render of the post-drop doc: every render refreshes
+   * `lastSeenIds`, so an intervening render (a flushed debounce, a
+   * settings repaint) makes the new headings look already-seen and
+   * this becomes a silent no-op.
    */
   applyMaxLevelToNewHeadings(): void {
     const view = this.view;

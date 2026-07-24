@@ -1528,13 +1528,18 @@ class MultiPaneShell {
         ) {
           const targetSlot = this.findSlotByView(lastTargetView);
           if (targetSlot?.visible) {
-            // Flush the pane's debounced heavy update so this runs
-            // against the post-drop doc and the new IDs are visible
-            // (flush, not just cancel — the timer also owes the
-            // word-count refresh).
             const rec = targetSlot.visible;
-            flushHeavyUpdateNow(rec);
+            // ORDER CONSTRAINT: the collapse diff must run BEFORE any
+            // render of the post-drop doc — every render refreshes the
+            // nav's seen-ids baseline, so a render first makes the
+            // dropped headings look "already seen" and the collapse
+            // no-ops (the drop then lands fully expanded, ignoring the
+            // pane's depth setting). applyMaxLevelToNewHeadings reads
+            // view.state.doc directly and re-renders itself; the flush
+            // afterwards still pays the caret resync + word count the
+            // debounced timer owes.
             rec.navPanel.applyMaxLevelToNewHeadings();
+            flushHeavyUpdateNow(rec);
           }
         }
         lastSourceView = null;

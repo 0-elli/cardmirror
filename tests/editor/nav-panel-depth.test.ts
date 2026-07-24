@@ -91,3 +91,88 @@ describe('nav-pane depth: default-for-new-docs semantics', () => {
     view2.destroy();
   });
 });
+
+describe('nav-pane depth: content dropped in from another pane', () => {
+  /** Labels of the currently RENDERED nav rows. */
+  function renderedLabels(panel: NavigationPanel): string[] {
+    const list = (panel as unknown as { listEl: HTMLElement }).listEl;
+    return [...list.querySelectorAll('.pmd-nav-label')].map((el) => el.textContent ?? '');
+  }
+  /** A block section (block heading + one card) as insertable nodes. */
+  function blockSection(name: string) {
+    return [
+      schema.nodes['block']!.create({ id: newHeadingId() }, schema.text(name)),
+      schema.nodes['card']!.create(null, [
+        schema.nodes['tag']!.create({ id: newHeadingId() }, schema.text(`${name} card`)),
+        schema.nodes['card_body']!.create(null, schema.text('body')),
+      ]),
+    ];
+  }
+
+  it('applyMaxLevelToNewHeadings collapses freshly arrived headings to the pane depth', () => {
+    // The cross-pane drop contract (field report 2026-07-24: dragged
+    // headers landed fully expanded, ignoring the destination pane's
+    // depth). navMaxLevel 3 = blocks collapsed by default.
+    settings.set('navMaxLevel', 3);
+    const view = makeView();
+    const panel = new NavigationPanel(document.createElement('div'));
+    panel.attach(view);
+    // Simulate the drop: a new block section lands in the doc.
+    const tr = view.state.tr.insert(
+      view.state.doc.content.size,
+      blockSection('Dropped'),
+    );
+    view.updateState(view.state.apply(tr));
+    panel.applyMaxLevelToNewHeadings();
+    // The dropped block renders collapsed: its card row is hidden.
+    const labels = renderedLabels(panel);
+    expect(labels).toContain('Dropped');
+    expect(labels).not.toContain('Dropped card');
+    panel.destroy();
+    view.destroy();
+  });
+
+  it('an intervening render eats the diff — the reason the shell must apply BEFORE flushing', () => {
+    // Pins the hazard the drop handler's ordering comment describes:
+    // every render refreshes the seen-ids baseline, so render-then-apply
+    // is a silent no-op and the drop lands expanded. If this test ever
+    // "fixes itself", the baseline semantics changed — revisit the
+    // shell's ordering constraint.
+    settings.set('navMaxLevel', 3);
+    const view = makeView();
+    const panel = new NavigationPanel(document.createElement('div'));
+    panel.attach(view);
+    const tr = view.state.tr.insert(
+      view.state.doc.content.size,
+      blockSection('Dropped'),
+    );
+    view.updateState(view.state.apply(tr));
+    panel.update(view.state.doc); // the intervening render (e.g. a flushed debounce)
+    panel.applyMaxLevelToNewHeadings();
+    expect(renderedLabels(panel)).toContain('Dropped card'); // expanded — diff was eaten
+    panel.destroy();
+    view.destroy();
+  });
+
+  it('a user-expanded existing block stays expanded across a drop', () => {
+    settings.set('navMaxLevel', 3);
+    const view = makeView();
+    const panel = new NavigationPanel(document.createElement('div'));
+    panel.attach(view);
+    // Expand the pre-existing block by toggling its collapse off.
+    const blockId = view.state.doc.firstChild!.attrs['id'] as string;
+    (panel as unknown as { collapsed: Set<string> }).collapsed.delete(blockId);
+    panel.update(view.state.doc);
+    const tr = view.state.tr.insert(
+      view.state.doc.content.size,
+      blockSection('Dropped'),
+    );
+    view.updateState(view.state.apply(tr));
+    panel.applyMaxLevelToNewHeadings();
+    const labels = renderedLabels(panel);
+    expect(labels).toContain('Tag'); // existing block still expanded
+    expect(labels).not.toContain('Dropped card'); // newcomer collapsed
+    panel.destroy();
+    view.destroy();
+  });
+});
