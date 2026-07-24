@@ -155,6 +155,25 @@ async function readAppFiles(
   return { identity, session };
 }
 
+/** Best-effort liveness for the pid a session file records. kill(0)
+ *  sends no signal — it only probes existence; EPERM means "exists but
+ *  not ours" (alive). A DEAD pid proves the file is stale: whatever
+ *  answers that port now is not the app that wrote it, so callers skip
+ *  the send instead of delivering to a stranger. PID recycling can make
+ *  a stale pid look alive — that merely degrades this guard to the
+ *  plain failed-send path, never worse (Shreeram review, 2026-07-24:
+ *  chosen over ping-first, which costs a round trip and can't tell the
+ *  app from a port squatter anyway). Unknown/absent pid never blocks. */
+function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 /** An aborted/timed-out fetch surfaces as AbortError, a nested
  *  AbortError cause, or (undici's deadline) TimeoutError. */
 function isTimeoutError(err: unknown): boolean {
@@ -201,7 +220,9 @@ export async function scanFlowApps(): Promise<FlowAppInfo[]> {
     if (!files || files.identity.kind !== 'flow') continue;
     candidates.push({ id, ...files });
   }
-  const alive = await Promise.all(candidates.map((c) => (c.session ? ping(c.session) : false)));
+  const alive = await Promise.all(
+    candidates.map((c) => (c.session && pidAlive(c.session.pid) ? ping(c.session) : false)),
+  );
   return candidates.map(({ id, identity }, i) => ({
     id,
     app: identity.app,
@@ -222,6 +243,9 @@ export async function flowPost(
   // Registered but no session = not launched right now. The runtime
   // error, not a missing app — callers can tell the user to start it.
   if (!files.session) return { ok: false, error: 'app-not-running' };
+  // Session file present but its writer is dead = stale file (crash
+  // without cleanup). Same runtime error, zero network.
+  if (!pidAlive(files.session.pid)) return { ok: false, error: 'app-not-running' };
   const { session } = files;
   const routePath = route.startsWith('/') ? route : `/${route}`;
   // One deadline covers connect, headers, AND the body read: a peer that

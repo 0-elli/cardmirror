@@ -390,6 +390,14 @@ Rules:
   Sending to a registered app with no live session fails with
   `app-not-running`; a dead connection is a runtime error, not a
   reason to hide the app from selection.
+- Before SENDING, check the session file's `pid` is still alive (e.g.
+  `kill(pid, 0)`; treat EPERM as alive) and map a dead pid to
+  `app-not-running` without touching the port. A dead writer proves
+  the file is stale — whatever answers that port now is not the app
+  that wrote it. This is cheaper than a ping and catches what a ping
+  cannot (any process answers a knock); a crashed-and-relaunched app
+  self-heals by writing a fresh session file, and pid recycling merely
+  degrades the check to a plain failed send.
 - Create the directory `0700` and write both files `0600` where the
   platform supports modes — session tokens must not be readable by
   other users on a shared machine.

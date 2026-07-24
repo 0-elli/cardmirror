@@ -199,3 +199,45 @@ describe('flowPost', () => {
     live.close();
   });
 });
+
+describe('pid liveness (stale session files)', () => {
+  it('a session whose writer pid is dead reads as app-not-running — no bytes sent', async () => {
+    const { spawnSync } = await import('node:child_process');
+    // A process that has certainly exited: its pid is dead (and not
+    // plausibly recycled within this same test tick).
+    const deadPid = spawnSync(process.execPath, ['-e', '']).pid!;
+    let touched = false;
+    const live = await listen((_req, res) => {
+      touched = true;
+      res.end('{}');
+    });
+    // Live port, valid token — but the recorded writer is dead.
+    await fs.writeFile(
+      path.join(dir, 'stale.json'),
+      JSON.stringify({ schema: 1, app: 'stale', appVersion: '1.0.0', kind: 'flow' }),
+    );
+    await fs.writeFile(
+      path.join(dir, 'stale.session.json'),
+      JSON.stringify({ port: live.port, token: 'tok', pid: deadPid }),
+    );
+    expect(await flowPost('stale', '/x', {})).toEqual({ ok: false, error: 'app-not-running' });
+    expect(touched).toBe(false); // the stranger behind the port never heard from us
+    live.close();
+  });
+
+  it('our own (alive) pid never blocks the send', async () => {
+    const live = await listen((_req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await writeSplitFlowApp('livepid', { port: live.port, token: 'tok' });
+    // Overwrite the session with our own pid — definitely alive.
+    await fs.writeFile(
+      path.join(dir, 'livepid.session.json'),
+      JSON.stringify({ port: live.port, token: 'tok', pid: process.pid }),
+    );
+    const res = await flowPost('livepid', '/x', {});
+    expect(res.ok).toBe(true);
+    live.close();
+  });
+});
