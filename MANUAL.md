@@ -875,7 +875,9 @@ reference against a block practical without juggling windows.
 
 Enable **Settings → General → Multi-doc workspace** and reload. With one
 or two documents open it looks like a normal editor; the layout fills in
-as you open more.
+as you open more. An empty workspace — a fresh launch, or after closing
+the last open document — shows the [Home screen](#1-getting-started);
+opening or creating any document dismisses it.
 
 ### Working with slots
 
@@ -1133,6 +1135,12 @@ row shows the card's label, who sent it, and when. From a row:
 
 The flash is configurable — **Flash the Receive pill on a new card**: once,
 every 10 seconds until you open the pill, or off.
+
+The Receive pill also appears on the **Home screen** (bottom center), so
+session invitations can be seen and joined without opening a document
+first. Received *cards* still need an open document to insert into —
+while the Home screen is up, inserting shows a note instead, and the
+card stays in the pill.
 
 **Delivery:** cards arrive instantly over a live push connection, with a
 catch-up on every reconnect (waking from sleep included). Unretrieved cards

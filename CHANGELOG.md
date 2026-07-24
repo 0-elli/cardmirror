@@ -5,6 +5,88 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **The home screen comes to the three-pane workspace.** An empty
+  workspace — a fresh three-pane launch, or closing the last open
+  document — used to leave a bare window. It now lands on the home
+  screen, just like single-pane; opening or creating any document
+  dismisses it.
+
+- **Collaboration invites are joinable from the home screen.** The
+  Receive pill now appears on the home screen (bottom center), so you
+  can see and accept session invitations without opening an unrelated
+  document first — joining opens its own document anyway. Received
+  *cards* still need an open document: while the home screen is up,
+  inserting shows a note instead (the card stays in the pill), since
+  the destination document is hidden behind the home screen.
+
+### Changed
+
+- **Word exports are modern documents now.** Exported `.docx` files
+  used to open in Word's Compatibility Mode — the title-bar banner,
+  classic-only comment rendering, and a File → Convert prompt whose
+  re-save reflowed the document. Exports now declare the modern format,
+  so the banner is gone and Word's margin comment cards work.
+
+- **File previews show your font.** Slack, Gmail, and similar preview
+  thumbnails rendered exports in a generic serif no matter what your
+  display font was. Exports now carry your display font as the
+  document's base font, so previews approximate what you see in
+  CardMirror. Verbatim users still see their own configured fonts
+  exactly as before (per-machine style definitions always win); plain
+  Word without Verbatim now shows the author's font for
+  otherwise-unstyled text instead of Word's own default.
+
+- **Appearance settings, tidied.** Theme (light / dark / follow
+  system) is now the first thing in the Appearance tab, "Turn text
+  after a mark red" lives with the other Document typography settings,
+  and two sections ("Theme & chrome", "Nav pane & indicators") no
+  longer appear twice with stray rows.
+
+### Fixed
+
+- **Saving into a Dropbox folder no longer fails over and over.** On
+  Windows, the "temporarily locked by another program" error could
+  appear on nearly every save — Dropbox holds the just-saved file for
+  upload longer than the save's retry window, so the safe-save rename
+  kept losing. When the rename stays blocked, saving now falls back to
+  writing the file in place (the same thing pre-beta.16 saves did), so
+  the save lands instead of failing. The error now only appears when
+  even that is impossible.
+
+- **Documents with comments no longer trigger Word's repair prompt.**
+  Any file saved with a comment showed "unreadable content" when opened
+  in Word, with recovery bringing the comments back — a wrong
+  content-type declaration for one of the comment parts made Word
+  reject the whole package. Files saved from this version open clean.
+
+- **Fake line breaks from PDF pastes can now be cleaned.** Text copied
+  out of some PDFs arrives with exotic non-breaking spaces between
+  words, so pasted cards wrap mid-word at "line breaks" that backspace
+  can't remove. F2 plain paste now folds these to normal spaces on the
+  way in, and **Condense** or **Repair OCR/PDF text** cleans documents
+  that already have them.
+
+- **New documents are ready to type in.** Creating a document — in
+  either mode — now places the cursor in it and focuses the editor, so
+  typing (or arming a style) works immediately without clicking into
+  the page first.
+
+- **Three-pane New matches single-pane.** A new three-pane document
+  used to open with an "Untitled" pocket heading nobody asked for; it's
+  now the same bare paragraph single-pane creates. (This also fixes
+  new *speech* documents ignoring the "Seed new speech docs with a
+  Pocket heading" toggle when it's off.)
+
+- **Zooming quickly no longer jumps the page.** Rapid zooming — holding
+  the shortcut, spinning the wheel, or fast +/− clicks — could make the
+  viewport lurch as competing scroll corrections fought each other. A
+  whole zoom burst now holds one anchor and the latest correction wins,
+  so the text under your eyes stays put.
+
 ## 0.1.0-beta.17 — 2026-07-22
 
 ### Added

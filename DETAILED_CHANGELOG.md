@@ -5,6 +5,157 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+- **Atomic-save in-place fallback** (`apps/desktop/src/doc-writes.ts`
+  `writeAtomic`; field report: Windows + Dropbox, ELOCKED on nearly
+  every save). The beta.16 atomic write (tmp + rename) assumed
+  sub-second sharing-violation holds; a Dropbox upload of a large doc
+  holds the target for many seconds, and Windows refuses to rename over
+  a file whose holders lack delete-sharing — so the ~1.5s retry backoff
+  always lost and the rename-only pipeline turned a survivable hold
+  into a failed save. When a TRANSIENT code (EPERM/EACCES/EBUSY)
+  outlives the whole backoff, the write now degrades to a plain
+  in-place overwrite (the Word model: safe save when the filesystem
+  cooperates, full save when it doesn't) — an overwrite needs only
+  write-sharing, which sync clients grant. The tmp survives until the
+  overwrite lands (complete-bytes breadcrumb beside the journal-covered
+  target if a crash tears it); ELOCKED now surfaces only when even the
+  overwrite fails, and non-transient rename errors behave exactly as
+  before.
+
+- **commentsExtended content type** (`src/export/index.ts`; field
+  report: mac Word repair prompt on every commented file). The
+  `[Content_Types].xml` Override for `word/commentsExtended.xml`
+  declared an invented `application/vnd.ms-word.commentsExtended+xml`;
+  the Open XML SDK's constant is `application/vnd.openxmlformats-
+  officedocument.wordprocessingml.commentsExtended+xml`. Word validates
+  each part's declared content type against its relationship and fails
+  the WHOLE package on a mismatch (recovery re-reads loosely, which is
+  why repair always worked). Wrong since comments first shipped; our
+  importer reads parts by path, so round-trip tests never saw it.
+  Regression test pins both comment part content types to the SDK
+  constants.
+
+- **Modern-format exports: compatibilityMode 15**
+  (`src/ooxml/docx.ts` SETTINGS_XML). With no declared mode Word
+  assumes Word-2007-era (val 12) and opens exports in Compatibility
+  Mode — banner, modern margin comments disabled, and a File → Convert
+  re-save that reflows. The `w:compat` block sits AFTER
+  `w:attachedTemplate` (CT_Settings is schema-ordered; a misplaced
+  child fails the package) and the Verbatim-recognition payload in the
+  same part is untouched — both pinned by tests.
+
+- **Preview fonts: literal docDefaults = the author's display font**
+  (`src/ooxml/styles.ts` `canonicalStylesXml`, `toDocx`
+  `opts.defaultFont`, editor call sites pass `bodyFont`). docDefaults
+  carried only THEME font references with no theme part in the package,
+  so preview render farms fell back to Liberation Serif. Two-step fix,
+  field-verified against LibreOffice 26.2: write the display font as
+  literal `w:ascii`/`w:hAnsi` — and DROP the latin theme attributes,
+  because OOXML gives `asciiTheme` precedence and modern theme-aware
+  LO resolved it, found no theme part, and never read the literal.
+  Consequence, accepted deliberately: vanilla non-Verbatim Word shows
+  the author's font for fallback-styled text instead of Word's
+  built-in theme font (also immunizes files against the Calibri→Aptos
+  drift). Verbatim machines are untouched — verified against Verbatim
+  source: frmSettings writes fonts into STYLE definitions and
+  Startup.bas re-applies them per machine on open (UpdateStyles), and
+  style-level fonts outrank docDefaults everywhere it could matter.
+  eastAsia/cs theme refs stay (CJK keeps engine-appropriate defaults).
+  Core defaults to Calibri when no font is passed, so API callers and
+  tests stay deterministic.
+
+- **Exotic-whitespace folding** (`src/editor/exotic-whitespace.ts`
+  NEW; wired into F2 plain paste, Condense, and Repair OCR/PDF's new
+  deterministic pass 0; field file: 561× U+2007 FIGURE SPACE). PDF
+  extractors emit Unicode space separators as word gaps; U+2007 is
+  NON-breaking, so a pasted card has no legal wrap points and renders
+  fake mid-word line breaks no backspace can remove. Three disjoint
+  buckets: category-Zs spaces fold to ' ' (they can't encode breaks,
+  so folding is structurally lossless), in-text break characters
+  (VT/FF/NEL/LS/PS) become paragraph splits on paste and spaces in the
+  in-place cleanups, soft hyphens / zero-widths strip. Deliberately
+  NOT global — rich paste, file load, and serialize are untouched, so
+  existing documents never mutate silently. Repair's pass 0 runs
+  through the edit lease before the AI passes (the model can't echo
+  invisible characters in find-strings), collapses into the same
+  single undo, and reports its count in the toast.
+
+- **New-doc focus + caret** (`createNewDoc`, web in-place New, the
+  spawned-blank-window boot — gated on the home overlay). No creation
+  path focused the editor in any mode; three-pane's `createNewDoc` was
+  additionally the only slot-populating operation missing the
+  `view.focus()` its siblings have, and its blank doc parked the
+  default selection inside the pocket. The F-key named styles keep
+  their deliberate expand-to-word-only contract (an empty-block press
+  is a no-op; arming-for-typing belongs to the Mod- chords) — the
+  restored tests now say why.
+
+- **Blank-doc parity** (`src/editor/blank-doc.ts` NEW, shared by both
+  modes so the shapes cannot drift). The shell's blank doc seeded a
+  `pocket("Untitled")` heading — undocumented, its own docstring said
+  "one empty paragraph", and it broke the speech-doc pocket-OFF branch
+  twice (users who disabled the pocket got one anyway; that branch's
+  cursor math assumed a one-paragraph doc and landed inside the
+  phantom pocket's text). Pocket seeding remains exactly where it's
+  deliberate: `makeSpeechBlankDoc` behind its setting.
+
+- **Zoom burst anchoring** (`src/editor/scroll-anchor.ts` +
+  `index.ts` zoom gesture). Two races under rapid zooming: a step
+  landing while the previous restore's ≤6-rAF refine loop (cv:auto
+  materialization) was still running captured its anchor against a
+  half-corrected transient layout, and nothing retired the old loop —
+  concurrent loops alternated scrollTop writes toward different
+  targets. Fixes: `restoreViewportAnchor` takes a generation ticket
+  (latest wins — the precise-scroll `scrollGeneration` pattern,
+  shared with the read-mode toggle), the gesture anchor is HELD 250ms
+  past each commit and reused by steps inside the hold (one anchor
+  per burst → no transient captures, no cumulative drift; rapid +/−
+  clicks never coalesce, so the hold is what protects them), and the
+  commit window widens 70→120ms to cover default key-repeat. A
+  mid-burst Reset reuses the held anchor for the same reason. Test
+  scripts the interleave with queued rAFs.
+
+- **Appearance settings order** (`settings.ts` SETTING_METADATA). The
+  panel walks the metadata array and emits a section header on every
+  section change; three entries sat outside their sections' runs
+  (markUnreadAfterMarker amid the general settings, ribbonTooltipMode
+  after Custom ribbon buttons, flashcardDueDot after Card numbering),
+  rendering duplicate one-row headers and pushing "Turn text after a
+  mark red" above Theme. Every Appearance section now renders exactly
+  once, Theme first.
+
+- **Empty multi-pane workspace → home screen** (`multi-pane-shell.ts`
+  + boot). The home screen was already mounted in multi-pane with
+  slot-picker-routed actions but never auto-shown ("the workspace is
+  the landing surface" — reversed). Blank multi-pane boot shows home
+  before recovery (single-pane's order; the sidebar overlays it, and
+  a mode-switch reload's reopened docs hide it); any doc entering a
+  slot hides it (one chokepoint, `notifySlotPopulated`); the last doc
+  closing shows it again — checked BEFORE `handleSlotEmptied`'s
+  focused-slot early-return, since a clean doc's ✕ closes without
+  focusing its slot. goHome's "Return to doc" is suppressed when the
+  workspace is empty.
+
+- **Receive pill on the home screen**
+  (`home-screen.ts` `pillDock()` + `onVisibilityChange`,
+  `pairing-wiring.ts`, `receive-pill-ui.ts`, `index.ts`). Collab
+  invites arrive in the receive pill, which sat at z 220 under the
+  home overlay (z 500) — so accepting an invitation required opening
+  an unrelated document even though joining creates a NEW doc. The
+  pill NODE is re-parented into a bottom-centered dock owned by the
+  home screen while home is visible (listeners ride along; position
+  is the hub's layout, not the editor layer's tray anchor) and
+  returns to the tray on dismiss; dropzone + send pill stay
+  tray-only, covered by the overlay. Card inserts interdict while
+  home is up — the pills' view resolver reports no view, the insert
+  row toasts a shared message instead of writing into a hidden doc
+  (also upgrading the silent empty-workspace no-op), and the two
+  rebindable insert-most-recent commands carry the same guard. Joins
+  land in both modes: multi-pane via the slot-populated hook,
+  single-pane via `replaceWithSessionDoc` now hiding home.
+
 ## 0.1.0-beta.17 — 2026-07-22
 
 - **Custom speech-document filename template**
