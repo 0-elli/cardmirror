@@ -5,6 +5,28 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Fixed
+
+- **Drops next to live views land reliably.** Dragging content from
+  above a live view to a spot at or past it sometimes did nothing —
+  the drop indicator appeared, but releasing silently discarded the
+  move. The drop now lands every time.
+
+- **Undo works after moving a live view.** Moving a live view a short
+  distance could break undo entirely: pressing it did nothing, over
+  and over, until some other edit was made. Moves of live views now
+  undo like any other drag.
+
+- **Multi-selection drags from inside a linked copy are safe.**
+  Dragging a navigation-pane multi-selection that included more than
+  one heading from the same linked copy could delete content that
+  followed the copy. The copy now moves once, intact. Mixed
+  selections (a linked copy together with regular headings) also
+  offer the same drop slots no matter the order they were selected
+  in.
+
 ## 0.1.0-beta.19 — 2026-07-24
 
 ### Changed
