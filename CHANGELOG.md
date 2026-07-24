@@ -12,8 +12,11 @@ see `DETAILED_CHANGELOG.md`.
 - **A plugin system (beta).** Turn on Settings → General → Enable
   plugins to reveal a Plugins tab. Plugins extend CardMirror with new
   commands — searchable in the palette and rebindable like built-ins —
-  and can talk to companion apps such as the ebb flowing app over a
-  local bridge. Because plugins run with full access to the editor and
+  and can talk to companion apps such as the
+  [ebb](https://github.com/shreerammodi/ebb) flowing app over a local
+  bridge. The ebb integration plugin itself is still in development —
+  this release ships the plumbing so it installs the moment it's
+  published. Because plugins run with full access to the editor and
   your documents, installs are limited to a curated list, and every
   install asks for consent naming the exact GitHub repository it comes
   from. Developers: the API and bridge protocol are documented in the

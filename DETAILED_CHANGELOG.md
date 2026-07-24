@@ -7,8 +7,10 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.21 — 2026-07-24
 
-- **Plugin API v1 + cardmirror-bridge** (PR #25 by Shreeram Modi, merged
-  with the agreed modification set; ~4k LOC. Spec:
+- **Plugin API v1 + cardmirror-bridge** (PR #25 by Shreeram Modi,
+  author of the [ebb](https://github.com/shreerammodi/ebb) flowing
+  app — its integration plugin is still in development; merged with
+  the agreed modification set; ~4k LOC. Spec:
   `reference-docs/cardmirror-plugin-api.md` — bridge sections frozen,
   plugin-API sections draft). Plugins are one-GitHub-repo packages
   (manifest + bundle release assets) loaded into the renderer main
