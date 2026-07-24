@@ -318,11 +318,16 @@ export class EditorDragSurface implements DragSurface {
     const doc = view.state.doc;
     // Is the drag source a doc-level opaque unit — a whole live zone (linked copy)
     // or a live view? Then it drops as a doc-level unit (not level-scoped) and
-    // offers no target inside any zone.
+    // offers no target inside any zone. Checked across ALL items, not items[0]:
+    // a mixed multi-select (a promoted whole zone + a plain heading) must scope
+    // its slots the same way regardless of which item sits first in doc order.
     const session = dragController.getSession();
-    const srcItem = session?.items[0];
-    const srcNode = srcItem && session ? session.view.state.doc.nodeAt(srcItem.from) : null;
-    const srcIsZone = !!srcNode && (isTransclusionNode(srcNode) || isSelfRef(srcNode));
+    const srcIsZone =
+      !!session &&
+      session.items.some((it) => {
+        const n = session.view.state.doc.nodeAt(it.from);
+        return !!n && (isTransclusionNode(n) || isSelfRef(n));
+      });
     // `skipCite: true` — drop-indicator placement doesn't read
     // `entry.cite`, and the cite walk is the heaviest part of
     // `collectHeadings` (it descends every card looking for

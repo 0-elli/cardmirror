@@ -1681,11 +1681,16 @@ export class NavigationPanel {
     // Must match the editor surface's test: a self_ref is picked up at level 0,
     // so omitting it here made `entry.level > 0` skip EVERY heading, leaving only
     // the end-of-doc slot as a drop target for a live view.
-    const srcItem = dragController.getSession()?.items[0];
-    const srcNode = srcItem
-      ? dragController.getSession()!.view.state.doc.nodeAt(srcItem.from)
-      : null;
-    const srcIsZone = !!srcNode && (isTransclusionNode(srcNode) || isSelfRef(srcNode));
+    // Checked across ALL items, not items[0]: a mixed multi-select (a promoted
+    // whole zone + a plain heading) must scope its slots the same way
+    // regardless of which item sits first in doc order.
+    const session = dragController.getSession();
+    const srcIsZone =
+      !!session &&
+      session.items.some((it) => {
+        const n = session.view.state.doc.nodeAt(it.from);
+        return !!n && (isTransclusionNode(n) || isSelfRef(n));
+      });
 
     for (const li of items) {
       const entry = this.liEntries.get(li);
