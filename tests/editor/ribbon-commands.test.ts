@@ -4758,6 +4758,44 @@ describe('cycleTheme command', () => {
   });
 });
 
+// ── minimizeWindow command ───────────────────────────────────────────
+// Restores the stock macOS Cmd+M as a first-class, rebindable command
+// (field request 2026-07-24). The OS minimize itself is a host IPC wired
+// through RibbonContext in index.ts; here we lock down the registry
+// plumbing: registered, labeled, searchable, DEFAULT Mod-m, ctx dispatch.
+describe('minimizeWindow command', () => {
+  it('is registered with a label and defaults to Mod-m (the stock Cmd+M)', () => {
+    expect(RIBBON_COMMAND_IDS).toContain('minimizeWindow');
+    expect(RIBBON_COMMAND_LABELS.minimizeWindow).toBe('Minimize Window');
+    expect(DEFAULT_RIBBON_KEYS.minimizeWindow).toBe('Mod-m');
+  });
+
+  it('is searchable by "minimize"', () => {
+    expect(RIBBON_COMMAND_ALIASES.minimizeWindow).toEqual(
+      expect.arrayContaining(['minimize']),
+    );
+  });
+
+  it('binds Mod-m in the default keymap', () => {
+    let calls = 0;
+    const ctx = { minimizeWindow: () => { calls++; } } as unknown as RibbonContext;
+    const km = buildRibbonKeymap({}, ctx);
+    expect(km['Mod-m']).toBeDefined();
+    expect(km['Mod-m']!(null as never, () => {})).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it('dispatches to ctx.minimizeWindow only when a dispatch fn is present', () => {
+    let calls = 0;
+    const ctx = { minimizeWindow: () => { calls++; } } as unknown as RibbonContext;
+    const cmd = getRibbonCommand('minimizeWindow', ctx);
+    expect(cmd(null as never, undefined)).toBe(true);
+    expect(calls).toBe(0);
+    expect(cmd(null as never, () => {})).toBe(true);
+    expect(calls).toBe(1);
+  });
+});
+
 // ── deleteCurrentHeading command ─────────────────────────────────────
 // The structure-deletion logic itself is covered by
 // delete-current-heading.test.ts. Here we lock down the registry

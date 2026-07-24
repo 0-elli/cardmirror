@@ -170,6 +170,7 @@ interface ElectronAPI {
     enginePath?: string | null,
   ): Promise<{ ok: boolean; path?: string; error?: string }>;
   getPathForFile(file: File): string;
+  minimizeWindow?(): Promise<void>;
   readFileAtPath(filePath: string): Promise<{
     name: string;
     bytes: Uint8Array;
@@ -551,6 +552,11 @@ export class ElectronHost implements Host {
    *  when the path is missing / unreadable (caller prunes the
    *  stale recent). ElectronHost-only — the home screen guards
    *  on host kind before calling. */
+  /** Minimize this OS window. No-ops gracefully on an older preload. */
+  async minimizeWindow(): Promise<void> {
+    await api().minimizeWindow?.();
+  }
+
   async readFileAtPath(filePath: string): Promise<{
     name: string;
     bytes: Uint8Array;

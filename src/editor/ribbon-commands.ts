@@ -4350,6 +4350,10 @@ export type RibbonCommandId =
   | 'adjustFontSizeDown'
   | 'applyFontColor'
   | 'openSettings'
+  // Minimize the OS window. Desktop-only; the macOS Window menu's
+  // Minimize item routes through this same command so its accelerator
+  // follows user rebinds (Mod-m default restores the stock Cmd+M).
+  | 'minimizeWindow'
   // Cycle the theme setting light → dark → system → light. No default
   // binding; bind via Settings → Keyboard shortcuts.
   | 'cycleTheme'
@@ -4554,6 +4558,7 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'adjustFontSizeDown',
   'applyFontColor',
   'openSettings',
+  'minimizeWindow',
   'cycleTheme',
   'cycleTimerPreset',
   'flipQuoteDirection',
@@ -4726,6 +4731,7 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   adjustFontSizeDown: 'Decrease Font Size by 1pt',
   applyFontColor: 'Apply Font Color',
   openSettings: 'Open Settings',
+  minimizeWindow: 'Minimize Window',
   cycleTheme: 'Cycle Theme (Light → Dark → System)',
   cycleTimerPreset: 'Cycle Timer Preset (College → High School → Pomodoro)',
   flipQuoteDirection: 'Flip Quote Direction',
@@ -4773,6 +4779,7 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
  * Keep entries lowercase. Only commands that need an alias appear here.
  */
 export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly string[]>> = {
+  minimizeWindow: ['minimize', 'hide window', 'window menu'],
   collabStartSession: ['collaborate', 'coedit', 'co-edit', 'share session', 'live edit'],
   collabJoinSession: ['join session', 'share code', 'coedit'],
   collabCopyShareCode: ['share code', 'invite code', 'session code'],
@@ -5085,6 +5092,8 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   adjustFontSizeDown: '',
   applyFontColor: '',
   openSettings: '',
+  // Stock macOS chord; also works on Win/Linux. Rebindable like all.
+  minimizeWindow: 'Mod-m',
   cycleTheme: '',
   cycleTimerPreset: '',
   flipQuoteDirection: '',
@@ -5314,6 +5323,8 @@ export interface RibbonContext {
    *  ribbon-button counterparts. All optional (default no-op) so
    *  tests and headless callers don't have to wire them up. */
   openSettings: () => void;
+  /** Minimize this OS window (desktop only; no-op elsewhere). */
+  minimizeWindow: () => void;
   /** Cycle the theme setting light → dark → system → light. */
   cycleTheme: () => void;
   /** Cycle the timer profile College → High School → Pomodoro (wraps). */
@@ -5417,6 +5428,7 @@ const DEFAULT_RIBBON_CONTEXT: RibbonContext = {
   toggleNavPane: () => {},
   lastFontColor: () => null,
   openSettings: () => {},
+  minimizeWindow: () => {},
   cycleTheme: () => {},
   cycleTimerPreset: () => {},
   toggleParagraphIntegrity: () => {},
@@ -6128,6 +6140,12 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
       return (_state, dispatch) => {
         if (!dispatch) return true;
         ctx.openSettings();
+        return true;
+      };
+    case 'minimizeWindow':
+      return (_state, dispatch) => {
+        if (!dispatch) return true;
+        ctx.minimizeWindow();
         return true;
       };
     case 'cycleTheme':

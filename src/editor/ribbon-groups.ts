@@ -174,6 +174,7 @@ export const RIBBON_GROUPS: RibbonGroup[] = [
       'wordCountSelection',
       'openSettings',
       'cycleTheme',
+      'minimizeWindow',
       'openShortcutsReference',
     ],
   },

@@ -59,6 +59,8 @@ export function isRibbonCommandAvailable(id: RibbonCommandId): boolean {
     );
   }
   if (id === 'openCardCutter') return settings.get('cardCutterEnabled') === true;
+  // Browsers can't minimize their own window — desktop only.
+  if (id === 'minimizeWindow') return getElectronHost() !== null;
   // Creating/refreshing a live zone reads other files from disk — desktop only.
   // Detach works on an already-cached zone, so it stays available everywhere.
   if (

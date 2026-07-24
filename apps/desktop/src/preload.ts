@@ -143,6 +143,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Open the OS file manager at the crash-dumps folder. */
   openCrashDumpsFolder: () => ipcRenderer.invoke('host:open-crash-dumps'),
 
+  /** Minimize this OS window (the `minimizeWindow` ribbon command /
+   *  macOS Window-menu Minimize). */
+  minimizeWindow: () => ipcRenderer.invoke('host:minimize-window'),
+
   /** Renderer accessibility tree toggle (default off — works around a known
    *  Chromium AX crash). Reads/writes a machine-local pref; changing it needs an
    *  app restart. `isAccessibilitySupportActive` reports whether an assistive-tech

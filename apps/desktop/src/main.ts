@@ -600,6 +600,12 @@ ipcMain.handle('host:open-crash-dumps', async () => {
   await shell.openPath(app.getPath('crashDumps'));
 });
 
+/** Minimize the calling window — the `minimizeWindow` ribbon command
+ *  (Mod-m default) and the macOS Window-menu Minimize item. */
+ipcMain.handle('host:minimize-window', (event) => {
+  ownerWindow(event.sender)?.minimize();
+});
+
 // Renderer accessibility tree toggle (see the `--disable-renderer-accessibility`
 // block above). The pref is machine-local and read at startup; these let the
 // settings UI show + change it. Changing it needs a restart to take effect.
@@ -2404,6 +2410,39 @@ function buildMenu(): Menu {
       ],
     },
     viewMenu,
+    // Standard macOS Window menu. Minimize routes through the RENDERER
+    // command (not `role: 'minimize'`) so its accelerator follows user
+    // rebinds via the same menuBindings rebuild as every other item.
+    // Zoom is deliberately absent — the OS meaning (toggle window
+    // frame size) collides with the app's own text-zoom commands and
+    // would read as a broken duplicate. Bring All to Front is the
+    // native role: standard, no accelerator.
+    ...(isMac
+      ? [
+          {
+            label: 'Window',
+            submenu: [
+              {
+                label: 'Minimize',
+                accelerator: menuAccelerator('minimizeWindow'),
+                click: () => {
+                  // The timer pop-out has no renderer command listener —
+                  // minimize it directly. Doc windows go through the
+                  // renderer so menu and keyboard share one path.
+                  const w = BrowserWindow.getFocusedWindow();
+                  if (w && w.webContents.getURL().endsWith('timer.html')) {
+                    w.minimize();
+                    return;
+                  }
+                  dispatchMenuCommand('minimizeWindow');
+                },
+              },
+              { type: 'separator' as const },
+              { role: 'front' as const },
+            ],
+          } as MenuItemConstructorOptions,
+        ]
+      : []),
     helpMenu,
   ];
 

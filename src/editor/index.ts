@@ -1802,6 +1802,9 @@ const ribbonContext: RibbonContext = {
   // duplicate the host-side menu construction in two places.
   lastFontColor: () => settings.get('lastFontColor'),
   openSettings: () => settingsBtn.click(),
+  minimizeWindow: () => {
+    void getElectronHost()?.minimizeWindow();
+  },
   cycleTheme: () => {
     // light → dark → system → light. The settings subscription
     // re-runs applyTheme, so this is all the command needs to do.
@@ -7567,6 +7570,8 @@ const NATIVE_MENU_COMMANDS: RibbonCommandId[] = [
   'chromeScaleReset',
   'chromeScaleUp',
   'chromeScaleDown',
+  // Window
+  'minimizeWindow',
   // Help
   'openSettings',
   'openShortcutsReference',
