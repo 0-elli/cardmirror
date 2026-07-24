@@ -5,6 +5,42 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.20 — 2026-07-24
+
+- **Live-view read-only filter: per-step coordinate spaces**
+  (`src/editor/self-transclusion-plugin.ts` `editsInsideView`; field
+  report: intermittent dead drops near live views + a broken undo
+  chain after dragging one). The filter resolved EVERY step of a
+  transaction against the pre-transaction doc, but steps after the
+  first are expressed in intermediate coordinates. A drag's
+  delete-then-insert whose delete sat above a live view shifted the
+  insert position down; read against the wrong doc it landed
+  numerically inside the view's OLD span, and the whole transaction
+  was silently rejected. Same mechanism killed undo after moving a
+  view by less than its own size — and a filtered undo never pops the
+  history item, so undo stayed dead until the next fresh action. The
+  filter now checks each step against `tr.docs[i]`, the doc that step
+  actually applies to. Both symptoms pinned by tests.
+
+- **Drag move/copy: duplicate-range dedup**
+  (`src/editor/drag-controller.ts` `buildMoveTransaction` /
+  `buildCopyTransaction`). A nav multi-select of several headings
+  inside the SAME live zone promotes each to the identical whole-zone
+  range (`zoneRangeForEntry`); the move path deleted that range once
+  per duplicate, eating whatever content slid into the range after
+  the first cut. Items sharing an identical `[from,to]` now collapse
+  to one before any mutation.
+
+- **Whole-zone drag detection is order-independent**
+  (`src/editor/drag-editor-surface.ts`, `src/editor/nav-panel.ts`).
+  Both drop-indicator surfaces decided "is this a whole-zone drag"
+  from `session.items[0]` alone, so a mixed multi-select scoped its
+  slots differently depending on which item sat first in document
+  order. Both now treat a drag as doc-level if ANY dragged item is a
+  transclusion unit. (Also from the same audit: the stale `zonePos`
+  comment describing the pre-`cd30df3` drag regime was rewritten to
+  state the actual design.)
+
 ## 0.1.0-beta.19 — 2026-07-24
 
 - **Enter below a live view**
