@@ -33,6 +33,13 @@ export interface HeadingEntry {
    *  `id` is null, `pos` points at the window, and drag/collapse/context-menu
    *  are disabled. Set only by the nav layer (collectHeadings never emits it). */
   windowed?: boolean;
+  /** For a WINDOWED tag/analytic row that heads its card: the REAL document
+   *  position of the self_ref's mirrored card/analytic_unit wrapper — the key
+   *  `computeNumbering` files a live view's labels under (it numbers the
+   *  window's real children host-positionally). Null for windowed rows that
+   *  don't head a card; absent on base rows, which resolve their own wrapper
+   *  from `pos`. Set only by the nav layer. */
+  windowCardPos?: number | null;
 }
 
 export const TYPE_TO_LEVEL: Record<string, number> = {
