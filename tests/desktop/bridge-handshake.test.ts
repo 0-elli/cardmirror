@@ -41,7 +41,11 @@ function listen(handler: http.RequestListener): Promise<{ port: number; close: (
 async function writeFlowHandshake(id: string, port: number, token = 'tok'): Promise<void> {
   await fs.writeFile(
     path.join(dir, `${id}.json`),
-    JSON.stringify({ schema: 1, app: id, appVersion: '1.0.0', kind: 'flow', port, token, pid: 1 }),
+    // process.pid: a pid that is genuinely alive on EVERY platform. (This
+    // helper once wrote pid 1 — launchd/init on Unix, so EPERM → alive,
+    // but NONEXISTENT on Windows, where the pid-liveness guard correctly
+    // refused the send and broke these tests on windows-latest only.)
+    JSON.stringify({ schema: 1, app: id, appVersion: '1.0.0', kind: 'flow', port, token, pid: process.pid }),
   );
 }
 
@@ -57,7 +61,7 @@ async function writeSplitFlowApp(
   if (session) {
     await fs.writeFile(
       path.join(dir, `${id}.session.json`),
-      JSON.stringify({ port: session.port, token: session.token, pid: 1 }),
+      JSON.stringify({ port: session.port, token: session.token, pid: process.pid }),
     );
   }
 }
