@@ -106,6 +106,13 @@ export class FindReplaceBar {
   private lastNavHitMatches: unknown = null;
   private getView: () => EditorView | null;
   private getNavPanel: () => NavigationPanel | null;
+  /** The view + nav panel the bar opened against. Cleanup targets THESE,
+   *  not the lazily-resolved current ones: in multi-pane the shell closes
+   *  the bar mid-focus-switch, when "current" may already be the incoming
+   *  pane — lazy resolution there would clear the wrong pane and leave the
+   *  outgoing pane's match decorations and nav hit markers stuck. */
+  private openedView: EditorView | null = null;
+  private openedNavPanel: NavigationPanel | null = null;
   private mode: Mode = 'find';
   private sortMode: FindSortMode = 'categorized';
   /** Cursor position captured at `open()` time. Used as the wrap
@@ -449,6 +456,8 @@ export class FindReplaceBar {
     // feet as they step through).
     const view = this.getView();
     this.anchor = view ? view.state.selection.head : 0;
+    this.openedView = view;
+    this.openedNavPanel = this.getNavPanel();
 
     // Capture the selection range — used by the scope toggle as
     // the "search within this" scope. We capture once at open
@@ -496,7 +505,11 @@ export class FindReplaceBar {
     this.setResultsExpanded(!!settings.get('findResultsExpanded'), false);
   }
 
-  close(): void {
+  /** `refocusEditor: false` skips the editor refocus — for the pane-switch
+   *  close, where focus is already moving to another pane and yanking it
+   *  back to the outgoing editor would fight the click that caused the
+   *  switch. */
+  close(opts: { refocusEditor?: boolean } = {}): void {
     if (this.root.hidden) return;
     // Persist the last query before clearing the bar. Only write
     // non-empty values — an empty input on close would otherwise
@@ -506,12 +519,17 @@ export class FindReplaceBar {
     }
     this.root.hidden = true;
     this.resultsPanel.hidden = true;
-    const view = this.getView();
-    if (view) {
+    // A destroyed opened view (its doc was closed under the open bar) needs
+    // no clearing — the decorations died with it — and dispatching would
+    // throw. The lazy fallback only covers a bar that opened without a view.
+    const view = this.openedView ?? this.getView();
+    if (view && !view.isDestroyed) {
       view.dispatch(view.state.tr.setMeta(findReplaceKey, { type: 'clear' }));
-      view.focus();
+      if (opts.refocusEditor !== false) view.focus();
     }
-    this.getNavPanel()?.setFindHitPositions(null);
+    this.openedNavPanel?.setFindHitPositions(null);
+    this.openedView = null;
+    this.openedNavPanel = null;
     this.capturedScope = null;
     this.unsubscribeFromStateChanges();
   }
@@ -656,7 +674,7 @@ export class FindReplaceBar {
    *  mutation in the bar (setQuery / navigate / replace / etc.)
    *  and on close (clears decorations). */
   private syncNavHits(): void {
-    const nav = this.getNavPanel();
+    const nav = this.openedNavPanel;
     if (!nav) return;
     const s = this.getState();
     if (!s || s.matches.length === 0) {

@@ -7,7 +7,7 @@
  * read-only projection, so there is no sync/merge/conflict machinery here.
  */
 
-import { TextSelection, NodeSelection, type EditorState } from 'prosemirror-state';
+import { TextSelection, NodeSelection, type Command, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { newHeadingId } from '../schema/index.js';
 import { collectHeadings } from './headings.js';
@@ -33,6 +33,43 @@ export function selfRefSelectionPos(state: EditorState): number | null {
   const sel = state.selection;
   return sel instanceof NodeSelection && isSelfRef(sel.node) ? sel.from : null;
 }
+
+/** Enter with the caret at the BOTTOM of a live view. The mirror is
+ *  read-only, so the split Enter would normally produce is rejected by the
+ *  content plugin's filter — and the styled-Enter / tag handlers in the
+ *  chain claim the key first and die the same way, leaving it dead. At the
+ *  bottom edge the key has one legal meaning — continue BELOW the window —
+ *  so insert a fresh paragraph after the `self_ref` and move the caret into
+ *  it. Bound FIRST in the Enter chain so the doomed handlers never claim
+ *  the key. Anywhere else in the mirror, Enter stays a no-op. */
+export const enterBelowSelfRef: Command = (state, dispatch) => {
+  const sel = state.selection;
+  if (!sel.empty) return false;
+  const $head = sel.$head;
+  let refDepth = 0;
+  for (let d = $head.depth; d > 0; d--) {
+    if (isSelfRef($head.node(d))) {
+      refDepth = d;
+      break;
+    }
+  }
+  if (refDepth === 0) return false;
+  // "Bottom" = nothing between the caret and the window's end: the caret
+  // sits at its textblock's end and every wrapper up to the window is a
+  // last child.
+  if (!$head.parent.isTextblock || $head.parentOffset !== $head.parent.content.size) return false;
+  for (let d = $head.depth - 1; d >= refDepth; d--) {
+    if ($head.indexAfter(d) !== $head.node(d).childCount) return false;
+  }
+  if (!dispatch) return true;
+  const paragraph = state.schema.nodes['paragraph']!.createAndFill();
+  if (!paragraph) return false;
+  const after = $head.after(refDepth);
+  const tr = state.tr.insert(after, paragraph);
+  tr.setSelection(TextSelection.create(tr.doc, after + 1));
+  dispatch(tr.scrollIntoView());
+  return true;
+};
 
 /** Insert a `self_ref` at the cursor mirroring the section under `headingId`.
  *  Read-only projection — no content is copied into the doc. */

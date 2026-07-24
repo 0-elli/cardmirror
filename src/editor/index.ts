@@ -150,6 +150,7 @@ import {
 import { markUnreadPlugin, MARK_UNREAD_TOGGLE } from './mark-unread-plugin.js';
 import { makeSelfRefPlugin } from './self-transclusion-plugin.js';
 import {
+  enterBelowSelfRef,
   openInsertSelfRef,
   openInsertInDocCopy,
   selfRefSelectionPos,
@@ -1084,6 +1085,16 @@ function flushSelectionChrome(): void {
 /** Used by the multi-pane shell: route the shared ribbon /
  *  chrome through the currently-focused pane's view. */
 export function setActiveView(v: EditorView | null): void {
+  if (v !== view) {
+    // A real focus change — pane switch, stack switch, home screen — not
+    // the per-transaction re-run (same view). An open find bar belongs to
+    // the outgoing pane: close it now, while it can still clear that
+    // pane's match decorations and nav hit markers. Left open, closing it
+    // from the new pane clears the NEW pane's (empty) state and the old
+    // pane's highlights are stuck until find is reopened there. No
+    // refocus — focus is already moving.
+    findReplaceBar?.close({ refocusEditor: false });
+  }
   view = v;
   if (v) {
     currentDoc = v.state.doc;
@@ -4895,9 +4906,14 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
         // Mirror of the Backspace guard: never forward-node-select a card/body.
         blockDeleteNodeSelect(state, dispatch, view),
       Enter: (state, dispatch, view) =>
-        // "New paragraph on Enter" settings run first: returns false
-        // (untouched pipeline) unless the cursor is at the end of a
-        // structural block whose enterAfter* setting picks a style.
+        // Live-view bottom edge first: inside the read-only mirror the
+        // handlers below would claim the key and have their splits
+        // filtered (a dead key), so the escape-below-the-window path
+        // must win before any of them run.
+        enterBelowSelfRef(state, dispatch) ||
+        // "New paragraph on Enter" settings: returns false (untouched
+        // pipeline) unless the cursor is at the end of a structural
+        // block whose enterAfter* setting picks a style.
         enterWithConfiguredStyle(state, dispatch, view) ||
         enterAtTagEnd(state, dispatch, view) ||
         enterAtZoneStart(state, dispatch, view) ||
