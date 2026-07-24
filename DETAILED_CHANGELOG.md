@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 0.1.0-beta.20 — 2026-07-24
 
 - **Live-view read-only filter: per-step coordinate spaces**
   (`src/editor/self-transclusion-plugin.ts` `editsInsideView`; field
