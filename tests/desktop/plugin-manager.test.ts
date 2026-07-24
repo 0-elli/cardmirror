@@ -78,11 +78,10 @@ describe('checkInstallCollision', () => {
 
 describe('checkInstallAllowed (curated allowlist)', () => {
   it('allows an allowlisted repo while locked', () => {
-    expect(checkInstallAllowed('shreerammodi/cardmirror-ebb', false)).toBeNull();
     expect(checkInstallAllowed('shreerammodi/ebb', false)).toBeNull();
   });
   it('is case-insensitive about the ref', () => {
-    expect(checkInstallAllowed('ShreeramModi/CardMirror-ebb', false)).toBeNull();
+    expect(checkInstallAllowed('ShreeramModi/Ebb', false)).toBeNull();
   });
   it('blocks a non-allowlisted repo while locked', () => {
     expect(checkInstallAllowed('somebody/some-plugin', false)).toMatch(/curated/);

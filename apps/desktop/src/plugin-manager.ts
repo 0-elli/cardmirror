@@ -165,9 +165,10 @@ async function downloadAsset(release: GithubRelease, name: string): Promise<stri
  *      (installs are rare) with a short timeout.
  *   2. The last successful fetch is cached on disk, so an offline
  *      machine keeps the most recent list.
- *   3. The BAKED list below is the floor when neither is available —
- *      both plausible homes of the ebb integration plugin (same owner,
- *      so listing both widens nothing).
+ *   3. The BAKED list below is the floor when neither is available.
+ *      Confirmed-real repos ONLY — never a guessed slug (baked entries
+ *      ship in binaries; the dedicated ebb-plugin repo doesn't exist
+ *      yet, so its eventual slug is added on the RELAY when known).
  * A fetched list REPLACES the baked one (that's what makes revocation
  * possible), but an empty or malformed response reads as a failed
  * fetch, not as "block everything" — a server hiccup must not brick
@@ -175,7 +176,6 @@ async function downloadAsset(release: GithubRelease, name: string): Promise<stri
  */
 export const PLUGIN_INSTALL_ALLOWLIST: ReadonlySet<string> = new Set([
   'shreerammodi/ebb',
-  'shreerammodi/cardmirror-ebb',
 ]);
 const ALLOWLIST_FETCH_TIMEOUT_MS = 4000;
 const ALLOWLIST_MAX_ENTRIES = 200;
