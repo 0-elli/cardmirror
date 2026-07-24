@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 0.1.0-beta.21 — 2026-07-24
 
 - **Plugin API v1 + cardmirror-bridge** (PR #25 by Shreeram Modi, merged
   with the agreed modification set; ~4k LOC. Spec:
