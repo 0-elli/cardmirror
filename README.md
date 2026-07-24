@@ -410,7 +410,7 @@ formatting `bold`, `italic`, `strikethrough`, `superscript`,
 See [`src/schema/`](./src/schema/) for full specs and
 [`ARCHITECTURE.md §4`](./ARCHITECTURE.md) for design rationale.
 
-## Plugin API (beta)
+## Plugin API (experimental)
 
 The desktop app can load plugins — one GitHub repo per plugin,
 publishing a manifest + built bundle as release assets. A plugin

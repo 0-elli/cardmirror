@@ -2310,9 +2310,10 @@ remove one, **↺** to restore its default. A few window-level shortcuts
   navigation, comments), separate from the body font; includes
   dyslexia-friendly options.
 
-**Plugins (beta).** Settings → General → **Enable plugins** (restart
-required) reveals a Plugins tab where you can install extensions —
-initially the companion integration for the ebb flowing app. Plugins
+**Plugins (experimental).** The Settings → **Plugins** tab holds the
+master switch (**Enable plugins** — takes effect on the next launch)
+and the install list, where you can add extensions — initially the
+companion integration for the ebb flowing app. Plugins
 run with **full access to CardMirror and your documents**, so installs
 are limited to a curated list and every install shows a consent prompt
 naming the exact GitHub repository it comes from. A plugin's commands

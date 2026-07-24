@@ -9,8 +9,9 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Added
 
-- **A plugin system (beta).** Turn on Settings → General → Enable
-  plugins to reveal a Plugins tab. Plugins extend CardMirror with new
+- **An experimental plugin system.** The new Settings → Plugins tab
+  holds the master switch (Enable plugins; takes effect on the next
+  launch) and the install list. Plugins extend CardMirror with new
   commands — searchable in the palette and rebindable like built-ins —
   and can talk to companion apps such as the
   [ebb](https://github.com/shreerammodi/ebb) flowing app over a local
