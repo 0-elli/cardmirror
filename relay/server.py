@@ -220,16 +220,21 @@ def _push_to_streams(recipient: str, message: dict) -> None:
 
 
 # room id → open stream queues (single-worker only, like _streams)
-_room_streams: dict[str, set["asyncio.Queue[dict]"]] = {}
+# room id → {queue: sid}. sid = client-minted stream nonce (?sid= at
+# connect); presence POSTs carrying ?from=<same nonce> skip that queue
+# (no self-echo). No sid = never skipped (old clients unchanged).
+_room_streams: dict[str, dict["asyncio.Queue[dict]", Optional[str]]] = {}
 
 
-def _push_to_room(room_id: str, frame: dict) -> None:
-    """Runs ON the event loop; same shed-on-full semantics as
-    `_push_to_streams` (a catch-up `GET updates?after=` recovers)."""
+def _push_to_room(room_id: str, frame: dict, skip_sid: Optional[str] = None) -> None:
+    """Runs ON the loop; a full queue sheds the push — catch-up recovers.
+    `skip_sid` (presence only): no self-echo to the sender's stream."""
     queues = _room_streams.get(room_id)
     if not queues:
         return
-    for q in list(queues):
+    for q, sid in list(queues.items()):
+        if skip_sid is not None and sid == skip_sid:
+            continue
         try:
             q.put_nowait(frame)
         except asyncio.QueueFull:
@@ -404,11 +409,29 @@ def post_message(
     return JSONResponse({"msgId": msg_id}, status_code=202)
 
 
+def maybe_gzip_json(request: Request, payload: dict) -> Response:
+    """Negotiated compression for the blob-heavy JSON endpoints. The
+    ciphertext itself is incompressible, but its base64 EXPANSION gzips
+    away (~-25% on blob bodies). Fires only when the client advertised
+    gzip (every shipped client does); otherwise byte-identical to the
+    uncompressed response. SSE never routes through here."""
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    accepts = "gzip" in request.headers.get("accept-encoding", "").lower()
+    if accepts and len(body) > 500:
+        return Response(
+            gzip.compress(body, 6),
+            media_type="application/json",
+            headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+        )
+    return Response(body, media_type="application/json", headers={"Vary": "Accept-Encoding"})
+
+
 @app.get("/relay/messages", dependencies=[Depends(require_relay_token)])
 def get_messages(
+    request: Request,
     recipient: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
-) -> dict:
+) -> Response:
     # Lazy expiry via cutoff filter; the sweeper owns actual deletion.
     cutoff = datetime.utcnow() - TTL
     rows = (
@@ -425,7 +448,7 @@ def get_messages(
         {**row.body, "msgId": row.id, "receivedAt": _epoch_ms(row.created_at)}
         for row in rows
     ]
-    return {"messages": messages}
+    return maybe_gzip_json(request, {"messages": messages})
 
 
 @app.get("/relay/stream", dependencies=[Depends(require_relay_token)])
@@ -544,19 +567,26 @@ def post_room_update(
 
 @app.get("/relay/rooms/{room_id}/updates", dependencies=[Depends(require_relay_token)])
 def get_room_updates(
+    request: Request,
     room_id: str,
     after: int = Query(0, ge=0),
+    have_snap: Optional[int] = Query(None, alias="haveSnap", ge=0),
     db: Session = Depends(get_db),
-) -> dict:
+) -> Response:
     _room_or_error(db, room_id)
     out: dict = {}
     snap = db.get(RelayRoomSnapshot, room_id)
     floor = after
     if snap is not None and after < snap.covers_through_seq:
-        out["snapshot"] = {
-            "blob": snap.blob,
-            "coversThroughSeq": int(snap.covers_through_seq),
-        }
+        if have_snap is not None and have_snap == int(snap.covers_through_seq):
+            # Conditional snapshot: client already holds this exact one.
+            out["snapshotUnchanged"] = True
+            out["snapshotCovers"] = int(snap.covers_through_seq)
+        else:
+            out["snapshot"] = {
+                "blob": snap.blob,
+                "coversThroughSeq": int(snap.covers_through_seq),
+            }
         floor = int(snap.covers_through_seq)
     rows = (
         db.query(RelayRoomUpdate)
@@ -565,10 +595,13 @@ def get_room_updates(
         .limit(MAX_UPDATES_PER_PAGE)
         .all()
     )
+    # Compaction-epoch tag on every page (see the official relay: the
+    # client's incremental audit keys off this).
+    out["snapCovers"] = int(snap.covers_through_seq) if snap is not None else 0
     out["updates"] = [{"seq": int(r.id), "blob": r.blob} for r in rows]
     out["more"] = len(rows) == MAX_UPDATES_PER_PAGE
     out["lastSeq"] = int(rows[-1].id) if rows else floor
-    return out
+    return maybe_gzip_json(request, out)
 
 
 @app.post(
@@ -625,7 +658,11 @@ def post_room_snapshot(
     status_code=202,
     dependencies=[Depends(require_relay_token)],
 )
-async def post_room_presence(room_id: str, request: Request) -> JSONResponse:
+async def post_room_presence(
+    room_id: str,
+    request: Request,
+    sender: Optional[str] = Query(None, alias="from", max_length=64),
+) -> JSONResponse:
     """Ephemeral fan-out only — never stored, never touches the DB (this
     is the hot path at cursor-move rates). An unknown room simply has no
     open streams, so the frame goes nowhere."""
@@ -635,7 +672,7 @@ async def post_room_presence(room_id: str, request: Request) -> JSONResponse:
     if len(raw) > 64 * 1024:
         raise HTTPException(413, "presence too large")
     b64 = base64.b64encode(raw).decode("ascii")
-    _push_to_room(room_id, {"t": "p", "blob": b64})
+    _push_to_room(room_id, {"t": "p", "blob": b64}, skip_sid=sender)
     return JSONResponse({}, status_code=202)
 
 
@@ -643,6 +680,7 @@ async def post_room_presence(room_id: str, request: Request) -> JSONResponse:
 async def stream_room(
     request: Request,
     room_id: str,
+    sid: Optional[str] = Query(None, max_length=64),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """SSE: `event: hello` with the current cursor, then update/presence
@@ -653,7 +691,7 @@ async def stream_room(
         raise HTTPException(404, "no such room")
     if room.tombstoned:
         raise HTTPException(410, "session ended")
-    open_count = len(_room_streams.get(room_id, set()))
+    open_count = len(_room_streams.get(room_id, {}))
     if open_count >= MAX_STREAMS_PER_ROOM:
         raise HTTPException(409, "room is full")
     last_seq = _room_last_seq(db, room_id)
@@ -661,7 +699,7 @@ async def stream_room(
     db.commit()
 
     queue: "asyncio.Queue[dict]" = asyncio.Queue(maxsize=STREAM_QUEUE_MAX)
-    _room_streams.setdefault(room_id, set()).add(queue)
+    _room_streams.setdefault(room_id, {})[queue] = sid
 
     async def gen() -> AsyncIterator[str]:
         try:
@@ -679,7 +717,7 @@ async def stream_room(
         finally:
             peers = _room_streams.get(room_id)
             if peers is not None:
-                peers.discard(queue)
+                peers.pop(queue, None)
                 if not peers:
                     _room_streams.pop(room_id, None)
 

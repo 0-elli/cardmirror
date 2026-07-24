@@ -247,6 +247,70 @@ if (process.env.ROOMS !== '0') {
     await new Promise((r) => setTimeout(r, 300));
   }
 
+  // 12b. egress additions (2026-07-24): conditional snapshot, epoch tag,
+  // presence no-echo, negotiated gzip. All ADDITIVE — old params absent =
+  // old behavior, verified by the untouched checks above.
+  {
+    // snapCovers on every page + haveSnap conditional snapshot.
+    const gA = await (await fetch(`${BASE}/rooms/${roomId}/updates?after=0`, { headers: AUTH })).json();
+    const covers = gA.snapshot?.coversThroughSeq ?? 0;
+    check('rooms: snapCovers reported on every page', gA.snapCovers === covers,
+      `snapCovers=${gA.snapCovers} covers=${covers}`);
+    if (covers > 0) {
+      const cond = await (await fetch(
+        `${BASE}/rooms/${roomId}/updates?after=0&haveSnap=${covers}`, { headers: AUTH })).json();
+      check('rooms: haveSnap match withholds the snapshot',
+        cond.snapshot === undefined && cond.snapshotUnchanged === true && cond.snapCovers === covers,
+        JSON.stringify({ unchanged: cond.snapshotUnchanged, snapCovers: cond.snapCovers }));
+      const staleTag = await (await fetch(
+        `${BASE}/rooms/${roomId}/updates?after=0&haveSnap=${covers - 1}`, { headers: AUTH })).json();
+      check('rooms: stale haveSnap still ships the snapshot', !!staleTag.snapshot);
+    }
+
+    // presence no-echo: two streams with sids; ?from= skips the sender's.
+    const seenA = [];
+    const seenB = [];
+    const openSse = (sid, sink) => {
+      const ctl = new AbortController();
+      const done = fetch(`${BASE}/rooms/${roomId}/stream?sid=${sid}`, { headers: AUTH, signal: ctl.signal })
+        .then(async (res) => {
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          for (;;) {
+            const { done: d, value } = await reader.read();
+            if (d) return;
+            sink.push(dec.decode(value));
+          }
+        })
+        .catch(() => {});
+      return { ctl, done };
+    };
+    const a = openSse('echo-a', seenA);
+    const b = openSse('echo-b', seenB);
+    await new Promise((r) => setTimeout(r, 400));
+    await fetch(`${BASE}/rooms/${roomId}/presence?from=echo-a`, {
+      method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/octet-stream' },
+      body: 'presence-noecho-probe',
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    const bGot = seenB.join('').includes('"t":"p"');
+    const aGot = seenA.join('').includes('"t":"p"');
+    check('rooms: presence ?from= reaches peers but never echoes the sender',
+      bGot && !aGot, `peer=${bGot} senderEcho=${aGot}`);
+    a.ctl.abort(); b.ctl.abort();
+    await new Promise((r) => setTimeout(r, 300));
+
+    // negotiated gzip: a blob-heavy updates response compresses when the
+    // client advertises (node fetch always does), and the JSON round-trips.
+    const gz = await fetch(`${BASE}/rooms/${roomId}/updates?after=0`, { headers: AUTH });
+    const enc = gz.headers.get('content-encoding') ?? '';
+    const body = await gz.json();
+    const big = JSON.stringify(body).length > 500;
+    check('rooms: gzip negotiated on blob-heavy responses (and body round-trips)',
+      (!big || enc === 'gzip') && Array.isArray(body.updates),
+      `encoding=${enc || 'identity'} size>${500}=${big}`);
+  }
+
   // 13. unknown room vs tombstone
   const g404 = await fetch(`${BASE}/rooms/never-existed/updates?after=0`, { headers: AUTH });
   check('rooms: unknown room 404', g404.status === 404, String(g404.status));

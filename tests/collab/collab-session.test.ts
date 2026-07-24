@@ -519,3 +519,92 @@ describe('send-completeness (the field one-way desync)', () => {
     }
   }, 25_000);
 });
+
+describe('incremental history audit (egress discipline, 2026-07-24)', () => {
+  it('steady-state audits never re-download the room; a compaction epoch is verified exactly once', async () => {
+    // The old audit paged the ENTIRE room (snapshot included) from seq 0
+    // every 30 minutes on every client — measured at ~65% of all relay
+    // egress. The rewrite compares locally against maxima folded from
+    // bytes that already passed through, so a steady-state audit costs
+    // one ~100-byte probe, and a compaction costs ONE snapshot download.
+    const freshMock = await startRoomsMock();
+    const spyClient = new RoomsClient({
+      baseUrl: () => freshMock.url,
+      token: () => freshMock.token,
+    });
+    const calls: Array<{ after: number; haveSnap: number | undefined }> = [];
+    const orig = spyClient.fetchUpdates.bind(spyClient);
+    spyClient.fetchUpdates = (roomId, after, opts) => {
+      calls.push({ after, haveSnap: opts?.haveSnap });
+      return orig(roomId, after, opts);
+    };
+    try {
+      const { session: host, shareCode } = await CollabSession.host({
+        pmDoc: simpleDoc('audit egress doc'),
+        client: spyClient,
+        ...FAST,
+      });
+      const hostView = mkView(host.plugins());
+      await settle();
+      host.start();
+      const decoded = decodeShareCode(shareCode)!;
+      const joiner = await CollabSession.join({ ...decoded, client: spyClient, ...FAST });
+      const joinView = mkView(joiner.plugins());
+      await settle();
+      joiner.start();
+      await sleep(150);
+      typeAfter(joinView, 'egress', ' JOINER-WORDS');
+      await sleep(200);
+
+      // Steady state: the audit makes exactly one from-cursor probe.
+      calls.length = 0;
+      await joiner.auditRoomHistory();
+      expect(calls.length).toBe(1);
+      expect(calls[0]!.after).toBeGreaterThan(0);
+      const updatesBefore = freshMock.updateCount(host.roomId);
+
+      // A (valid) compaction lands: full room state, covering everything.
+      const { importRoomKey, encryptBlob: seal, bytesToBase64: b64, decryptBlob: open_ } =
+        await import('../../src/editor/collab/collab-crypto.js');
+      const { LoroDoc } = await import('loro-crdt');
+      const key = await importRoomKey(decoded.keyBytes);
+      const all = new LoroDoc();
+      let after = 0;
+      for (;;) {
+        const page = await orig(host.roomId, after);
+        if (page.snapshot) all.import(await open_(key, page.snapshot.blob));
+        for (const u of page.updates) all.import(await open_(key, u.blob));
+        after = page.lastSeq;
+        if (!page.more) break;
+      }
+      const covers = after;
+      await spyClient.postSnapshot(
+        host.roomId,
+        b64(await seal(key, all.export({ mode: 'snapshot' }))),
+        covers,
+      );
+
+      // Next audit verifies the new epoch with at most two requests —
+      // and when the cursor sits behind the new covers, the PROBE itself
+      // returns the snapshot and the verify costs one request total.
+      calls.length = 0;
+      await joiner.auditRoomHistory();
+      expect(calls.length).toBeLessThanOrEqual(2);
+
+      // Epoch verified — audits are probe-only again, and the verified
+      // compaction produced NO false-positive repost.
+      calls.length = 0;
+      await joiner.auditRoomHistory();
+      expect(calls.filter((c) => c.after === 0).length).toBe(0);
+      expect(calls.length).toBe(1);
+      expect(freshMock.updateCount(host.roomId)).toBeLessThanOrEqual(updatesBefore);
+
+      await joiner.stop();
+      await host.stop();
+      hostView.destroy();
+      joinView.destroy();
+    } finally {
+      await freshMock.close();
+    }
+  }, 25_000);
+});

@@ -165,6 +165,30 @@ export class CollabSession {
    *  nobody listens). Hard-restart reconnects to the live instance. */
   private awaitingEcho: { seq: number; at: number } | null = null;
   private maxStreamSeq = 0;
+  /** Opaque per-session stream nonce: sent as ?sid= on the stream and
+   *  ?from= on presence posts so the server skips echoing our own
+   *  cursor frames back (pure egress savings — the cursor layer drops
+   *  own-peer frames anyway). */
+  private readonly streamSid: string = Math.random().toString(36).slice(2, 14);
+  /** ROOM-HOLDINGS bookkeeping for the incremental history audit.
+   *  The room's content is (verified snapshot) + (update rows above its
+   *  coversThroughSeq). We fold version-vector maxima from every blob
+   *  that passes through this client anyway — imports, our own posts,
+   *  snapshots we download or upload — so the periodic audit compares
+   *  locally instead of re-downloading the entire room every cycle
+   *  (which was ~65% of all relay egress, 2026-07-24 audit).
+   *  `tailMetas` holds per-row maxima ABOVE the verified snapshot; a
+   *  compaction (covers advance) invalidates rows at-or-below the new
+   *  covers, so they are pruned once the NEW snapshot's own meta is
+   *  verified — never trusted transitively. */
+  private roomSnapVv = new Map<string, number>();
+  private verifiedSnapCovers = 0;
+  private knownSnapCovers = 0;
+  private tailMetas: Array<{ seq: number; vv: Array<[string, number]> }> = [];
+  /** Bookkeeping overflow (huge unpruned tail) → the next audit falls
+   *  back to the ground-truth full scan instead of trusting a capped
+   *  accumulator. */
+  private tailOverflow = false;
   /** True while imported ops sit in Loro's causal-dependency queue.
    *  COMPACTION MUST NOT RUN in this state: the snapshot would omit the
    *  pending ops while its coversThroughSeq truncates their stored
@@ -353,6 +377,7 @@ export class CollabSession {
       token: this.client.opts.token,
       fetchImpl: this.client.opts.fetchImpl,
       roomId: this.roomId,
+      sid: this.streamSid,
       minBackoffMs: this.streamOpts.minBackoffMs,
       maxBackoffMs: this.streamOpts.maxBackoffMs,
       callbacks: {
@@ -527,6 +552,7 @@ export class CollabSession {
             this.roomId,
             await encryptBlob(this.key, entry.blob),
           );
+          this.foldTailMeta(seq, entry.blob);
           this.outQueue.shift();
           this.ackedVersion =
             this.outQueue.length === 0 ? this.lastSentVersion : entry.version;
@@ -601,6 +627,70 @@ export class CollabSession {
     }, delay);
   }
 
+  // --- room-holdings bookkeeping (incremental audit) ---
+
+  private static readonly TAIL_METAS_CAP = 4000;
+
+  /** Fold one update row's meta into the tail ledger. `plain` is the
+   *  DECRYPTED blob (imports) or the pre-encryption bytes (our posts). */
+  private foldTailMeta(seq: number, plain: Uint8Array): void {
+    if (seq <= this.verifiedSnapCovers) return; // already inside the verified snapshot
+    if (this.tailMetas.length >= CollabSession.TAIL_METAS_CAP) {
+      this.tailOverflow = true;
+      return;
+    }
+    try {
+      const meta = decodeImportBlobMeta(plain, false);
+      this.tailMetas.push({ seq, vv: [...meta.partialEndVersionVector.toJSON()] });
+    } catch {
+      /* undecodable — the audit's escalation full-scan remains the backstop */
+    }
+  }
+
+  /** A snapshot whose CONTENT we have actually decoded (downloaded and
+   *  decrypted, or exported by us) becomes the verified floor; tail rows
+   *  it covers are pruned. Trust is never transitive — a covers advance
+   *  alone (knownSnapCovers) verifies nothing. */
+  private foldSnapshotMeta(plain: Uint8Array, covers: number): void {
+    try {
+      const meta = decodeImportBlobMeta(plain, false);
+      const vv = new Map<string, number>();
+      for (const [peer, counter] of meta.partialEndVersionVector.toJSON()) vv.set(peer, counter);
+      this.roomSnapVv = vv;
+      this.verifiedSnapCovers = covers;
+      if (covers > this.knownSnapCovers) this.knownSnapCovers = covers;
+      this.tailMetas = this.tailMetas.filter((t) => t.seq > covers);
+      this.tailOverflow = this.tailMetas.length >= CollabSession.TAIL_METAS_CAP;
+    } catch {
+      /* undecodable snapshot — keep the previous verified state */
+    }
+  }
+
+  private noteSnapCovers(covers: number): void {
+    if (covers > this.knownSnapCovers) this.knownSnapCovers = covers;
+  }
+
+  /** Everything we can prove the room currently holds: the verified
+   *  snapshot's vv merged with the surviving tail rows' maxima. */
+  private roomHoldings(): Map<string, number> {
+    const out = new Map(this.roomSnapVv);
+    for (const t of this.tailMetas) {
+      for (const [peer, counter] of t.vv) {
+        if ((out.get(peer) ?? 0) < counter) out.set(peer, counter);
+      }
+    }
+    return out;
+  }
+
+  /** Does the live doc hold ops beyond `holdings`? (The audit's core
+   *  question: ops WE have that the room may have lost.) */
+  private versionMissingFrom(holdings: Map<string, number>): boolean {
+    for (const [peer, counter] of this.loroDoc.version().toJSON()) {
+      if ((holdings.get(peer) ?? 0) < counter) return true;
+    }
+    return false;
+  }
+
   // --- inbound ---
 
   private async applyRemote(u: RoomUpdate): Promise<void> {
@@ -613,6 +703,7 @@ export class CollabSession {
       // is deliberately untouched (see below).
       return;
     }
+    this.foldTailMeta(u.seq, plain);
     this.flush(); // capture local diff before import (see module doc)
     const status = this.loroDoc.importBatch([plain]);
     if (status.pending && status.pending.size > 0) this.pendingImports = true;
@@ -651,11 +742,22 @@ export class CollabSession {
       let importedAny = false;
       let importedCount = 0;
       for (;;) {
-        const page = await this.client.fetchUpdates(this.roomId, this.lastSeq);
+        // Conditional snapshot: if the room's snapshot is the exact one we
+        // already imported (tag match), the server ships only the tail —
+        // the cursor still advances past the compacted floor, and the
+        // content is already in the doc by the verified-tag invariant
+        // (verifiedSnapCovers is only ever set where the snapshot bytes
+        // were imported or exported by us).
+        const page = await this.client.fetchUpdates(this.roomId, this.lastSeq, {
+          haveSnap: this.verifiedSnapCovers,
+        });
+        this.noteSnapCovers(page.snapCovers);
         const blobs: Uint8Array[] = [];
         if (page.snapshot && page.snapshot.coversThroughSeq > this.lastSeq) {
           try {
-            blobs.push(await decryptBlob(this.key, page.snapshot.blob));
+            const plainSnap = await decryptBlob(this.key, page.snapshot.blob);
+            this.foldSnapshotMeta(plainSnap, page.snapshot.coversThroughSeq);
+            blobs.push(plainSnap);
           } catch {
             // Undecryptable server snapshot (wrong key / corrupt ciphertext):
             // skip it like a bad update frame instead of throwing — the throw
@@ -667,7 +769,9 @@ export class CollabSession {
         for (const u of page.updates) {
           if (u.seq <= this.lastSeq) continue;
           try {
-            blobs.push(await decryptBlob(this.key, u.blob));
+            const plain = await decryptBlob(this.key, u.blob);
+            this.foldTailMeta(u.seq, plain);
+            blobs.push(plain);
           } catch {
             /* skip undecryptable frame (see applyRemote) */
           }
@@ -699,16 +803,21 @@ export class CollabSession {
         const blobs: Uint8Array[] = [];
         for (;;) {
           const page = await this.client.fetchUpdates(this.roomId, after);
+          this.noteSnapCovers(page.snapCovers);
           if (page.snapshot && after < page.snapshot.coversThroughSeq) {
             try {
-              blobs.push(await decryptBlob(this.key, page.snapshot.blob));
+              const plainSnap = await decryptBlob(this.key, page.snapshot.blob);
+              this.foldSnapshotMeta(plainSnap, page.snapshot.coversThroughSeq);
+              blobs.push(plainSnap);
             } catch {
               console.warn('[collab] undecryptable room snapshot in resync — skipped');
             }
           }
           for (const u of page.updates) {
             try {
-              blobs.push(await decryptBlob(this.key, u.blob));
+              const plain = await decryptBlob(this.key, u.blob);
+              this.foldTailMeta(u.seq, plain);
+              blobs.push(plain);
             } catch {
               /* skip undecryptable frame */
             }
@@ -767,59 +876,71 @@ export class CollabSession {
   async auditRoomHistory(): Promise<void> {
     if (this.ended || this.outQueue.length > 0) return;
     try {
-      const roomMax = new Map<string, number>();
-      let after = 0;
-      for (;;) {
-        const page = await this.client.fetchUpdates(this.roomId, after);
-        const blobs: Uint8Array[] = [];
-        if (page.snapshot && after < page.snapshot.coversThroughSeq) {
-          try {
-            blobs.push(await decryptBlob(this.key, page.snapshot.blob));
-          } catch {
-            /* undecryptable snapshot — audit what we can */
-          }
+      // Cheap self-contained probe (~100B): the room's current compaction
+      // epoch, plus any tail rows past our cursor (folded, not imported —
+      // importing stays the catch-up's job). Self-contained rather than
+      // trusting knownSnapCovers so a compaction landing moments before
+      // the audit is still seen THIS cycle.
+      const probe = await this.client.fetchUpdates(this.roomId, this.lastSeq, {
+        haveSnap: this.verifiedSnapCovers,
+      });
+      this.noteSnapCovers(probe.snapCovers);
+      if (probe.snapshot) {
+        try {
+          this.foldSnapshotMeta(
+            await decryptBlob(this.key, probe.snapshot.blob),
+            probe.snapshot.coversThroughSeq,
+          );
+        } catch {
+          /* undecryptable — the escalation below stays the backstop */
         }
-        for (const u of page.updates) {
-          try {
-            blobs.push(await decryptBlob(this.key, u.blob));
-          } catch {
-            /* skip */
-          }
-        }
-        for (const b of blobs) {
-          try {
-            const meta = decodeImportBlobMeta(b, false);
-            for (const [peer, counter] of meta.partialEndVersionVector.toJSON()) {
-              if ((roomMax.get(peer) ?? 0) < counter) roomMax.set(peer, counter);
-            }
-          } catch {
-            /* undecodable blob */
-          }
-        }
-        after = page.lastSeq;
-        if (!page.more) break;
       }
-      // Compare against the LIVE doc version, not `ackedVersion`.
-      // ackedVersion is bookkeeping this very audit exists to backstop —
-      // if a send-completeness bug ever advances it past un-posted ops
-      // (the field one-way desync, root-caused 2026-07-05), comparing
-      // against it would hide exactly the loss we must catch. The live
-      // version is ground truth for "ops this replica holds"; the
-      // guards below rule out the benign false-positive (fresh unflushed
-      // ops): the queue must be empty AND flush must have exported
-      // everything (doc version == lastSentVersion), so any residual gap
-      // is genuinely lost from the room, not merely in-flight.
+      for (const u of probe.updates) {
+        try {
+          this.foldTailMeta(u.seq, await decryptBlob(this.key, u.blob));
+        } catch {
+          /* skip */
+        }
+      }
+      // A compaction epoch we haven't verified the CONTENT of (trust is
+      // never transitive from a covers number alone): download that one
+      // snapshot and fold its meta — once per epoch, and never for the
+      // host, whose own uploads verify at export.
+      if (this.knownSnapCovers > this.verifiedSnapCovers) {
+        const page = await this.client.fetchUpdates(this.roomId, 0, {
+          haveSnap: this.verifiedSnapCovers,
+        });
+        this.noteSnapCovers(page.snapCovers);
+        if (page.snapshot) {
+          try {
+            this.foldSnapshotMeta(
+              await decryptBlob(this.key, page.snapshot.blob),
+              page.snapshot.coversThroughSeq,
+            );
+          } catch {
+            /* undecryptable — the escalation below stays the backstop */
+          }
+        }
+      }
+      // Same benign-false-positive guards as always: the queue must be
+      // empty AND flush must have exported everything, so any residual
+      // gap is genuinely absent from the room, not merely in-flight.
       this.flush();
-      if (this.outQueue.length > 0) return; // unsent local ops in flight — not a room loss
-      if (this.loroDoc.version().compare(this.lastSentVersion) !== 0) return; // flush left work
-      let missing = false;
-      for (const [peer, counter] of this.loroDoc.version().toJSON()) {
-        if ((roomMax.get(peer) ?? 0) < counter) {
-          missing = true;
-          break;
-        }
-      }
-      if (!missing) return;
+      if (this.outQueue.length > 0) return;
+      if (this.loroDoc.version().compare(this.lastSentVersion) !== 0) return;
+      // Local compare against the accumulated holdings — the steady-state
+      // audit costs zero fetches (this loop used to re-download the whole
+      // room, snapshot included, every 30 minutes: ~65% of relay egress).
+      if (!this.tailOverflow && !this.versionMissingFrom(this.roomHoldings())) return;
+      // Possible loss (or ledger overflow): CONFIRM against ground truth
+      // before reposting — the full scan is authoritative and this path
+      // should be vanishingly rare.
+      const roomMax = await this.scanRoomMax();
+      this.tailOverflow = false;
+      this.flush();
+      if (this.outQueue.length > 0) return;
+      if (this.loroDoc.version().compare(this.lastSentVersion) !== 0) return;
+      if (!this.versionMissingFrom(roomMax)) return;
       console.warn(
         '[collab] the room lost ops this replica holds (compacted away?) — reposting full history',
       );
@@ -827,6 +948,7 @@ export class CollabSession {
       const emptyVersion = new LoroDoc().version();
       for (const chunk of this.exportChunks(emptyVersion)) {
         const seq = await this.client.postUpdate(this.roomId, await encryptBlob(this.key, chunk));
+        this.foldTailMeta(seq, chunk);
         if (this.stream?.connected) this.awaitingEcho = { seq, at: Date.now() };
       }
     } catch {
@@ -834,12 +956,55 @@ export class CollabSession {
     }
   }
 
+  /** Ground-truth room scan: page the ENTIRE room and decode every
+   *  blob's version-vector maxima. This was the old audit's every-cycle
+   *  body; it now runs only to confirm a suspected loss before the
+   *  repost (and re-verifies the snapshot as a side effect). */
+  private async scanRoomMax(): Promise<Map<string, number>> {
+    const roomMax = new Map<string, number>();
+    let after = 0;
+    for (;;) {
+      const page = await this.client.fetchUpdates(this.roomId, after);
+      this.noteSnapCovers(page.snapCovers);
+      const blobs: Uint8Array[] = [];
+      if (page.snapshot && after < page.snapshot.coversThroughSeq) {
+        try {
+          const plainSnap = await decryptBlob(this.key, page.snapshot.blob);
+          this.foldSnapshotMeta(plainSnap, page.snapshot.coversThroughSeq);
+          blobs.push(plainSnap);
+        } catch {
+          /* undecryptable snapshot — audit what we can */
+        }
+      }
+      for (const u of page.updates) {
+        try {
+          blobs.push(await decryptBlob(this.key, u.blob));
+        } catch {
+          /* skip */
+        }
+      }
+      for (const b of blobs) {
+        try {
+          const meta = decodeImportBlobMeta(b, false);
+          for (const [peer, counter] of meta.partialEndVersionVector.toJSON()) {
+            if ((roomMax.get(peer) ?? 0) < counter) roomMax.set(peer, counter);
+          }
+        } catch {
+          /* undecodable blob */
+        }
+      }
+      after = page.lastSeq;
+      if (!page.more) break;
+    }
+    return roomMax;
+  }
+
   // --- presence ---
 
   async sendPresence(blob: Uint8Array): Promise<void> {
     if (this.ended) return;
     try {
-      await this.client.postPresence(this.roomId, await encryptBlob(this.key, blob));
+      await this.client.postPresence(this.roomId, await encryptBlob(this.key, blob), this.streamSid);
     } catch {
       /* presence is fire-and-forget */
     }
@@ -858,6 +1023,8 @@ export class CollabSession {
       const snapshot = this.loroDoc.export({ mode: 'snapshot' });
       const sealed = await encryptBlob(this.key, snapshot);
       await this.client.postSnapshot(this.roomId, bytesToBase64(sealed), covers);
+      // We exported it — its content is known without a download.
+      this.foldSnapshotMeta(snapshot, covers);
     } catch {
       /* compaction is best-effort; the log just stays longer */
     }

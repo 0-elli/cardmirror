@@ -44,9 +44,17 @@ export interface RoomUpdate {
 
 export interface FetchUpdatesResult {
   snapshot: { blob: Uint8Array; coversThroughSeq: number } | null;
+  /** True when the server withheld the snapshot because the caller's
+   *  `haveSnap` tag matched (conditional snapshot). */
+  snapshotUnchanged: boolean;
   updates: RoomUpdate[];
   lastSeq: number;
   more: boolean;
+  /** The room's current compaction epoch — coversThroughSeq of the
+   *  stored snapshot, 0 when none. Present on every page (pre-epoch
+   *  servers report 0), so a steady-state catch-up learns about a
+   *  compaction without ever downloading the snapshot. */
+  snapCovers: number;
 }
 
 export interface RoomsClientOptions {
@@ -130,25 +138,39 @@ export class RoomsClient {
   }
 
   /** One page; loop while `more` (the session layer drives paging so it
-   *  can apply between pages on huge backlogs). */
-  async fetchUpdates(roomId: string, after: number): Promise<FetchUpdatesResult> {
-    const path = `/rooms/${roomId}/updates?after=${after}`;
+   *  can apply between pages on huge backlogs). `opts.haveSnap` is the
+   *  conditional-snapshot tag: "I already hold the snapshot covering
+   *  through this seq — don't resend it if unchanged." */
+  async fetchUpdates(
+    roomId: string,
+    after: number,
+    opts: { haveSnap?: number } = {},
+  ): Promise<FetchUpdatesResult> {
+    const cond = opts.haveSnap !== undefined ? `&haveSnap=${opts.haveSnap}` : '';
+    const path = `/rooms/${roomId}/updates?after=${after}${cond}`;
     const res = await this.request(path, {
       headers: this.headers(),
     });
     const body = await this.readJson<{
       snapshot?: { blob: string; coversThroughSeq: number };
+      snapshotUnchanged?: boolean;
+      snapCovers?: number;
       updates?: Array<{ seq: number; blob: string }>;
       lastSeq?: number;
       more?: boolean;
     }>(res, path);
+    const snapshot = body.snapshot
+      ? { blob: base64ToBytes(body.snapshot.blob), coversThroughSeq: body.snapshot.coversThroughSeq }
+      : null;
     return {
-      snapshot: body.snapshot
-        ? { blob: base64ToBytes(body.snapshot.blob), coversThroughSeq: body.snapshot.coversThroughSeq }
-        : null,
+      snapshot,
+      snapshotUnchanged: body.snapshotUnchanged === true,
       updates: (body.updates ?? []).map((u) => ({ seq: u.seq, blob: base64ToBytes(u.blob) })),
       lastSeq: body.lastSeq ?? after,
       more: body.more === true,
+      // Pre-epoch servers omit the field; fall back to what the embedded
+      // snapshot itself reveals so callers get a best-effort tag.
+      snapCovers: body.snapCovers ?? snapshot?.coversThroughSeq ?? 0,
     };
   }
 
@@ -160,8 +182,13 @@ export class RoomsClient {
     });
   }
 
-  async postPresence(roomId: string, blob: Uint8Array): Promise<void> {
-    await this.request(`/rooms/${roomId}/presence`, {
+  /** `from` = the sender's own stream sid (see RoomStreamOptions.sid):
+   *  the server skips echoing this frame back to that stream. Old
+   *  servers ignore the param; the client-side own-peer filter still
+   *  drops the echo, so behavior is identical either way. */
+  async postPresence(roomId: string, blob: Uint8Array, from?: string): Promise<void> {
+    const q = from ? `?from=${encodeURIComponent(from)}` : '';
+    await this.request(`/rooms/${roomId}/presence${q}`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/octet-stream' }),
       body: blob as unknown as BodyInit,
@@ -196,6 +223,11 @@ export interface RoomStreamOptions {
   baseUrl: () => string;
   token: () => string;
   roomId: string;
+  /** Opaque per-session nonce identifying THIS client's stream to the
+   *  server, so presence posts carrying the same value as `from` are
+   *  not echoed back (the client filters its own frames anyway — this
+   *  just stops the bytes). Optional; old servers ignore it. */
+  sid?: string;
   callbacks: RoomStreamCallbacks;
   fetchImpl?: RoomsFetch;
   /** Backoff bounds, injectable for tests. */
@@ -327,7 +359,8 @@ export class RoomStream {
     this.controller = new AbortController();
     const fetchImpl = this.opts.fetchImpl ?? boundFetch;
     try {
-      const res = await fetchImpl(`${this.opts.baseUrl()}/rooms/${this.opts.roomId}/stream`, {
+      const sidQ = this.opts.sid ? `?sid=${encodeURIComponent(this.opts.sid)}` : '';
+      const res = await fetchImpl(`${this.opts.baseUrl()}/rooms/${this.opts.roomId}/stream${sidQ}`, {
         method: 'GET',
         headers: { Accept: 'text/event-stream', Authorization: `Bearer ${this.opts.token()}` },
         signal: this.controller.signal,

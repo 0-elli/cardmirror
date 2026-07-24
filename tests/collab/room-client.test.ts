@@ -217,3 +217,62 @@ describe('RoomStream', () => {
     for (const s of holders) s.stop();
   });
 });
+
+describe('egress protocol additions (2026-07-24)', () => {
+  it('fetchUpdates: haveSnap suppresses an unchanged snapshot; a different tag ships it', async () => {
+    const roomId = await client.createRoom();
+    await client.postUpdate(roomId, bytes('a'));
+    await client.postUpdate(roomId, bytes('b'));
+    const full = await client.fetchUpdates(roomId, 0);
+    const covers = full.lastSeq;
+    await client.postSnapshot(roomId, Buffer.from('snapbytes').toString('base64'), covers);
+
+    // No tag → full snapshot, and every page reports the epoch.
+    const plain = await client.fetchUpdates(roomId, 0);
+    expect(plain.snapshot).not.toBeNull();
+    expect(plain.snapCovers).toBe(covers);
+
+    // Matching tag → snapshot withheld, floor still advances.
+    const cond = await client.fetchUpdates(roomId, 0, { haveSnap: covers });
+    expect(cond.snapshot).toBeNull();
+    expect(cond.snapshotUnchanged).toBe(true);
+    expect(cond.lastSeq).toBeGreaterThanOrEqual(covers);
+
+    // Stale tag → the newer snapshot ships in full.
+    const stale = await client.fetchUpdates(roomId, 0, { haveSnap: covers - 1 });
+    expect(stale.snapshot).not.toBeNull();
+    expect(stale.snapshotUnchanged).toBe(false);
+  });
+
+  it('presence with ?from= is not echoed to the stream that declared that sid', async () => {
+    const roomId = await client.createRoom();
+    const seen = { a: [] as string[], b: [] as string[] };
+    const mkStream = (sid: string, sink: string[]) =>
+      new RoomStream({
+        baseUrl: () => mock.url,
+        token: () => mock.token,
+        roomId,
+        sid,
+        minBackoffMs: 20,
+        maxBackoffMs: 50,
+        callbacks: {
+          onHello: () => {},
+          onUpdate: () => {},
+          onPresence: (b) => sink.push(text(b)),
+          onEnded: () => {},
+          onFull: () => {},
+        },
+      });
+    const sa = mkStream('sid-a', seen.a);
+    const sb = mkStream('sid-b', seen.b);
+    sa.start();
+    sb.start();
+    await sleep(60);
+    await client.postPresence(roomId, bytes('from-a'), 'sid-a');
+    await sleep(60);
+    expect(seen.b).toContain('from-a'); // the peer got it
+    expect(seen.a).not.toContain('from-a'); // the sender's bytes never came back
+    sa.stop();
+    sb.stop();
+  });
+});

@@ -41,6 +41,7 @@ const PAGE = 200;
 
 export function startRoomsMock(): Promise<RoomsMock> {
   const token = 'mock-token';
+  const streamSids = new WeakMap<object, string>();
   const rooms = new Map<string, Room>();
   let seqCounter = 0;
   let paused = false;
@@ -128,12 +129,22 @@ export function startRoomsMock(): Promise<RoomsMock> {
       const room = roomOr(res, roomId);
       if (!room) return;
       const after = parseInt(url.searchParams.get('after') ?? '0', 10);
+      const haveSnapRaw = url.searchParams.get('haveSnap');
+      const haveSnap = haveSnapRaw === null ? null : parseInt(haveSnapRaw, 10);
       const out: Record<string, unknown> = {};
       let floor = after;
       if (room.snapshot && after < room.snapshot.coversThroughSeq) {
-        out['snapshot'] = room.snapshot;
+        if (haveSnap !== null && haveSnap === room.snapshot.coversThroughSeq) {
+          // Conditional snapshot (mirrors the real relay): the caller
+          // already holds this exact snapshot — ship only the tail.
+          out['snapshotUnchanged'] = true;
+          out['snapshotCovers'] = room.snapshot.coversThroughSeq;
+        } else {
+          out['snapshot'] = room.snapshot;
+        }
         floor = room.snapshot.coversThroughSeq;
       }
+      out['snapCovers'] = room.snapshot?.coversThroughSeq ?? 0;
       const rows = room.updates.filter((u) => u.seq > floor).slice(0, PAGE);
       out['updates'] = rows;
       out['more'] = rows.length === PAGE;
@@ -157,10 +168,14 @@ export function startRoomsMock(): Promise<RoomsMock> {
 
     if (req.method === 'POST' && sub === 'presence') {
       const raw = await readBody(req);
+      const from = url.searchParams.get('from');
       const room = rooms.get(roomId);
       if (room && !room.tombstoned) {
         const frame = `data: ${JSON.stringify({ t: 'p', blob: raw.toString('base64') })}\n\n`;
-        for (const s of room.streams) s.write(frame);
+        for (const s of room.streams) {
+          if (from !== null && streamSids.get(s) === from) continue; // no self-echo
+          s.write(frame);
+        }
       }
       return json(res, 202, {});
     }
@@ -176,10 +191,12 @@ export function startRoomsMock(): Promise<RoomsMock> {
         ? room.updates[room.updates.length - 1]!.seq
         : (room.snapshot?.coversThroughSeq ?? 0);
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+      const sid = url.searchParams.get('sid');
       const sendHello = () => {
         if (res.writableEnded || res.destroyed) return;
         res.write(`event: hello\ndata: {"lastSeq":${lastSeq}}\n\n`);
         room.streams.add(res);
+        if (sid !== null) streamSids.set(res, sid);
       };
       if (helloDelayMs > 0) setTimeout(sendHello, helloDelayMs);
       else sendHello();

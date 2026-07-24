@@ -32,7 +32,11 @@ import { leasedRanges } from '../ai/edit-coordinator.js';
 
 const FRAME_CURSOR = 0x01;
 const FRAME_LEASE = 0x02;
-const CURSOR_THROTTLE_MS = 120;
+// 250ms: a cursor that repaints four times a second still reads as live
+// (the trailing edge sends the final resting position), and presence
+// egress scales linearly with this while a typist holds the throttle
+// open (2026-07-24 egress audit).
+const CURSOR_THROTTLE_MS = 250;
 const KEEPALIVE_MS = 15_000;
 const LEASE_MS = 2_000;
 const STORE_TIMEOUT_MS = 45_000;
@@ -93,22 +97,39 @@ export function installCursorPresence(
   // --- outbound: cursor bytes, throttled trailing-edge ---
   let sendTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingBytes: Uint8Array | null = null;
+  /** Last frame actually sent — an unchanged cursor re-emitted by the
+   *  store produces identical bytes, and resending them buys nothing.
+   *  Cleared by the keepalive so idle-expiry refresh still goes out. */
+  let lastSentBytes: Uint8Array | null = null;
+  const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
   const unsubLocal = store.subscribeLocalUpdates((bytes: Uint8Array) => {
     if (disposed || !cursorsEnabled()) return;
     pendingBytes = bytes;
     sendTimer ??= setTimeout(() => {
       sendTimer = null;
-      if (pendingBytes && !disposed) void session.sendPresence(frame(FRAME_CURSOR, pendingBytes));
+      if (pendingBytes && !disposed && !(lastSentBytes && sameBytes(pendingBytes, lastSentBytes))) {
+        lastSentBytes = pendingBytes;
+        void session.sendPresence(frame(FRAME_CURSOR, pendingBytes));
+      }
       pendingBytes = null;
     }, CURSOR_THROTTLE_MS);
   });
 
   // Keepalive: the store expires idle entries; a reading (not typing)
-  // partner must not vanish. Re-setting the local state re-emits it.
+  // partner must not vanish. Re-setting the local state re-emits it —
+  // and clears the dedupe baseline so the (byte-identical) refresh
+  // frame actually reaches peers before their expiry timer fires.
   const keepalive = setInterval(() => {
     if (disposed || !cursorsEnabled()) return;
     const local = store.getLocal();
-    if (local) store.setLocal(local);
+    if (local) {
+      lastSentBytes = null;
+      store.setLocal(local);
+    }
   }, KEEPALIVE_MS);
 
   const user = {
