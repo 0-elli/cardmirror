@@ -157,7 +157,13 @@ async function downloadAsset(release: GithubRelease, name: string): Promise<stri
  * "Load plugin from file…" path stays as the session-only escape hatch.
  * Enforced HERE in main so the renderer can't bypass it.
  */
+// Both plausible homes for the ebb integration plugin: the ebb app repo
+// (confirmed real; the plugin's release assets may ride its releases) and
+// the dedicated plugin repo the spec's manifest example implies. Same
+// owner, so listing both widens nothing; installs from either still
+// require the two release assets to exist.
 export const PLUGIN_INSTALL_ALLOWLIST: ReadonlySet<string> = new Set([
+  'shreerammodi/ebb',
   'shreerammodi/cardmirror-ebb',
 ]);
 
