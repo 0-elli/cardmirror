@@ -351,6 +351,24 @@ def relay_health() -> dict:
     return {"ok": True}
 
 
+# Plugin-install allowlist for CardMirror clients pointed at THIS relay
+# (the client fetches it from whichever relay it is configured to use).
+# Ungated like /health — it is public data, and the OPERATOR of a
+# self-hosted relay is the right party to curate what their users'
+# installers accept (plugins are full-trust code). Configure with
+# RELAY_PLUGIN_ALLOWLIST (comma-separated owner/repo); the default
+# matches the app's baked floor. Individuals who want arbitrary repos
+# use the in-app console unlock instead: __plugins('community-on').
+_DEFAULT_PLUGIN_ALLOWLIST = "shreerammodi/ebb"
+
+
+@app.get("/relay/plugin-allowlist")
+def plugin_allowlist() -> dict:
+    raw = os.getenv("RELAY_PLUGIN_ALLOWLIST", _DEFAULT_PLUGIN_ALLOWLIST)
+    repos = sorted({r.strip().lower() for r in raw.split(",") if r.strip()})
+    return {"schema": 1, "repos": repos}
+
+
 async def _raw_body(request: Request) -> bytes:
     """Reads the request body on the event loop (a sync handler cannot
     await); everything after this runs on a worker thread."""

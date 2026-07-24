@@ -57,6 +57,11 @@ import { mountPairingPills, initPairingWiring } from './pairing/pairing-wiring.j
 import { insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
 import { installExternalInsertHost } from './external-insert-host.js';
+import { installPluginRegistry } from './plugin-registry.js';
+import { createPluginApi } from './plugin-api.js';
+import { installPluginJumpHost } from './plugin-jump-host.js';
+import { isPluginEnabled, reconcilePluginState } from './plugins-store.js';
+import { appVersion } from './install-info.js';
 import {
   decodeModeSwitchMarker,
   encodeModeSwitchMarker,
@@ -73,6 +78,7 @@ import {
 import { resolveMobileLayout } from './mobile-layout.js';
 import { mobilePlugin, setMobileShellActive } from './mobile-plugin.js';
 import { installCardCutterGate, cardCutterActive } from './card-cutter-gate.js';
+import { installPluginCommunityGate } from './plugin-community-gate.js';
 import { openCutLaunchSheet } from './card-cutter-ui.js';
 import {
   quickCardsStore,
@@ -111,7 +117,7 @@ import { openBulkCompress, runCompressSingleFileWeb } from './bulk-compress-ui.j
 import { bulkCompressEnabled } from './bulk-compress-gate.js';
 import { openClean, runCleanSingleFileWeb } from './clean-ui.js';
 import { homeScreen, type HomeScreenCallbacks } from './home-screen.js';
-import { recordRecent, removeRecent, type RecentFile } from './recents-store.js';
+import { recordRecent, removeRecent, listRecents, type RecentFile } from './recents-store.js';
 import { isAutosaveOnForPath, setAutosaveForPath } from './autosave-prefs-store.js';
 import {
   settings,
@@ -271,6 +277,7 @@ import {
   RIBBON_COMMAND_IDS,
   type StructuralRibbonCommandId,
   type RibbonContext,
+  type AnyCommandId,
   type RibbonCommandId,
 } from './ribbon-commands.js';
 import { openWordCount } from './word-count-ui.js';
@@ -883,6 +890,11 @@ let multiDocSetFocusedFile:
   | null = null;
 /** Set the focused DocRecord's Learn docId (minted/forked lazily). */
 let multiDocSetFocusedDocId: ((docId: string) => void) | null = null;
+/** Find the live view of any pane in this window (focused or not) whose
+ *  DocRecord carries `docId`, else null. Backs the inbound-jump host and
+ *  the plugin API's local-first jump, so a doc open in an unfocused pane
+ *  jumps without the main-process broadcast hop. */
+let multiDocFindViewForDocId: ((docId: string) => EditorView | null) | null = null;
 /** Crash-recovery hook: clear the focused pane's journal after a
  *  successful save in multi-doc mode. The shell knows the
  *  DocRecord's uid; the editor only knows it has a focused doc. */
@@ -958,6 +970,8 @@ export function enableMultiDocMode(opts: {
   } | null;
   setFocusedFile?: (file: { filename: string; handle: unknown | null; format: 'cmir' | 'docx' | null }) => void;
   setFocusedDocId?: (docId: string) => void;
+  /** Live view of any pane holding `docId` (focused or background), or null. */
+  findViewForDocId?: (docId: string) => EditorView | null;
   getAllFilenames?: () => (string | null)[];
   /** Filename of the open doc with `uid` (across all panes + stacks), or null.
    *  Lets collab publish/label a session with its OWNER doc's name rather than
@@ -1014,6 +1028,7 @@ export function enableMultiDocMode(opts: {
   multiDocGetFocusedFile = opts.getFocusedFile ?? null;
   multiDocSetFocusedFile = opts.setFocusedFile ?? null;
   multiDocSetFocusedDocId = opts.setFocusedDocId ?? null;
+  multiDocFindViewForDocId = opts.findViewForDocId ?? null;
   multiDocGetAllFilenames = opts.getAllFilenames ?? null;
   multiDocGetFilenameForUid = opts.getFilenameForUid ?? null;
   multiDocCreateSessionDoc = opts.createSessionDoc ?? null;
@@ -2040,7 +2055,7 @@ settingsBtn.addEventListener('click', () => {
  * as clicking the UI — and so binding/unbinding a command never leaves
  * the UI orphaned.
  */
-export function runRibbon(id: RibbonCommandId): void {
+export function runRibbon(id: AnyCommandId): void {
   if (!view) return;
   getRibbonCommand(id, ribbonContext)(view.state, view.dispatch.bind(view), view);
 }
@@ -3885,7 +3900,7 @@ document.addEventListener('keydown', suppressGuiSelectAll, true);
  *  invoke them without a live view — single-doc startup is
  *  view-ful by the time this fires, but multi-doc with no panes
  *  open hits this path. */
-const VIEWLESS_RIBBON_COMMANDS = new Set<RibbonCommandId>([
+const VIEWLESS_RIBBON_COMMANDS = new Set<AnyCommandId>([
   'newDocument',
   'openFile',
   'saveAs',
@@ -3941,7 +3956,7 @@ const VIEWLESS_RIBBON_COMMANDS = new Set<RibbonCommandId>([
   'openDevConsole',
 ]);
 
-function runViewlessRibbon(id: RibbonCommandId): void {
+function runViewlessRibbon(id: AnyCommandId): void {
   switch (id) {
     case 'newDocument': ribbonContext.newDocument(); return;
     case 'openFile': ribbonContext.openFile(); return;
@@ -3998,7 +4013,7 @@ function runViewlessRibbon(id: RibbonCommandId): void {
  *  view-less commands run regardless of focus; the rest go through
  *  `runRibbon` (which no-ops when there's no active view). Used by the
  *  search palette's command source. */
-function runRibbonCommandById(id: RibbonCommandId): void {
+function runRibbonCommandById(id: AnyCommandId): void {
   if (VIEWLESS_RIBBON_COMMANDS.has(id)) {
     runViewlessRibbon(id);
     return;
@@ -5472,6 +5487,14 @@ function activeDocIdentity(): { docId: string | null; sessionUid: string } {
     if (f) return { docId: f.docId, sessionUid: f.uid };
   }
   return { docId: currentDocId, sessionUid: currentDocUid };
+}
+
+/** Find the live view for a doc open anywhere in THIS window — any pane
+ *  in multi-pane, the single view in single-doc — regardless of focus.
+ *  Returns null when no open doc has that id. */
+function findViewForDocId(docId: string): EditorView | null {
+  if (multiDocActive && multiDocFindViewForDocId) return multiDocFindViewForDocId(docId);
+  return currentDocId === docId ? getActiveView() : null;
 }
 
 /** Write the active doc's persistent docId back into its record
@@ -8108,6 +8131,123 @@ installExternalInsertHost({
   getFocusedView: () => getActiveView(),
   getFocusedDocTitle: () => activeFile().filename,
 });
+// Inbound /jump handler — core-owned surface (spec 6): the fast-paste
+// bridge advertises schema 2 unconditionally, so a window must always
+// answer `external:jump`, regardless of the `pluginsEnabled` switch.
+// No-ops when the preload bridge is absent (web / old shells).
+installPluginJumpHost({
+  findViewForDocId: (docId) => findViewForDocId(docId),
+});
+// Plugin system boot: install the window registry, then load the
+// user-enabled plugins. Gated on the `pluginsEnabled` setting and on
+// a plugin-capable desktop host (no-op on web / old shells).
+async function initPlugins(): Promise<void> {
+  if (!settings.get('pluginsEnabled')) return;
+  const host = getElectronHost();
+  if (!host?.pluginList || !host.pluginLoad) return; // desktop only
+  // A registration lands AFTER every open view already built its keymap
+  // (this whole function runs async post-boot), so a plugin's defaultKey
+  // would be dead in the editor until an unrelated reconfigure. Rebuild
+  // every open view's plugin set on each successful registration — same
+  // reconfigure the ribbonKeyOverrides subscriber uses, per-uid so collab
+  // bindings stay only on their session-owning doc.
+  const rebuildKeymapsForPluginCommands = (): void => {
+    for (const { uid, view: v } of getSpeechDocResolver().allViews()) {
+      try {
+        v.updateState(v.state.reconfigure({ plugins: buildEditorPlugins(uid) }));
+      } catch (err) {
+        console.warn('[plugins] keymap rebuild failed for a view:', err);
+      }
+    }
+  };
+  installPluginRegistry((pluginId) =>
+    createPluginApi(pluginId, {
+      appVersion,
+      getView: () => getActiveView(),
+      findViewForDocId: (docId) => findViewForDocId(docId),
+      getDocIdentity: () => {
+        const a = activeDocIdentity();
+        return { docId: a.docId, docTitle: activeFile().filename || 'Untitled' };
+      },
+      ensureDocId: () => {
+        try {
+          // Same three-step path the Learn flows use: mint the id, register
+          // the doc (even unsaved) with the store, and stamp it into the file
+          // so a plugin's extracted tokens re-associate on reload.
+          const docId = ensureActiveDocId();
+          const f = activeFile();
+          learnStore.registerDoc({
+            docId,
+            path: typeof f.handle === 'string' ? f.handle : null,
+            name: f.filename ?? 'Untitled',
+            format: f.format,
+          });
+          void stampActiveFileDocId(docId);
+          return docId;
+        } catch {
+          return null;
+        }
+      },
+    }),
+    { onCommandsChanged: rebuildKeymapsForPluginCommands },
+  );
+  let installed: { id: string; name: string; incompatible?: string }[];
+  try {
+    installed = (await host.pluginList()) as { id: string; name: string; incompatible?: string }[];
+  } catch (err) {
+    console.warn('[plugins] could not list installed plugins:', err);
+    showToast('Plugins failed to load.');
+    return;
+  }
+  // Drop leftovers (enabled flags, storage bags, key overrides) from
+  // plugins whose install DIRECTORY is gone — the one unambiguous
+  // "really uninstalled" signal; a mere load failure prunes nothing.
+  reconcilePluginState(new Set(installed.map((p) => p.id)));
+  for (const p of installed) {
+    if (!isPluginEnabled(p.id)) continue;
+    // Listed-but-incompatible (needs a newer CardMirror): main refuses to
+    // serve its bundle anyway; skipping here avoids a spurious failure toast.
+    if (p.incompatible) continue;
+    // A rejecting IPC call must not skip the remaining plugins (or escape
+    // the un-awaited initPlugins() as an unhandled rejection).
+    const r = await host.pluginLoad(p.id).catch((err: unknown) => ({
+      ok: false as const,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    if (!r.ok) {
+      console.warn(`[plugins] ${p.id} failed to load:`, r.error);
+      showToast(`Plugin ${p.name} failed to load.`);
+    }
+  }
+}
+void initPlugins();
+// Console gate for community (non-allowlisted) plugin installs. Installs
+// `__plugins('community-on')` and re-arms main's unlock flag from the
+// stored setting each boot; enforcement lives in main's installer.
+installPluginCommunityGate();
+// Read-scope plumbing (scoped host.readFileAtPath, PR #25 review):
+// mirror the File-search folders into main at boot + on change, and
+// hand main the pre-existing recents ONCE so they stay reopenable —
+// the import channel closes itself after the first journal write.
+{
+  const eh = getElectronHost();
+  if (eh) {
+    let lastRoots = settings.get('fileSearchRoots');
+    void eh.syncLibraryRoots(lastRoots);
+    settings.subscribe(() => {
+      const roots = settings.get('fileSearchRoots');
+      if (roots !== lastRoots) {
+        lastRoots = roots;
+        void eh.syncLibraryRoots(roots);
+      }
+    });
+    void eh.grantLegacyRecents(
+      listRecents()
+        .map((r) => r.handle)
+        .filter((h): h is string => typeof h === 'string' && h.length > 0),
+    );
+  }
+}
 // Experimental, console-gated AI card cutter. Installs the
 // `__cardcutter('on')` console entry point; does nothing visible
 // until enabled.

@@ -69,7 +69,7 @@ import { applyTimerProfile } from './timer-profile.js';
 import { showToast } from './toast.js';
 import { setIcon, CUSTOM_BUTTON_ICONS, type IconName } from './icons';
 import { availableRibbonCommandIds } from './ribbon-availability.js';
-import { RIBBON_COMMAND_LABELS } from './ribbon-commands.js';
+import { RIBBON_COMMAND_LABELS, type RibbonCommandId } from './ribbon-commands.js';
 import { settingCommandOptions } from './setting-commands.js';
 import {
   FILE_OBJECT_KINDS,
@@ -495,6 +495,17 @@ class SettingsModal {
         panel.appendChild(buildInstallInfoSection());
         panel.appendChild(this.buildSettingsBackupSection());
         panel.appendChild(buildDocLinksSection());
+      }
+      // Installed-plugins manager under the Plugins tab — install field,
+      // plugin rows, and the dev load-from-file row. Not settings rows, so
+      // it lives outside SETTING_METADATA (like General's info sections
+      // above), and loads lazily so the panel code stays off the settings
+      // open path — same style as the other heavy, on-demand panels.
+      if (id === 'plugins') {
+        const section = document.createElement('section');
+        section.className = 'pmd-plugins-panel';
+        panel.appendChild(section);
+        void import('./plugins-settings-ui.js').then((m) => m.renderPluginsPanel(section));
       }
       this.dialog.appendChild(panel);
       panels[id] = panel;
@@ -2690,7 +2701,9 @@ function buildRibbonCustomButtonsEditor(): HTMLElement {
   const options: { value: string; label: string }[] = [
     ...settingCommandOptions().map((o) => ({ value: o.command, label: o.label })),
     ...availableRibbonCommandIds()
-      .filter((id) => RIBBON_COMMAND_LABELS[id])
+      // Static ribbon commands only: plugin ids (also returned by
+      // availableRibbonCommandIds now) aren't offered as custom buttons.
+      .filter((id): id is RibbonCommandId => id in RIBBON_COMMAND_LABELS)
       .map((id) => ({ value: id as string, label: RIBBON_COMMAND_LABELS[id] })),
   ].sort((a, b) => a.label.localeCompare(b.label));
 

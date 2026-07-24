@@ -60,3 +60,12 @@ Health check: `GET /relay/health` → `{"ok": true}` (no auth).
 - CardMirror also works against a relay without the `/stream`
   endpoint by falling back to interval polling — but this server
   includes push, so you get instant delivery.
+- Plugin allowlist: clients pointed at this relay ask it which GitHub
+  repos the in-app plugin installer may install from
+  (`GET /relay/plugin-allowlist`, no auth — public data). Configure
+  the list with `RELAY_PLUGIN_ALLOWLIST` (comma-separated
+  `owner/repo`); it defaults to the app's built-in list, so leaving it
+  alone changes nothing. Plugins run with full access to CardMirror
+  and your users' documents — curate deliberately. Individual users
+  who want arbitrary repos can instead run
+  `__plugins('community-on')` in the app's console.

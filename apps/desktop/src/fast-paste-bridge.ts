@@ -34,7 +34,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 
 const PREFERRED_PORT = 17699;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const TOKEN_BYTES = 24;
 /** Hard timeout the client also enforces at 1500ms — keep ours
  *  slightly under so the server fails fast before the client
@@ -64,10 +64,21 @@ interface RendererAck {
   docTitle?: string;
 }
 
+interface JumpAck {
+  requestId: string;
+  ok: boolean;
+  error?: string;
+}
+
 let serverState: { server: http.Server; token: string; port: number } | null = null;
 
 const pendingAcks = new Map<string, {
   resolve: (ack: RendererAck) => void;
+  timer: NodeJS.Timeout;
+}>();
+
+const pendingJumpAcks = new Map<string, {
+  resolve: (ack: JumpAck) => void;
   timer: NodeJS.Timeout;
 }>();
 
@@ -103,7 +114,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 function checkToken(req: http.IncomingMessage, token: string): boolean {
-  const header = req.headers['x-fdp-token'];
+  // Schema 2 accepts the cross-app X-Bridge-Token header alongside
+  // the legacy FDP one; both compare constant-time.
+  const header = req.headers['x-bridge-token'] ?? req.headers['x-fdp-token'];
   if (typeof header !== 'string') return false;
   return constantTimeEqual(header, token);
 }
@@ -182,6 +195,104 @@ function onRendererAck(_evt: unknown, ack: RendererAck): void {
   pendingAcks.delete(ack.requestId);
   pending.resolve(ack);
 }
+
+function onJumpAck(_evt: unknown, ack: JumpAck): void {
+  if (!ack || typeof ack.requestId !== 'string') return;
+  const pending = pendingJumpAcks.get(ack.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingJumpAcks.delete(ack.requestId);
+  pending.resolve(ack);
+}
+
+// keep in sync with SOURCE_TOKEN_PREFIX in src/editor/plugin-source-token.ts
+// (this literal adds the dot separator; the source constant is the bare prefix)
+const SOURCE_TOKEN_PREFIX = 'cmsrc1.';
+
+function dispatchJumpTo(win: BrowserWindow, source: string): Promise<JumpAck> {
+  return new Promise((resolve) => {
+    if (win.isDestroyed()) {
+      resolve({ requestId: '', ok: false, error: 'not-mine' });
+      return;
+    }
+    const requestId = crypto.randomBytes(8).toString('hex');
+    const timer = setTimeout(() => {
+      pendingJumpAcks.delete(requestId);
+      resolve({ requestId, ok: false, error: 'not-mine' });
+    }, RENDERER_ACK_TIMEOUT_MS);
+    pendingJumpAcks.set(requestId, { resolve, timer });
+    try {
+      win.webContents.send('external:jump', { requestId, source });
+    } catch {
+      // Window torn down between the isDestroyed() check and send
+      // (render process gone). Don't leave the route hanging on a
+      // timeout that can never be acked.
+      clearTimeout(timer);
+      pendingJumpAcks.delete(requestId);
+      resolve({ requestId, ok: false, error: 'not-mine' });
+    }
+  });
+}
+
+/** Minimal token peek — main only needs docTitle for the
+ *  doc-not-open message; full parsing stays renderer-side. */
+function docTitleFromToken(source: string): string | undefined {
+  if (!source.startsWith(SOURCE_TOKEN_PREFIX)) return undefined;
+  const dot = source.indexOf('.');
+  if (dot < 0) return undefined;
+  try {
+    const obj = JSON.parse(
+      Buffer.from(source.slice(dot + 1), 'base64url').toString('utf8'),
+    ) as { docTitle?: unknown };
+    return typeof obj.docTitle === 'string' && obj.docTitle ? obj.docTitle : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Ask each window in turn to resolve the token; the first ok wins and
+ *  its window is focused. Exported for the host:plugin-jump IPC. */
+export async function broadcastJump(
+  source: string,
+): Promise<{ ok: boolean; error?: string; docTitle?: string }> {
+  // An unparseable token can never match any window; reject it up front
+  // rather than broadcasting and misreporting doc-not-open (which would
+  // echo a forged docTitle from a token that isn't ours).
+  if (!source.startsWith(SOURCE_TOKEN_PREFIX)) {
+    return { ok: false, error: 'bad-request' };
+  }
+  const wins = BrowserWindow.getAllWindows().filter(
+    (w) =>
+      !w.isDestroyed() &&
+      // Doc windows all install a jump listener; the timer pop-out
+      // (timer.html, main.ts:openTimerWindow) is the one window kind
+      // that doesn't, and broadcasting to it would just burn the full
+      // ack timeout. Skip it by URL — a future non-doc window kind that
+      // isn't added here costs only that timeout (it can never mis-ack,
+      // so correctness doesn't depend on this list being complete).
+      !w.webContents.getURL().endsWith('timer.html'),
+  );
+  const acks = await Promise.all(
+    wins.map((win) => dispatchJumpTo(win, source).then((ack) => ({ win, ack }))),
+  );
+  // First ok wins. Only one open doc holds a given docId in normal use,
+  // so multiple-ok isn't a real case; if it ever is, the first still wins.
+  const winner = acks.find((a) => a.ack.ok);
+  if (winner) {
+    if (winner.win.isMinimized()) winner.win.restore();
+    winner.win.show();
+    winner.win.focus();
+    return { ok: true };
+  }
+  if (acks.some((a) => a.ack.error === 'bad-request')) {
+    return { ok: false, error: 'bad-request' };
+  }
+  if (acks.some((a) => a.ack.error === 'not-found')) {
+    return { ok: false, error: 'not-found' };
+  }
+  const docTitle = docTitleFromToken(source);
+  return { ok: false, error: 'doc-not-open', ...(docTitle ? { docTitle } : {}) };
+}
 let ipcSubscribed = false;
 
 async function handleRequest(
@@ -253,6 +364,42 @@ async function handleRequest(
     return;
   }
 
+  if (req.method === 'POST' && url === '/jump') {
+    let payload: { source?: unknown };
+    try {
+      payload = JSON.parse(await readRequestBody(req)) as { source?: unknown };
+    } catch {
+      jsonResponse(res, 400, { ok: false, error: 'bad-request' });
+      return;
+    }
+    if (typeof payload.source !== 'string' || !payload.source) {
+      jsonResponse(res, 400, { ok: false, error: 'bad-request' });
+      return;
+    }
+    let result: { ok: boolean; error?: string; docTitle?: string };
+    try {
+      result = await broadcastJump(payload.source);
+    } catch {
+      // Never let an unexpected broadcast failure hang the client.
+      jsonResponse(res, 500, { ok: false, error: 'internal' });
+      return;
+    }
+    if (result.ok) {
+      jsonResponse(res, 200, { ok: true });
+      return;
+    }
+    if (result.error === 'bad-request') {
+      jsonResponse(res, 400, { ok: false, error: 'bad-request' });
+      return;
+    }
+    jsonResponse(res, 200, {
+      ok: false,
+      error: result.error,
+      ...(result.docTitle ? { docTitle: result.docTitle } : {}),
+    });
+    return;
+  }
+
   jsonResponse(res, 404, { ok: false, error: 'bad-request' });
 }
 
@@ -278,6 +425,7 @@ export async function startFastPasteBridge(): Promise<void> {
   if (serverState) return;
   if (!ipcSubscribed) {
     ipcMain.on('external:insert-result', onRendererAck);
+    ipcMain.on('external:jump-result', onJumpAck);
     ipcSubscribed = true;
   }
 
@@ -328,14 +476,22 @@ export async function stopFastPasteBridge(): Promise<void> {
     pending.resolve({ requestId: '', ok: false, error: 'internal' });
   }
   pendingAcks.clear();
+  for (const pending of pendingJumpAcks.values()) {
+    clearTimeout(pending.timer);
+    pending.resolve({ requestId: '', ok: false, error: 'not-mine' });
+  }
+  pendingJumpAcks.clear();
   // Drop the IPC subscription so a subsequent `start` re-installs
   // it cleanly. Production only ever calls `start` once per app
   // lifetime, but tests cycle the bridge across describe/it blocks
   // and would otherwise carry a stale subscription that the stub
   // can't see.
   if (ipcSubscribed) {
-    (ipcMain as unknown as { removeListener?: (ch: string, l: typeof onRendererAck) => void })
-      .removeListener?.('external:insert-result', onRendererAck);
+    const im = ipcMain as unknown as {
+      removeListener?: (ch: string, l: (...args: never[]) => void) => void;
+    };
+    im.removeListener?.('external:insert-result', onRendererAck);
+    im.removeListener?.('external:jump-result', onJumpAck);
     ipcSubscribed = false;
   }
   await deleteDiscoveryFile();

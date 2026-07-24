@@ -41,6 +41,14 @@ import { toggleMark } from 'prosemirror-commands';
 import { toggleReadingMarkerCommand } from './reading-marker.js';
 import { openFootnoteEditor } from './footnote-popover.js';
 import { flipQuoteDirection } from './flip-quote-direction.js';
+import {
+  isPluginCommandId,
+  pluginCommandIds,
+  pluginCommandLabel,
+  pluginCommandKeywords,
+  pluginDefaultKey,
+  runPluginCommand,
+} from './plugin-registry.js';
 import { schema } from '../schema/index.js';
 import { newHeadingId } from '../schema/ids.js';
 import {
@@ -6328,6 +6336,28 @@ function keysArray(spec: string | string[]): string[] {
   return Array.isArray(spec) ? spec : [spec];
 }
 
+/** A static ribbon id, or a runtime plugin command id. */
+export type AnyCommandId = RibbonCommandId | (string & {});
+
+/** Label for any command id - static table first, plugin registry
+ *  second, the raw id as a last resort. */
+export function commandLabelFor(id: AnyCommandId): string {
+  return (
+    (RIBBON_COMMAND_LABELS as Record<string, string>)[id] ??
+    pluginCommandLabel(id) ??
+    id
+  );
+}
+
+/** Palette search aliases for any command id - static table first,
+ *  plugin keywords second (empty when neither has any). */
+export function commandAliasesFor(id: AnyCommandId): readonly string[] {
+  return (
+    (RIBBON_COMMAND_ALIASES as Record<string, readonly string[] | undefined>)[id] ??
+    pluginCommandKeywords(id)
+  );
+}
+
 /**
  * Primary key for a command — the binding shown to the user (tooltips
  * etc.). Aliases (further entries in the array) exist for the user's
@@ -6350,7 +6380,7 @@ export function primaryKeyFor(
  * pass user-stored overrides here.
  */
 export function buildRibbonKeymap(
-  overrides: Partial<Record<RibbonCommandId, string | string[]>> = {},
+  overrides: Partial<Record<string, string | string[]>> = {},
   ctx: RibbonContext = DEFAULT_RIBBON_CONTEXT,
 ): Record<string, Command> {
   const out: Record<string, Command> = {};
@@ -6359,6 +6389,33 @@ export function buildRibbonKeymap(
     const cmd = commandFor(id, ctx);
     for (const key of keysArray(spec)) {
       if (!key) continue;
+      out[key] = cmd;
+    }
+  }
+  // Plugin commands bind after the static set. A plugin's DEFAULT key
+  // never steals an already-bound key (static bindings win conflicts),
+  // but an EXPLICIT user override rebinding a plugin command does win -
+  // the user asked for it (the keybindings editor dislodges the loser).
+  // Collision is judged on the FOLDED key so a case-only variant
+  // ('Mod-Shift-D' vs static 'Mod-Shift-d') can't slip past.
+  const staticFolded = foldedStaticKeys(overrides);
+  const pluginFolded = new Set<string>();
+  for (const id of pluginCommandIds()) {
+    const explicit = overrides[id] != null;
+    const spec = overrides[id] ?? pluginDefaultKey(id) ?? [];
+    const cmd: Command = () => runPluginCommand(id);
+    for (const key of keysArray(spec)) {
+      if (!key) continue;
+      // Collisions are judged on the FOLDED key against BOTH pools —
+      // the static set and earlier plugin bindings — so a case-only
+      // variant ('Mod-Shift-D' vs an earlier 'Mod-Shift-d') can't
+      // double-bind between two plugins any more than against a
+      // static command.
+      const folded = foldKeyString(key);
+      if (!explicit && (staticFolded.has(folded) || pluginFolded.has(folded) || out[key])) {
+        continue;
+      }
+      pluginFolded.add(folded);
       out[key] = cmd;
     }
   }
@@ -6372,10 +6429,11 @@ export function buildRibbonKeymap(
  * keys both follow.
  */
 export function getRibbonCommand(
-  id: RibbonCommandId,
+  id: AnyCommandId,
   ctx: RibbonContext = DEFAULT_RIBBON_CONTEXT,
 ): Command {
-  return commandFor(id, ctx);
+  if (isPluginCommandId(id)) return () => runPluginCommand(id);
+  return commandFor(id as RibbonCommandId, ctx);
 }
 
 /**
@@ -6418,11 +6476,46 @@ export function ribbonKeyStringFor(e: KeyboardEvent): string {
  *  character — 'Mod-Shift-S' ≡ 'Mod-Shift-s'. Saved user overrides
  *  captured before ribbonKeyStringFor folded letters are stored
  *  uppercase, so lookups must fold both sides. */
-function foldKeyString(key: string): string {
+export function foldKeyString(key: string): string {
   const i = key.lastIndexOf('-');
   const tail = i < 0 ? key : key.slice(i + 1);
   if (tail.length !== 1) return key;
   return i < 0 ? key.toLowerCase() : key.slice(0, i) + '-' + tail.toLowerCase();
+}
+
+/** Folded forms of every key the static (non-plugin) commands resolve
+ *  to under `overrides`. The single source of truth for plugin-vs-static
+ *  collisions, shared by `buildRibbonKeymap` and
+ *  `effectivePluginDefaultKeys` so the two can't drift. */
+function foldedStaticKeys(
+  overrides: Partial<Record<string, string | string[]>>,
+): Set<string> {
+  const set = new Set<string>();
+  for (const id of RIBBON_COMMAND_IDS) {
+    const spec = overrides[id] ?? DEFAULT_RIBBON_KEYS[id];
+    for (const key of keysArray(spec)) {
+      if (key) set.add(foldKeyString(key));
+    }
+  }
+  return set;
+}
+
+/**
+ * The default keys a plugin command actually binds to, after static
+ * collisions are resolved — so display sites show what really
+ * dispatches. An explicit override wins outright (returned verbatim,
+ * empty entries dropped); otherwise each built-in default key is
+ * suppressed when its folded form already belongs to a static command.
+ */
+export function effectivePluginDefaultKeys(
+  id: AnyCommandId,
+  overrides: Partial<Record<string, string | string[]>> = {},
+): string[] {
+  if (overrides[id] != null) return keysArray(overrides[id]!).filter((k) => !!k);
+  const staticFolded = foldedStaticKeys(overrides);
+  return keysArray(pluginDefaultKey(id) ?? []).filter(
+    (k) => !!k && !staticFolded.has(foldKeyString(k)),
+  );
 }
 
 /**
@@ -6435,11 +6528,21 @@ function foldKeyString(key: string): string {
  */
 export function ribbonCommandForKey(
   keyString: string,
-  overrides: Partial<Record<RibbonCommandId, string | string[]>> = {},
-): RibbonCommandId | null {
+  overrides: Partial<Record<string, string | string[]>> = {},
+): AnyCommandId | null {
   const folded = foldKeyString(keyString);
+  // An explicit override that rebinds a plugin command wins over a
+  // static DEFAULT key (mirrors buildRibbonKeymap above).
+  for (const id of pluginCommandIds()) {
+    const spec = overrides[id];
+    if (spec != null && keysArray(spec).some((k) => foldKeyString(k) === folded)) return id;
+  }
   for (const id of RIBBON_COMMAND_IDS) {
     const spec = overrides[id] ?? DEFAULT_RIBBON_KEYS[id];
+    if (keysArray(spec).some((k) => foldKeyString(k) === folded)) return id;
+  }
+  for (const id of pluginCommandIds()) {
+    const spec = overrides[id] ?? pluginDefaultKey(id) ?? [];
     if (keysArray(spec).some((k) => foldKeyString(k) === folded)) return id;
   }
   return null;

@@ -85,8 +85,11 @@ interface PairingConfig {
   relayToken: string;
 }
 
-/** Effective relay base URL: settings override → env/baked default. */
-function relayUrl(): string {
+/** Effective relay base URL: settings override → env/baked default.
+ *  Exported for the plugin installer's allowlist fetch — same server,
+ *  same self-hosted-override semantics, no token involved (the
+ *  allowlist route is deliberately ungated). */
+export function relayUrl(): string {
   const custom = config.relayUrl.trim().replace(/\/+$/, '');
   return custom || DEFAULT_RELAY_URL;
 }

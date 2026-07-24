@@ -200,13 +200,35 @@ export function parseNative(bytes: Uint8Array): ParseNativeResult {
   // analytic_unit). `nodeFromJSON` builds the now-invalid node without
   // validating; this rewrites it into a trailing analytic_unit before the doc
   // reaches the editor. See `schema/migrate.ts`.
-  const doc = stripImageVisualMarks(
-    dropEmptyZones(
-      flattenNestedZones(
-        splitInCardAnalytics(stampMissingHeadingIds(schema.nodeFromJSON(file.doc))),
+  let doc: PMNode;
+  try {
+    doc = stripImageVisualMarks(
+      dropEmptyZones(
+        flattenNestedZones(
+          splitInCardAnalytics(stampMissingHeadingIds(schema.nodeFromJSON(file.doc))),
+        ),
       ),
-    ),
-  );
+    );
+    if (doc.type !== schema.nodes['doc']) {
+      throw new Error(`top-level node is "${doc.type.name}", not a document`);
+    }
+    // Reject-invalid, not heal-known-only (PR #25 review): `nodeFromJSON`
+    // builds invalid STRUCTURE of known types without complaint (only
+    // unknown node/mark types throw), and a `.cmir` reaches this parser
+    // with one double-click via the OS file association — so a crafted or
+    // corrupted file must fail CLEANLY here, not load broken state that
+    // misbehaves later. The heal passes above run first: they exist for
+    // specific known-legacy shapes, and a healed doc passes; `check()`
+    // walks everything else (content expressions, mark constraints) and
+    // throws with a precise location.
+    doc.check();
+  } catch (err) {
+    throw new Error(
+      `This CardMirror file is damaged and can’t be opened (${
+        err instanceof Error ? err.message : String(err)
+      }).`,
+    );
+  }
   return {
     doc,
     threads: Array.isArray(file.threads) ? file.threads : [],

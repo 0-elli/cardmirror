@@ -169,8 +169,24 @@ interface ElectronAPI {
   cardCutterLoad?(
     enginePath?: string | null,
   ): Promise<{ ok: boolean; path?: string; error?: string }>;
+  /** Plugin manager (GitHub install; optional so an older preload
+   *  tolerates its absence). Install is two-phase: inspect stages the
+   *  release main-side and returns consent-dialog facts; commit writes
+   *  after consent; discard drops the staged release on decline. */
+  pluginInstallInspect?(ref: string): Promise<Record<string, unknown>>;
+  pluginInstallCommit?(token: string): Promise<Record<string, unknown>>;
+  pluginInstallDiscard?(token: string): Promise<void>;
+  pluginCommunityInstalls?(on: boolean): Promise<void>;
+  pluginList?(): Promise<unknown[]>;
+  pluginUninstall?(id: string): Promise<void>;
+  pluginCheckUpdate?(id: string, repoRef: string): Promise<Record<string, unknown>>;
+  pluginPickFile?(): Promise<string | null>;
+  pluginLoad?(id: string): Promise<{ ok: boolean; error?: string }>;
+  pluginLoadFile?(filePath: string): Promise<{ ok: boolean; error?: string }>;
   getPathForFile(file: File): string;
   minimizeWindow?(): Promise<void>;
+  syncLibraryRoots?(roots: string[]): Promise<void>;
+  grantLegacyRecents?(paths: string[]): Promise<boolean>;
   readFileAtPath(filePath: string): Promise<{
     name: string;
     bytes: Uint8Array;
@@ -455,6 +471,21 @@ interface ElectronAPI {
     error?: string;
     docTitle?: string;
   }): void;
+  /** Plugin bridge (plugin API v1). Optional so an older preload
+   *  tolerates their absence — callers fall back gracefully. The
+   *  jump request/result pair mirrors the external-insert pair
+   *  above (`external:jump` / `external:jump-result`). */
+  pluginJump?(source: string): Promise<Record<string, unknown>>;
+  flowApps?(): Promise<unknown[]>;
+  flowPost?(appId: string, route: string, body: unknown): Promise<Record<string, unknown>>;
+  onExternalJumpRequest?(
+    handler: (req: { requestId: string; source: string }) => void,
+  ): () => void;
+  sendExternalJumpResult?(result: {
+    requestId: string;
+    ok: boolean;
+    error?: string;
+  }): void;
 }
 
 function api(): ElectronAPI {
@@ -524,6 +555,57 @@ export class ElectronHost implements Host {
     );
   }
 
+  /** Plugin manager (GitHub install). No-ops gracefully on an older
+   *  preload that predates the plugin surface. */
+  async pluginInstallInspect(ref: string): Promise<Record<string, unknown>> {
+    return (await api().pluginInstallInspect?.(ref)) ?? { ok: false, error: 'unsupported' };
+  }
+  async pluginInstallCommit(token: string): Promise<Record<string, unknown>> {
+    return (await api().pluginInstallCommit?.(token)) ?? { ok: false, error: 'unsupported' };
+  }
+  async pluginInstallDiscard(token: string): Promise<void> {
+    await api().pluginInstallDiscard?.(token);
+  }
+  async pluginCommunityInstalls(on: boolean): Promise<void> {
+    await api().pluginCommunityInstalls?.(on);
+  }
+  async pluginList(): Promise<unknown[]> {
+    return (await api().pluginList?.()) ?? [];
+  }
+  async pluginUninstall(id: string): Promise<void> {
+    await api().pluginUninstall?.(id);
+  }
+  async pluginCheckUpdate(id: string, repoRef: string): Promise<Record<string, unknown>> {
+    return (await api().pluginCheckUpdate?.(id, repoRef)) ?? { ok: false, error: 'unsupported' };
+  }
+  async pluginPickFile(): Promise<string | null> {
+    return (await api().pluginPickFile?.()) ?? null;
+  }
+  async pluginLoad(id: string): Promise<{ ok: boolean; error?: string }> {
+    return (
+      (await api().pluginLoad?.(id)) ?? {
+        ok: false,
+        error: 'plugin loading unsupported by this build',
+      }
+    );
+  }
+  async pluginLoadFile(filePath: string): Promise<{ ok: boolean; error?: string }> {
+    return (
+      (await api().pluginLoadFile?.(filePath)) ?? {
+        ok: false,
+        error: 'plugin loading unsupported by this build',
+      }
+    );
+  }
+
+  /** Plugin bridge (v1) — bound only when the preload exposes it, so a
+   *  capability check (`host.pluginJump`) reflects the running shell:
+   *  callers pick their own renderer-side fallback (e.g. jumpToSource's
+   *  doc-not-open-with-title), which a stub wrapper couldn't produce. */
+  readonly pluginJump? = api().pluginJump?.bind(api());
+  readonly flowApps? = api().flowApps?.bind(api());
+  readonly flowPost? = api().flowPost?.bind(api());
+
   async openFile(opts: OpenFileOptions = {}): Promise<OpenedFile | null> {
     const result = await api().openFile({ filters: opts.filters ?? [] });
     if (!result) return null;
@@ -557,6 +639,13 @@ export class ElectronHost implements Host {
     await api().minimizeWindow?.();
   }
 
+  /** Read-scope plumbing — no-ops gracefully on an older preload. */
+  async syncLibraryRoots(roots: string[]): Promise<void> {
+    await api().syncLibraryRoots?.(roots);
+  }
+  async grantLegacyRecents(paths: string[]): Promise<boolean> {
+    return (await api().grantLegacyRecents?.(paths)) ?? false;
+  }
   async readFileAtPath(filePath: string): Promise<{
     name: string;
     bytes: Uint8Array;

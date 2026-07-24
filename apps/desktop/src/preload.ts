@@ -90,7 +90,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  removed the `File.path` property, so drag-to-open resolves it through
    *  `webUtils.getPathForFile` here in the preload. Returns '' if the file has
    *  no real path (e.g. dragged from another app, not a folder). */
-  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  getPathForFile: (file: File): string => {
+    const p = webUtils.getPathForFile(file);
+    // A real dropped/picked File resolving to a path IS a user gesture —
+    // grant it so the scoped read-file-at-path can serve the drop-to-open
+    // flow. Unforgeable from the page: a synthetic File has no path, and
+    // this channel is preload-internal (not on the exposed API). `send`
+    // (not invoke) so the grant lands in main before the renderer's
+    // follow-up read invoke — same-renderer IPC stays ordered.
+    if (p) ipcRenderer.send('host:grant-dropped-path', p);
+    return p;
+  },
 
   /** Read the system clipboard's plain-text content. Used by the
    *  F2 (Paste Plain) command on Electron — bypasses the Chromium
@@ -177,6 +187,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Read a file at a known path (no picker) for the home screen's
    *  "open recent" flow. Resolves null when the path is gone /
    *  unreadable so the caller can prune the stale recent. */
+  /** Read-scope plumbing (see main's read-scope.ts): the renderer mirrors
+   *  its File-search folders and one-shot-imports pre-existing recents so
+   *  scoped `readFileAtPath` keeps serving them. */
+  syncLibraryRoots: (roots: string[]): Promise<void> =>
+    ipcRenderer.invoke('host:sync-library-roots', roots),
+  grantLegacyRecents: (paths: string[]): Promise<boolean> =>
+    ipcRenderer.invoke('host:grant-legacy-recents', paths),
   readFileAtPath: (filePath: string) =>
     ipcRenderer.invoke('host:read-file-at-path', filePath) as Promise<{
       name: string;
@@ -857,6 +874,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('host:flow-create', templatePath),
   /** Pre-warm the persistent PowerShell host (no Excel interaction). */
   flowStartHost: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('host:flow-start'),
+  /** Plugin bridge (plugin API v1 — see the plugin API spec). Jump
+   *  broadcast + flow-app discovery/POST relay resolve through main;
+   *  the jump request/result pair mirrors the external-insert pair
+   *  above (`external:jump` / `external:jump-result`). */
+  pluginJump: (source: string): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-jump', source),
+  flowApps: (): Promise<unknown[]> => ipcRenderer.invoke('host:flow-apps'),
+  flowPost: (appId: string, route: string, body: unknown): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:flow-post', appId, route, body),
+  onExternalJumpRequest(handler: (req: {
+    requestId: string;
+    source: string;
+  }) => void): () => void {
+    const listener = (
+      _evt: unknown,
+      req: { requestId: string; source: string },
+    ): void => handler(req);
+    ipcRenderer.on('external:jump', listener);
+    return () => ipcRenderer.removeListener('external:jump', listener);
+  },
+  sendExternalJumpResult: (result: {
+    requestId: string;
+    ok: boolean;
+    error?: string;
+  }): void => {
+    ipcRenderer.send('external:jump-result', result);
+  },
 
   /** Card-cutter local plugin (experimental). `pick` opens the native
    *  file dialog and returns the chosen path. `load` asks main for the
@@ -880,6 +924,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return { ok: true, path: res.path };
     } catch (e) {
       return { ok: false, error: String(e), path: res.path };
+    }
+  },
+  /** Plugin manager (GitHub install; Obsidian model). Install/list/
+   *  uninstall/update-check round-trip to main; `pluginLoad` /
+   *  `pluginLoadFile` fetch a bundle's source from main and run it in
+   *  the renderer's MAIN world (same mechanism as cardCutterLoad),
+   *  where it self-registers via window.__registerCardMirrorPlugin. */
+  pluginInstallInspect: (ref: string): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-install-inspect', ref),
+  pluginInstallCommit: (token: string): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-install-commit', token),
+  pluginInstallDiscard: (token: string): Promise<void> =>
+    ipcRenderer.invoke('host:plugin-install-discard', token),
+  pluginCommunityInstalls: (on: boolean): Promise<void> =>
+    ipcRenderer.invoke('host:plugin-community-installs', on),
+  pluginList: (): Promise<unknown[]> => ipcRenderer.invoke('host:plugin-list'),
+  pluginUninstall: (id: string): Promise<void> => ipcRenderer.invoke('host:plugin-uninstall', id),
+  pluginCheckUpdate: (id: string, repoRef: string): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-check-update', id, repoRef),
+  pluginPickFile: (): Promise<string | null> => ipcRenderer.invoke('host:plugin-pick-file'),
+  pluginLoad: async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = (await ipcRenderer.invoke('host:plugin-read', id)) as
+      | { source: string }
+      | { error: string };
+    if (!('source' in res) || !res.source) {
+      return { ok: false, error: 'error' in res ? res.error : 'not found' };
+    }
+    try {
+      await webFrame.executeJavaScript(res.source);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  },
+  pluginLoadFile: async (filePath: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = (await ipcRenderer.invoke('host:plugin-read-file', filePath)) as
+      | { source: string }
+      | { error: string };
+    if (!('source' in res) || !res.source) {
+      return { ok: false, error: 'error' in res ? res.error : 'not found' };
+    }
+    try {
+      await webFrame.executeJavaScript(res.source);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
     }
   },
 });

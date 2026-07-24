@@ -31,7 +31,7 @@ import { autoUpdater } from 'electron-updater';
 import { bundlePathFromExe, launchSwapHelper, macBundleSelfUpdatable } from './mac-swap-update.js';
 import { registerVoiceIpc } from './voice/ipc';
 import { registerFlowIpc } from './flow-bridge.js';
-import { registerPairingIpc } from './pairing-ipc.js';
+import { registerPairingIpc, relayUrl } from './pairing-ipc.js';
 import {
   readAccessibilityTreeEnabled,
   writeAccessibilityTreeEnabled,
@@ -45,11 +45,40 @@ import {
   recordDiskStateFromDisk,
   nearestExistingDir,
 } from './doc-writes.js';
+import {
+  inspectFromGithub,
+  commitPendingInstall,
+  discardPendingInstall,
+  setCommunityInstallsUnlocked,
+  setAllowlistRelayUrlSupplier,
+  listInstalled,
+  readPluginSource,
+  uninstallPlugin,
+  checkPluginUpdate,
+} from './plugin-manager.js';
+import {
+  grantReadPath,
+  grantReadDir,
+  setLibraryRoots,
+  grantLegacyRecents,
+  isReadAllowed,
+} from './read-scope.js';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { gzip as zlibGzip, gunzip as zlibGunzip } from 'node:zlib';
 import { promisify } from 'node:util';
-import { startFastPasteBridge, stopFastPasteBridge } from './fast-paste-bridge.js';
+import {
+  startFastPasteBridge,
+  stopFastPasteBridge,
+  broadcastJump,
+  getRunningEndpoint,
+} from './fast-paste-bridge.js';
+import {
+  writeCardmirrorHandshake,
+  deleteCardmirrorHandshake,
+  scanFlowApps,
+  flowPost,
+} from './bridge-handshake.js';
 
 const DEV_SERVER_URL = 'http://localhost:5173';
 
@@ -274,6 +303,7 @@ async function openExternalFile(filePath: string): Promise<void> {
   const format: 'cmir' | 'docx' | null =
     ext === '.cmir' ? 'cmir' : ext === '.docx' ? 'docx' : null;
   if (!format) return;
+  grantReadPath(filePath); // OS handed it to us → the user opened it
   // Duplicate-open guard for the OS-open path. The in-app Open dialog
   // gets this via `host:open-path-check`; Finder / Dock / "Open with…"
   // double-clicks arrive here and must run the same check, or a file
@@ -658,6 +688,9 @@ ipcMain.handle(
       },
     );
     if (result.canceled || result.filePaths.length === 0) return null;
+    // A user-picked directory puts its subtree in play for path reads
+    // (folder-scan features enumerate inside it).
+    grantReadDir(result.filePaths[0]!);
     return result.filePaths[0]!;
   },
 );
@@ -670,6 +703,7 @@ ipcMain.handle('host:open-file', async (event, opts: { filters?: FileFilter[] })
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   const filePath = result.filePaths[0]!;
+  grantReadPath(filePath); // user-picked → reopenable by path (recents)
   const bytes = await readDocumentBytes(filePath);
   return {
     name: path.basename(filePath),
@@ -705,13 +739,84 @@ ipcMain.handle('host:cardcutter-read', async (_event, explicit: string | null) =
   }
 });
 
+// ── Plugin manager (GitHub install; Obsidian model). Installed plugins
+// live in userData/plugins/<id>/ next to the legacy cardcutter file.
+// The renderer asks for a bundle's source and runs it in its main
+// world, same as the card-cutter path above. ──
+// Two-phase install: inspect stages the release in memory and returns what
+// the consent dialog needs (incl. the real owner/repo); commit writes only
+// after consent; discard drops the staged files on decline. The allowlist
+// check lives inside inspectFromGithub — main-side, so the renderer can't
+// route around it. The unlock flag arrives over its own channel (the
+// renderer's console command re-arms it each boot from its stored setting).
+ipcMain.handle('host:plugin-install-inspect', async (_e, ref: string) =>
+  inspectFromGithub(String(ref)),
+);
+ipcMain.handle('host:plugin-install-commit', async (_e, token: string) =>
+  commitPendingInstall(String(token)),
+);
+ipcMain.handle('host:plugin-install-discard', async (_e, token: string) => {
+  discardPendingInstall(String(token));
+});
+ipcMain.handle('host:plugin-community-installs', async (_e, on: boolean) => {
+  setCommunityInstallsUnlocked(on === true);
+});
+ipcMain.handle('host:plugin-list', async () => listInstalled());
+ipcMain.handle('host:plugin-read', async (_e, id: string) => {
+  const source = await readPluginSource(String(id));
+  return source === null ? { error: 'not found' } : { source };
+});
+ipcMain.handle('host:plugin-read-file', async (_e, filePath: string) => {
+  // Dev path — load an arbitrary local bundle the user picked.
+  if (typeof filePath !== 'string' || !filePath) return { error: 'bad path' };
+  try {
+    return { source: await fs.readFile(filePath, 'utf8') };
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+});
+ipcMain.handle('host:plugin-uninstall', async (_e, id: string) => uninstallPlugin(String(id)));
+ipcMain.handle('host:plugin-check-update', async (_e, id: string, repoRef: string) =>
+  checkPluginUpdate(String(id), String(repoRef)),
+);
+ipcMain.handle('host:plugin-pick-file', async (event) => {
+  const win = ownerWindow(event.sender);
+  const result = await dialog.showOpenDialog(win ?? new BrowserWindow({ show: false }), {
+    title: 'Select a plugin bundle',
+    properties: ['openFile'],
+    filters: [{ name: 'JavaScript', extensions: ['js', 'mjs', 'cjs'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0]!;
+});
+
 // Read a file at a known absolute path — used by the home
 // screen's "open recent" path, which already has the path from
 // the recents list and shouldn't pop a file picker. Returns null
 // (rather than throwing) when the file is missing / unreadable so
 // the caller can prune a stale recent entry gracefully.
+//
+// SCOPED (PR #25 review): only paths the user put in play — library
+// roots, session dialog picks, OS opens, or past grants — are served;
+// see read-scope.ts. Everything else reads as missing.
+//
+// The renderer mirrors its File-search folders here (boot + on change),
+// and imports its pre-existing recents ONCE (the import channel dies as
+// soon as the grant journal exists — it can't mint grants after that).
+ipcMain.handle('host:sync-library-roots', async (_event, roots: unknown) => {
+  setLibraryRoots(Array.isArray(roots) ? roots.map(String) : []);
+});
+// Fired by the preload's getPathForFile — a real dropped file resolved
+// by webUtils. Not on the exposed electronAPI surface.
+ipcMain.on('host:grant-dropped-path', (_event, p: unknown) => {
+  if (typeof p === 'string' && p) grantReadPath(p);
+});
+ipcMain.handle('host:grant-legacy-recents', async (_event, paths: unknown) =>
+  grantLegacyRecents(Array.isArray(paths) ? paths.map(String) : []),
+);
 ipcMain.handle('host:read-file-at-path', async (_event, filePath: string) => {
   if (typeof filePath !== 'string' || !filePath) return null;
+  if (!(await isReadAllowed(filePath))) return null;
   try {
     const bytes = await readDocumentBytes(filePath);
     const ext = path.extname(filePath).toLowerCase();
@@ -1286,6 +1391,7 @@ ipcMain.handle(
     });
     if (result.canceled || !result.filePath) return null;
     await saveNewDoc(result.filePath, bytesToBuffer(bytes));
+    grantReadPath(result.filePath); // a saved file is reopenable by path
     return {
       name: path.basename(result.filePath),
       handle: result.filePath,
@@ -1528,6 +1634,7 @@ ipcMain.handle('host:spawn-window', async (_event, payload: InitialDocPayload | 
   // was previously owned by a window that died without
   // releasing.)
   if (payload && typeof payload.handle === 'string' && payload.handle) {
+    grantReadPath(payload.handle); // doc handed to a new window stays readable there
     const norm = canonicalOpenPath(payload.handle);
     const prevOwner = openPathOwners.get(norm);
     if (prevOwner !== undefined && prevOwner !== newWin.id) {
@@ -2062,9 +2169,28 @@ registerVoiceIpc();
 // Verbatim Flow bridge (Windows COM → Excel). No-ops off Windows.
 registerFlowIpc();
 
+// cardmirror-bridge plugin surface (plugin API v1): jump broadcast via
+// the fast-paste bridge, plus flow-app discovery / POST relay from the
+// shared handshake directory. Tokens never reach the renderer.
+ipcMain.handle('host:plugin-jump', async (_event, source: string) => {
+  if (typeof source !== 'string') return { ok: false, error: 'bad-request' };
+  return broadcastJump(source);
+});
+ipcMain.handle('host:flow-apps', async () => scanFlowApps());
+ipcMain.handle('host:flow-post', async (_event, appId: string, route: string, body: unknown) => {
+  if (typeof appId !== 'string' || typeof route !== 'string') {
+    return { ok: false, error: 'no-such-app' };
+  }
+  return flowPost(appId, route, body);
+});
+
 // Cross-machine card sharing — receive poller + send + inbox. Idle until
 // the renderer sends `host:pairing-configure` with sharing enabled.
 registerPairingIpc();
+// The plugin installer's allowlist fetch rides the same relay (and the
+// same self-hosted override) as pairing — a getter, so a settings change
+// takes effect without a restart. The route itself is ungated.
+setAllowlistRelayUrlSupplier(relayUrl);
 
 ipcMain.handle('host:speech-set', async (event, uid: string | null) => {
   const senderWin = BrowserWindow.fromWebContents(event.sender);
@@ -3023,11 +3149,22 @@ void app.whenReady().then(() => {
   }
   startAutoUpdate();
   // Fast Debate Paste integration — 127.0.0.1-only HTTP server
-  // exposing `/ping` and `/insert` for the external client. If the
-  // port is taken or the discovery file can't be written, the
+  // exposing `/ping`, `/insert`, and `/jump` for external clients. If
+  // the port is taken or the discovery file can't be written, the
   // bridge silently bails and the client falls back to its
   // keystroke path (the integration is never a hard dependency).
-  void startFastPasteBridge();
+  // Once up, mirror the endpoint into the shared cardmirror-bridge
+  // handshake directory so flow apps can discover us (plugin API v1).
+  void startFastPasteBridge().then(async () => {
+    const ep = getRunningEndpoint();
+    if (ep) {
+      try {
+        await writeCardmirrorHandshake(ep.port, ep.token);
+      } catch {
+        /* non-fatal — flow apps just won't discover us this session */
+      }
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -3043,10 +3180,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin' || quitInitiated) app.quit();
 });
 
-// Tear down the Fast Debate Paste bridge before the app exits so
-// the discovery file goes with us (stale-file tolerance is
-// designed in, but cleaning up our own state means the next launch
-// starts from a known-empty state).
 app.on('before-quit', () => {
   // Remember that a genuine quit was asked for. The per-window
   // `close` handlers will `preventDefault()` this quit to confirm
@@ -3054,5 +3187,19 @@ app.on('before-quit', () => {
   // exit once the confirmations resolve. Cleared by
   // `host:close-cancelled` if the user backs out.
   quitInitiated = true;
+});
+
+// Tear down the Fast Debate Paste bridge only once the quit truly
+// proceeds. `will-quit` fires after every window has confirmed and
+// `window-all-closed` has re-issued the quit — never on a quit the
+// user cancelled (that clears `quitInitiated`, so the second
+// `app.quit()` never runs and `will-quit` never fires). Doing the
+// teardown here instead of in `before-quit` keeps the bridge and
+// both discovery files alive for the rest of the session after a
+// cancelled quit. Stale-file tolerance still covers a hard exit.
+app.on('will-quit', () => {
   void stopFastPasteBridge();
+  // Clears only the SESSION half (port/token); the identity file persists
+  // so flow-app pickers can still list a closed CardMirror.
+  void deleteCardmirrorHandshake();
 });

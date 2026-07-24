@@ -24,6 +24,10 @@ services:
     environment:
       DATABASE_URL: postgresql://relay:relay@postgres:5432/relay
       RELAY_TOKEN: ${RELAY_TOKEN:?set RELAY_TOKEN}
+      # Which GitHub repos your users' plugin installers accept
+      # (comma-separated owner/repo). Plugins are full-trust code —
+      # curate deliberately. Defaults to the app's baked list.
+      RELAY_PLUGIN_ALLOWLIST: ${RELAY_PLUGIN_ALLOWLIST:-shreerammodi/ebb}
     ports:
       - "8410:8000"
 

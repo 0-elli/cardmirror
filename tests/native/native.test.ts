@@ -295,3 +295,58 @@ describe('native format (.cmir)', () => {
     expect(doc.eq(original)).toBe(true);
   });
 });
+
+describe('parseNative structural validation (reject-invalid)', () => {
+  // A .cmir reaches this parser with one double-click via the OS file
+  // association, and nodeFromJSON builds invalid structure of KNOWN types
+  // without complaint — so a crafted/corrupted file must fail cleanly at
+  // parse, not load broken state (PR #25 review hardening).
+  const envelope = (doc: unknown): Uint8Array =>
+    new TextEncoder().encode(
+      JSON.stringify({ format: 'cardmirror-doc', formatVersion: 1, doc }),
+    );
+
+  it('rejects invalid structure of known types (tagless card)', () => {
+    const bad = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'card',
+          content: [
+            { type: 'card_body', content: [{ type: 'text', text: 'no tag first' }] },
+          ],
+        },
+      ],
+    });
+    expect(() => parseNative(bad)).toThrow(/damaged/);
+  });
+
+  it('rejects a non-doc top-level node', () => {
+    const bad = envelope({ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] });
+    expect(() => parseNative(bad)).toThrow(/damaged/);
+  });
+
+  it('rejects unknown node types with the same clean error shape', () => {
+    const bad = envelope({ type: 'doc', content: [{ type: 'totally-made-up' }] });
+    expect(() => parseNative(bad)).toThrow(/damaged/);
+  });
+
+  it('still accepts every legacy shape the heal passes exist for', () => {
+    // A null heading id (alpha.6-era) heals via stampMissingHeadingIds and
+    // must keep loading — check() runs AFTER the heals, not instead.
+    const legacy = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'card',
+          content: [
+            { type: 'tag', attrs: { id: null }, content: [{ type: 'text', text: 'Tag' }] },
+            { type: 'card_body', content: [{ type: 'text', text: 'body' }] },
+          ],
+        },
+      ],
+    });
+    const parsed = parseNative(legacy);
+    expect(parsed.doc.firstChild!.firstChild!.attrs['id']).toBeTruthy();
+  });
+});

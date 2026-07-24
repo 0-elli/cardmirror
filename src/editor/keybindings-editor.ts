@@ -1,5 +1,7 @@
 /**
- * Keybindings editor — one row per `RibbonCommandId`. Each row shows
+ * Keybindings editor — one row per command: every static
+ * `RibbonCommandId` (grouped per `RIBBON_GROUPS`), plus a "Plugins"
+ * section for registered plugin commands. Each row shows
  * the command label, its current bindings (overrides win over
  * defaults) as removable chips, a "+" button to capture a new
  * binding, and a "↺" reset that drops any override for that command
@@ -26,18 +28,21 @@
 
 import {
   RIBBON_COMMAND_IDS,
-  RIBBON_COMMAND_LABELS,
   DEFAULT_RIBBON_KEYS,
   ribbonKeyStringFor,
   formatKeyForDisplay,
-  type RibbonCommandId,
+  commandLabelFor,
+  effectivePluginDefaultKeys,
+  foldKeyString,
+  type AnyCommandId,
 } from './ribbon-commands.js';
+import { pluginCommandIds } from './plugin-registry.js';
 import { RIBBON_GROUPS } from './ribbon-groups.js';
 import { isRibbonCommandAvailable } from './ribbon-availability.js';
 import { settings, type KeyboardMacro } from './settings.js';
 import { setIcon } from './icons';
 
-function getOverrides(): Partial<Record<RibbonCommandId, string | string[]>> {
+function getOverrides(): Partial<Record<string, string | string[]>> {
   return settings.get('ribbonKeyOverrides');
 }
 
@@ -46,9 +51,17 @@ function getOverrides(): Partial<Record<RibbonCommandId, string | string[]>> {
  *  in the array (they're meaningless for display but the override
  *  map uses them to signal "explicitly unbound" — we filter those
  *  out at the chip-rendering level). */
-function resolvedKeys(id: RibbonCommandId): string[] {
+function resolvedKeys(id: AnyCommandId): string[] {
   const overrides = getOverrides();
-  const spec = id in overrides ? overrides[id]! : DEFAULT_RIBBON_KEYS[id];
+  // Plugin ids resolve through the shared helper so a plugin default that
+  // loses a static collision doesn't show a chip that never dispatches.
+  if (!(id in (DEFAULT_RIBBON_KEYS as Record<string, unknown>))) {
+    return effectivePluginDefaultKeys(id, overrides);
+  }
+  const spec =
+    id in overrides
+      ? overrides[id]!
+      : ((DEFAULT_RIBBON_KEYS as Record<string, string | string[] | undefined>)[id] ?? []);
   const arr = Array.isArray(spec) ? spec : [spec];
   return arr.filter((k) => typeof k === 'string') as string[];
 }
@@ -56,7 +69,7 @@ function resolvedKeys(id: RibbonCommandId): string[] {
 /** Mutator: write a normalized key list back to the override map for
  *  a single command. Always overwrites (so once a row has been
  *  touched, defaults stop applying — explicit list wins). */
-function setOverrideKeys(id: RibbonCommandId, keys: string[]): void {
+function setOverrideKeys(id: AnyCommandId, keys: string[]): void {
   const next = { ...getOverrides() };
   // Normalize: store strings as strings when there's exactly one
   // non-empty entry, arrays otherwise. Keeps the JSON-persisted shape
@@ -74,7 +87,7 @@ function setOverrideKeys(id: RibbonCommandId, keys: string[]): void {
 }
 
 /** Drop any override entry for `id`, falling back to defaults. */
-function clearOverride(id: RibbonCommandId): void {
+function clearOverride(id: AnyCommandId): void {
   const next = { ...getOverrides() };
   delete next[id];
   settings.set('ribbonKeyOverrides', next);
@@ -114,11 +127,12 @@ function setMacroKey(id: string, key: string): void {
  */
 function findConflict(
   key: string,
-  excludeId: RibbonCommandId,
-): RibbonCommandId | null {
-  for (const id of RIBBON_COMMAND_IDS) {
+  excludeId: AnyCommandId,
+): AnyCommandId | null {
+  const folded = foldKeyString(key);
+  for (const id of [...RIBBON_COMMAND_IDS, ...pluginCommandIds()]) {
     if (id === excludeId) continue;
-    if (resolvedKeys(id).includes(key)) return id;
+    if (resolvedKeys(id).some((k) => foldKeyString(k) === folded)) return id;
   }
   return null;
 }
@@ -126,8 +140,9 @@ function findConflict(
 /** Remove `key` from `id`'s binding set. If the result equals the
  *  default exactly, the override is dropped; otherwise the trimmed
  *  list becomes the new override. */
-function removeKeyFromCommand(id: RibbonCommandId, key: string): void {
-  const current = resolvedKeys(id).filter((k) => k !== key);
+function removeKeyFromCommand(id: AnyCommandId, key: string): void {
+  const folded = foldKeyString(key);
+  const current = resolvedKeys(id).filter((k) => foldKeyString(k) !== folded);
   setOverrideKeys(id, current);
 }
 
@@ -230,7 +245,7 @@ export function buildKeybindingsEditor(): HTMLElement {
     }, 2400);
   }
 
-  function startCapture(id: RibbonCommandId, row: HTMLElement): void {
+  function startCapture(id: AnyCommandId, row: HTMLElement): void {
     if (activeCapture) exitCapture();
     const addBtn = row.querySelector<HTMLButtonElement>('.pmd-keybinding-add');
     const capturePill =
@@ -270,7 +285,7 @@ export function buildKeybindingsEditor(): HTMLElement {
         removeKeyFromCommand(conflict, key);
         flashConflict(
           row,
-          `Removed ${formatKeyForDisplay(key)} from "${RIBBON_COMMAND_LABELS[conflict]}".`,
+          `Removed ${formatKeyForDisplay(key)} from "${commandLabelFor(conflict)}".`,
         );
       }
       const next = [...resolvedKeys(id)];
@@ -290,13 +305,13 @@ export function buildKeybindingsEditor(): HTMLElement {
     };
   }
 
-  function renderRow(id: RibbonCommandId): HTMLElement {
+  function renderRow(id: AnyCommandId): HTMLElement {
     const row = document.createElement('div');
     row.className = 'pmd-keybinding-row';
 
     const label = document.createElement('span');
     label.className = 'pmd-keybinding-label';
-    label.textContent = RIBBON_COMMAND_LABELS[id];
+    label.textContent = commandLabelFor(id);
     row.appendChild(label);
 
     const chips = document.createElement('span');
@@ -581,6 +596,22 @@ export function buildKeybindingsEditor(): HTMLElement {
       heading.textContent = group.title;
       section.appendChild(heading);
       for (const id of ids) section.appendChild(renderRow(id));
+      list.appendChild(section);
+    }
+    // Registered plugin commands get their own rebind section (spec 3),
+    // reusing the exact same row machinery — the override helpers and
+    // conflict handling above already speak `AnyCommandId`. Skipped
+    // entirely while no plugin has registered commands, so the static
+    // list never grows a stranded empty heading.
+    const pluginIds = pluginCommandIds();
+    if (pluginIds.length > 0) {
+      const section = document.createElement('section');
+      section.className = 'pmd-keybindings-group';
+      const heading = document.createElement('h3');
+      heading.className = 'pmd-keybindings-group-title';
+      heading.textContent = 'Plugins';
+      section.appendChild(heading);
+      for (const id of pluginIds) section.appendChild(renderRow(id));
       list.appendChild(section);
     }
     wrap.appendChild(list);

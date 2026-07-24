@@ -1,0 +1,524 @@
+# CardMirror plugin API v1
+
+The published contract for CardMirror plugins and for flowing apps.
+The sources of truth are `src/editor/plugin-api.ts`,
+`src/editor/plugin-registry.ts`, `apps/desktop/src/plugin-manager.ts`,
+`apps/desktop/src/bridge-handshake.ts`, and
+`apps/desktop/src/fast-paste-bridge.ts`.
+
+Stability: **sections 4 and 5 (the cardmirror-bridge handshake and the
+HTTP routes) are FROZEN** — flowing apps ship against them, and changes
+must stay backward compatible. **Sections 1 to 3 and 6 (the renderer
+plugin API) are a DRAFT**: v1 plugins are full-trust code (see the
+install model below), and a future sandboxed v2 may change this surface
+— write plugins against it with that expectation.
+
+Audience: plugin authors and authors of flowing apps. Sections 1 to 3
+and 6 cover renderer plugins. Sections 4 and 5 cover cross-app
+integration over HTTP.
+
+## 1. Plugin packaging
+
+A plugin is one GitHub repository. Each release attaches two assets:
+
+- `cardmirror-plugin.json` - the manifest.
+- `plugin.js` - the built bundle. Only the released bundle loads. The
+  repo source format does not matter.
+
+### Manifest fields
+
+| Field | Type | Required | Rule |
+| --- | --- | --- | --- |
+| `id` | string | yes | Lowercase. Must match `^[a-z0-9][a-z0-9-]*$`. Cannot be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `comN`, `lptN`). |
+| `name` | string | yes | Display name. |
+| `version` | string | yes | Semver, for example `0.1.0` or `0.2.0-beta.1`. |
+| `description` | string | no | One line for the Plugins tab. |
+| `author` | string | no | Shown in the consent prompt. |
+| `apiVersion` | number | yes | Must be `1`. |
+| `minAppVersion` | string | no | Oldest CardMirror version that the plugin supports. |
+| `repo` | string | never in your release | The installer stamps `owner/repo` into the saved manifest. Update checks read it. Do not set it yourself. |
+
+Example:
+
+```json
+{
+  "id": "cardmirror-ebb",
+  "name": "ebb Flow Integration",
+  "version": "0.1.0",
+  "description": "Send to flow, send extension, and inverse search for ebb.",
+  "author": "smodi",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.0-beta.18"
+}
+```
+
+### The curated allowlist
+
+Plugins run with full access to CardMirror and the user's documents, so
+the GitHub installer only accepts repositories on a curated allowlist.
+The check runs in the main process — the renderer cannot route around
+it. The list itself is served by the CardMirror relay at
+`GET /plugin-allowlist` (ungated; response
+`{ "schema": 1, "repos": ["owner/repo", ...] }`) and consulted fresh on
+each install attempt, so listing a new plugin is a server-side change —
+no app release. The last fetched list is cached on disk for offline
+installs, and a baked-in floor (`PLUGIN_INSTALL_ALLOWLIST` in
+`apps/desktop/src/plugin-manager.ts`) covers a machine that has never
+reached the relay. An empty or malformed server response is treated as
+a failed fetch (cache/baked fallback), never as "block everything". To
+get a plugin listed, contact the CardMirror maintainer.
+
+Self-hosted relays serve the same endpoint (see `relay/README.md`):
+the fetch goes to whichever relay the client is configured to use, so
+a self-hosting operator curates their own users' allowlist via
+`RELAY_PLUGIN_ALLOWLIST` on their relay. Its default matches the app's
+baked list, so an unconfigured self-hosted relay changes nothing.
+
+Users who understand the trust model can unlock arbitrary-repo installs
+from the developer console with `__plugins('community-on')` (persisted;
+`__plugins('community-off')` reverts, `__plugins('status')` reports).
+The "Load plugin from file..." developer path below is independent of
+the allowlist.
+
+### Install flow
+
+1. The user pastes a GitHub URL or an `owner/repo` shorthand into the
+   Plugins settings tab.
+2. The main process checks the allowlist, fetches the latest GitHub
+   release, and downloads the two assets. Each asset must be 5 MiB or
+   less.
+3. The app validates the manifest and applies the version gates below.
+4. The app checks for an id collision. If a different repository
+   already owns the id, install fails and asks the user to uninstall
+   the existing plugin first.
+5. The app stages the release in memory and asks for consent. The
+   dialog shows the manifest's name/version/author AND the actual
+   `owner/repo` the release came from (which a manifest cannot spoof).
+   Nothing touches disk before consent; declining a reinstall leaves
+   the existing installed version untouched.
+6. On consent, the app writes both files into `userData/plugins/<id>/`
+   with an atomic write (tmp file, then rename).
+7. The user enables the plugin in the Plugins tab. Enabled plugins
+   load from disk at each launch and work offline.
+
+A developer path exists: "Load plugin from file..." in the Plugins tab
+loads a local `plugin.js` without an install.
+
+### Uninstall
+
+Uninstalling removes the install directory, the plugin's enabled flag
+and storage bag, the user's key overrides for its commands, AND its
+live registration — palette rows, keybinding rows, and hotkeys vanish
+immediately. One caveat: bundle code that already executed this
+session cannot be unloaded; with its commands deregistered it is inert
+and fully gone on the next launch. As a backstop, launch reconciles
+stored state against the install directories on disk, so a plugin
+folder deleted outside the app also gets its leftovers pruned (a
+plugin that merely fails to LOAD is still installed and loses
+nothing).
+
+### Version gates
+
+- `apiVersion` must equal `1`. Install rejects any other value.
+  Registration rejects it again at load time (section 2).
+- If `minAppVersion` is newer than the app version, install fails with
+  "This plugin needs CardMirror `<minAppVersion>` or newer."
+- Both gates also run at every app launch, not only at install. An
+  installed plugin that fails the `minAppVersion` gate does not load
+  (the app refuses to serve its bundle) but stays LISTED in the
+  Plugins tab, marked "needs CardMirror `<version>` or newer" with its
+  toggle disabled — it can still be uninstalled.
+- The gate is two-sided. At run time, read `api.appVersion` and refuse
+  an app that is too old for your plugin.
+
+## 2. Registration
+
+The bundle self-registers. Call the window global once at load:
+
+```js
+window.__registerCardMirrorPlugin?.({ /* PluginDefinition */ });
+```
+
+The definition types, verbatim from `src/editor/plugin-registry.ts`:
+
+```ts
+export const PLUGIN_API_VERSION = 1;
+
+export interface PluginCommandDef {
+  /** Must start with `<pluginId>.` */
+  id: string;
+  label: string;
+  keywords?: readonly string[];
+  defaultKey?: string | string[] | null;
+  run: (api: CardMirrorPluginApi) => void | Promise<void>;
+}
+
+export interface PluginDefinition {
+  id: string;
+  name: string;
+  apiVersion: number;
+  commands: PluginCommandDef[];
+}
+```
+
+Rules:
+
+- `id` must match the manifest `id`.
+- Every command `id` must start with `<pluginId>.`, for example
+  `cardmirror-ebb.sendToFlow`.
+- Command ids must be unique, both inside the definition and across
+  all registered plugins.
+- Every command needs a non-empty `label` and a `run` function.
+- Each registered plugin receives one `CardMirrorPluginApi` object,
+  minted for its plugin id. Registered commands appear in the command
+  palette and the keymap.
+
+### Failure behavior
+
+Registration never throws and never crashes the app. The registry
+rejects a bad definition, writes a console warning, and shows the
+toast "Plugin failed to load: `<reason>`". Rejection reasons:
+
+- `apiVersion` is not `1`.
+- The plugin id is missing, or a plugin with that id is already
+  registered.
+- `commands` is not an array.
+- A command id lacks the `<pluginId>.` prefix, or is a duplicate.
+- A command lacks a `label` or a `run` function.
+
+A `run` function that throws, or that returns a rejected promise, does
+not crash the app. The registry logs the error and shows a toast with
+the plugin name.
+
+## 3. The capability API
+
+Each command's `run` receives one `api` argument. The full surface,
+verbatim from `src/editor/plugin-api.ts`:
+
+```ts
+export type ExtractedKind =
+  | 'pocket'
+  | 'hat'
+  | 'block'
+  | 'tag'
+  | 'analytic'
+  | 'undertag'
+  | 'cite';
+
+export interface ExtractedItem {
+  kind: ExtractedKind;
+  text: string;
+  /** Opaque provenance token (see plugin-source-token.ts). */
+  source: string;
+}
+
+export interface ExtractResult {
+  ok: true;
+  docId: string;
+  docTitle: string;
+  items: ExtractedItem[];
+}
+
+export type ExtractErrorCode = 'no-heading-at-cursor' | 'no-active-doc' | 'empty-selection';
+export interface ExtractError {
+  ok: false;
+  error: ExtractErrorCode;
+}
+
+export type JumpResult =
+  | { ok: true }
+  | { ok: false; error: 'doc-not-open' | 'not-found' | 'bad-request'; docTitle?: string };
+
+export interface FlowAppInfo {
+  id: string;
+  app: string;
+  appVersion: string;
+  schema: number;
+  kind: 'flow';
+}
+
+export type FlowPostResult =
+  | { ok: true; status: number; body: unknown }
+  | { ok: false; error: 'no-such-app' | 'app-not-running' | 'timeout' | 'bad-response' | 'unsupported' };
+
+export interface PluginStorage {
+  get(key: string): unknown;
+  set(key: string, value: unknown): void;
+}
+
+export interface CardMirrorPluginApi {
+  readonly appVersion: string;
+  extractSelection(): ExtractResult | ExtractError;
+  jumpToSource(token: string): Promise<JumpResult>;
+  flowApps(): Promise<FlowAppInfo[]>;
+  flowPost(appId: string, route: string, body: unknown): Promise<FlowPostResult>;
+  docInfo(): { docId: string; docTitle: string } | null;
+  showToast(message: string): void;
+  storage: PluginStorage;
+}
+```
+
+### Methods
+
+- `appVersion` - the CardMirror version string. Use it for your own
+  compatibility check.
+- `extractSelection()` - synchronous typed extraction from the focused
+  document (rules below). If the document has no `docId` yet, the call
+  mints and stamps one.
+- `jumpToSource(token)` - scroll to and select the source of an
+  extracted item. The resolver tries the focused document first, then
+  every open window. `doc-not-open` carries `docTitle` so you can tell
+  the user which document to open.
+- `flowApps()` - every REGISTERED flowing app from the handshake
+  directory (section 4), each with a `running` flag from a liveness
+  ping. Closed apps are listed with `running: false` — selection UIs
+  must not require an app to be running; a send to one fails at
+  runtime with `app-not-running`.
+- `flowPost(appId, route, body)` - a brokered loopback POST to a
+  flowing app. The main process reads the target's handshake files,
+  attaches the token header, and applies a timeout. Plugins never see
+  tokens or sockets. `unsupported` means the desktop host surface is
+  absent. The `ok` field shows transport success only. Read the
+  `status` field for the HTTP result.
+- `docInfo()` - `docId` and `docTitle` of the focused document, or
+  `null` when there is none or the doc has no id yet.
+- `showToast(message)` - a transient notification in the app.
+- `storage` - per-plugin persistent key-value storage. Values must be
+  JSON-serializable.
+
+### Extraction rules
+
+The selection rule:
+
+- An explicit selection wins. Extraction walks only the selected range.
+- A collapsed cursor expands to the enclosing heading section: from
+  the nearest enclosing heading to the next heading of the same or a
+  shallower level.
+- A cursor above all headings returns `no-heading-at-cursor`. Core
+  does not guess.
+- A range that yields no items returns `empty-selection`.
+- No focused document returns `no-active-doc`.
+
+The item rules, in document order:
+
+- Pocket, hat, block, tag, and analytic nodes emit their full text.
+- Cite paragraphs emit the short cite only, with kind `cite`.
+- Undertags always emit, with kind `undertag`. The plugin decides what
+  to do with them: skip, treat as header, or treat as extension.
+- Card bodies and loose paragraphs never emit. This rule is deliberate
+  and has no override.
+- Whitespace in each item collapses to single spaces. Empty items are
+  dropped.
+
+Heading attribution per item: pocket, hat, block, tag, and analytic
+items carry their own heading UUID. An undertag or cite inside a card
+carries the UUID of the parent card's tag or analytic. A top-level
+undertag carries the UUID of the nearest preceding heading.
+
+### The source token
+
+Each extracted item carries one provenance string in `source`. The
+current format starts with the `cmsrc1` prefix. The token is opaque:
+
+- Store it.
+- Pass it back verbatim, to `jumpToSource` or to the `/jump` route.
+- Never parse it and never build one. Only CardMirror mints and parses
+  tokens. A future format change bumps the prefix, and old tokens stay
+  valid.
+
+## 4. The cardmirror-bridge handshake
+
+This section and section 5 are the frozen cross-app contract. Flowing
+apps build against this file format and these routes. Changes require
+a schema bump.
+
+Each debate app announces its local HTTP endpoint in a shared
+directory. The directory per platform:
+
+- macOS: `~/Library/Application Support/cardmirror-bridge/`
+- Windows: `%APPDATA%/cardmirror-bridge/`
+- Linux: `$XDG_DATA_HOME/cardmirror-bridge/` (fallback
+  `~/.local/share/cardmirror-bridge/`)
+
+Each app writes TWO files, atomically (write a tmp file, then rename
+it into place):
+
+- `<appId>.json` — the IDENTITY file. Written on launch, **never
+  deleted**. This is what app pickers list, so a closed app stays
+  selectable in a peer's settings.
+- `<appId>.session.json` — the SESSION file. Written on launch with a
+  fresh token, **deleted on quit**. Its absence means the app isn't
+  running right now.
+
+CardMirror writes `cardmirror.json` / `cardmirror.session.json` with
+`kind: "editor"`. Flowing apps register with `kind: "flow"`. The file
+name (without the suffix) is the app id and must match
+`^[a-z0-9][a-z0-9-]*$`.
+
+Identity file, schema 1:
+
+```json
+{
+  "schema": 1,
+  "app": "ebb",
+  "appVersion": "0.3.0",
+  "kind": "flow"
+}
+```
+
+Session file:
+
+```json
+{
+  "port": 17700,
+  "token": "hoyfR3k9vXqLmZ2wN8cT1bUj",
+  "pid": 12345
+}
+```
+
+Rules:
+
+- The token is random and rotates each session — which is WHY the
+  session data lives in its own deleted-on-quit file: a kept combined
+  file would advertise a dead or wrong endpoint.
+- Every request between apps carries the target's token in the
+  `X-Bridge-Token` header. The receiver must compare it in constant
+  time.
+- Liveness: a reader sends `GET /ping` with the token before it trusts
+  a session file. A stale session from a crashed process fails the
+  ping and reads as "registered but not running" — never as absent.
+  Sending to a registered app with no live session fails with
+  `app-not-running`; a dead connection is a runtime error, not a
+  reason to hide the app from selection.
+- Before SENDING, check the session file's `pid` is still alive (e.g.
+  `kill(pid, 0)`; treat EPERM as alive) and map a dead pid to
+  `app-not-running` without touching the port. A dead writer proves
+  the file is stale — whatever answers that port now is not the app
+  that wrote it. This is cheaper than a ping and catches what a ping
+  cannot (any process answers a knock); a crashed-and-relaunched app
+  self-heals by writing a fresh session file, and pid recycling merely
+  degrades the check to a plain failed send.
+- Create the directory `0700` and write both files `0600` where the
+  platform supports modes — session tokens must not be readable by
+  other users on a shared machine.
+- Bind the endpoint to `127.0.0.1` only. Never bind `0.0.0.0`.
+- Compatibility: a reader should tolerate a combined single
+  `<appId>.json` carrying `port`/`token` (the pre-split shape) by
+  treating those fields as the session. Writers must produce the
+  two-file form.
+
+## 5. CardMirror's HTTP routes for flowing apps
+
+CardMirror serves these routes on the port in `cardmirror.json`. All
+routes require the token, in `X-Bridge-Token` or in the legacy
+`X-FDP-Token` header. A request with an `Origin` or `Referer` header
+is rejected with 403; those requests come from browser pages.
+
+### GET /ping
+
+Liveness and capability probe. Response, schema 2:
+
+```json
+{
+  "ok": true,
+  "app": "cardmirror",
+  "appVersion": "0.1.0-beta.18",
+  "schema": 2,
+  "hasActiveDoc": true
+}
+```
+
+`schema: 2` signals that `/jump` is available.
+
+### POST /insert
+
+Insert text into the focused document. This route predates the plugin
+API and is unchanged. The full wire contract is in
+`cardmirror-integration-spec.md` in this folder. In short: the body is
+`{ "text": "...", "role": "card" | "cite" | "inline", "newParagraph": true, "omitted": false }`,
+and the response is `{ "ok": true, "inserted": true, "docTitle": "..." }`
+or `{ "ok": false, "error": "no-target-doc" | "doc-readonly" | "bad-request" }`.
+
+### POST /jump
+
+Inverse search: jump to the source of an extracted item. Send the
+stored source token, verbatim:
+
+```json
+{ "source": "cmsrc1.eyJkb2NJZCI6..." }
+```
+
+On success, CardMirror focuses the right window, scrolls to the
+source, and selects it:
+
+```json
+{ "ok": true }
+```
+
+Error responses:
+
+| Error | HTTP status | Meaning | Extra field |
+| --- | --- | --- | --- |
+| `doc-not-open` | 200 | The token's document is not open in any window. | `docTitle` - show "open `<docTitle>` first". |
+| `not-found` | 200 | The document is open, but the heading and the text anchor both failed to resolve. | none |
+| `bad-request` | 400 | The body is not JSON, `source` is missing, or the token does not parse. | none |
+
+Example `doc-not-open` response:
+
+```json
+{ "ok": false, "error": "doc-not-open", "docTitle": "AT - Cap K" }
+```
+
+Any other path returns 404 with `{ "ok": false, "error": "bad-request" }`.
+
+## 6. A minimal example plugin
+
+`plugin.js` - registers one command. The command extracts the
+selection and toasts the item count:
+
+```js
+// plugin.js - complete example bundle
+window.__registerCardMirrorPlugin?.({
+  id: 'item-counter',
+  name: 'Item Counter',
+  apiVersion: 1,
+  commands: [
+    {
+      id: 'item-counter.countSelection',
+      label: 'Count extracted items',
+      keywords: ['count', 'extract'],
+      defaultKey: null,
+      run(api) {
+        const result = api.extractSelection();
+        if (!result.ok) {
+          api.showToast('Extraction failed: ' + result.error);
+          return;
+        }
+        const n = result.items.length;
+        api.showToast(
+          'Extracted ' + n + (n === 1 ? ' item from "' : ' items from "') +
+            result.docTitle + '"',
+        );
+      },
+    },
+  ],
+});
+```
+
+`cardmirror-plugin.json`:
+
+```json
+{
+  "id": "item-counter",
+  "name": "Item Counter",
+  "version": "0.1.0",
+  "description": "Count the items that selection extraction returns.",
+  "author": "you",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.0-beta.18"
+}
+```
+
+To test it, open Settings, then Plugins, then "Load plugin from
+file...", and pick `plugin.js`. Run "Count extracted items" from the
+command palette.
