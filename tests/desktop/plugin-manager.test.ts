@@ -7,6 +7,7 @@ import {
   checkInstallAllowed,
   commitPendingInstall,
   discardPendingInstall,
+  parseAllowlistResponse,
 } from '../../apps/desktop/src/plugin-manager.js';
 
 describe('parseRepoRef', () => {
@@ -99,5 +100,37 @@ describe('pending-install staging', () => {
   });
   it('discard of an unknown token is a silent no-op', () => {
     expect(() => discardPendingInstall('nope')).not.toThrow();
+  });
+});
+
+describe('parseAllowlistResponse (server allowlist shape)', () => {
+  it('accepts a well-formed response, folding case', () => {
+    const set = parseAllowlistResponse({
+      schema: 1,
+      repos: ['ShreeramModi/ebb', 'shreerammodi/cardmirror-ebb'],
+    });
+    expect(set).not.toBeNull();
+    expect(set!.has('shreerammodi/ebb')).toBe(true);
+    expect(set!.size).toBe(2);
+  });
+  it('drops entries that are not owner/repo shaped', () => {
+    const set = parseAllowlistResponse({ repos: ['ok/repo', 'https://github.com/x/y', '', 42] });
+    expect([...set!]).toEqual(['ok/repo']);
+  });
+  it('treats empty or malformed responses as failure, not block-everything', () => {
+    // A server hiccup must fall back to cache/baked — never brick installs.
+    expect(parseAllowlistResponse({ repos: [] })).toBeNull();
+    expect(parseAllowlistResponse({ repos: 'nope' })).toBeNull();
+    expect(parseAllowlistResponse(null)).toBeNull();
+    expect(parseAllowlistResponse('[]')).toBeNull();
+  });
+});
+
+describe('checkInstallAllowed with an explicit (server-fetched) list', () => {
+  it('judges against the provided list instead of the baked one', () => {
+    const server = new Set(['newauthor/new-plugin']);
+    expect(checkInstallAllowed('newauthor/new-plugin', false, server)).toBeNull();
+    // Revocation: a baked entry absent from the served list blocks.
+    expect(checkInstallAllowed('shreerammodi/ebb', false, server)).toMatch(/curated/);
   });
 });

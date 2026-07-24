@@ -31,7 +31,7 @@ import { autoUpdater } from 'electron-updater';
 import { bundlePathFromExe, launchSwapHelper, macBundleSelfUpdatable } from './mac-swap-update.js';
 import { registerVoiceIpc } from './voice/ipc';
 import { registerFlowIpc } from './flow-bridge.js';
-import { registerPairingIpc } from './pairing-ipc.js';
+import { registerPairingIpc, relayUrl } from './pairing-ipc.js';
 import {
   readAccessibilityTreeEnabled,
   writeAccessibilityTreeEnabled,
@@ -50,6 +50,7 @@ import {
   commitPendingInstall,
   discardPendingInstall,
   setCommunityInstallsUnlocked,
+  setAllowlistRelayUrlSupplier,
   listInstalled,
   readPluginSource,
   uninstallPlugin,
@@ -2180,6 +2181,10 @@ ipcMain.handle('host:flow-post', async (_event, appId: string, route: string, bo
 // Cross-machine card sharing — receive poller + send + inbox. Idle until
 // the renderer sends `host:pairing-configure` with sharing enabled.
 registerPairingIpc();
+// The plugin installer's allowlist fetch rides the same relay (and the
+// same self-hosted override) as pairing — a getter, so a settings change
+// takes effect without a restart. The route itself is ungated.
+setAllowlistRelayUrlSupplier(relayUrl);
 
 ipcMain.handle('host:speech-set', async (event, uid: string | null) => {
   const senderWin = BrowserWindow.fromWebContents(event.sender);

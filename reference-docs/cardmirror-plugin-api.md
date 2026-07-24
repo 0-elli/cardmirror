@@ -55,11 +55,18 @@ Example:
 ### The curated allowlist
 
 Plugins run with full access to CardMirror and the user's documents, so
-the GitHub installer only accepts repositories on a curated allowlist
-built into the app (`PLUGIN_INSTALL_ALLOWLIST` in
-`apps/desktop/src/plugin-manager.ts`). The check runs in the main
-process — the renderer cannot route around it. To get a plugin listed,
-open an issue or PR against CardMirror.
+the GitHub installer only accepts repositories on a curated allowlist.
+The check runs in the main process — the renderer cannot route around
+it. The list itself is served by the CardMirror relay at
+`GET /plugin-allowlist` (ungated; response
+`{ "schema": 1, "repos": ["owner/repo", ...] }`) and consulted fresh on
+each install attempt, so listing a new plugin is a server-side change —
+no app release. The last fetched list is cached on disk for offline
+installs, and a baked-in floor (`PLUGIN_INSTALL_ALLOWLIST` in
+`apps/desktop/src/plugin-manager.ts`) covers a machine that has never
+reached the relay. An empty or malformed server response is treated as
+a failed fetch (cache/baked fallback), never as "block everything". To
+get a plugin listed, contact the CardMirror maintainer.
 
 Users who understand the trust model can unlock arbitrary-repo installs
 from the developer console with `__plugins('community-on')` (persisted;

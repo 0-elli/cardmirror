@@ -157,15 +157,95 @@ async function downloadAsset(release: GithubRelease, name: string): Promise<stri
  * "Load plugin from file…" path stays as the session-only escape hatch.
  * Enforced HERE in main so the renderer can't bypass it.
  */
-// Both plausible homes for the ebb integration plugin: the ebb app repo
-// (confirmed real; the plugin's release assets may ride its releases) and
-// the dedicated plugin repo the spec's manifest example implies. Same
-// owner, so listing both widens nothing; installs from either still
-// require the two release assets to exist.
+/**
+ * Curated allowlist, three layers deep:
+ *   1. The RELAY serves the authoritative list at GET /plugin-allowlist
+ *      (ungated — public data), so adding a repo is a server variable
+ *      edit, never an app release. Fetched fresh per install attempt
+ *      (installs are rare) with a short timeout.
+ *   2. The last successful fetch is cached on disk, so an offline
+ *      machine keeps the most recent list.
+ *   3. The BAKED list below is the floor when neither is available —
+ *      both plausible homes of the ebb integration plugin (same owner,
+ *      so listing both widens nothing).
+ * A fetched list REPLACES the baked one (that's what makes revocation
+ * possible), but an empty or malformed response reads as a failed
+ * fetch, not as "block everything" — a server hiccup must not brick
+ * the ebb install path.
+ */
 export const PLUGIN_INSTALL_ALLOWLIST: ReadonlySet<string> = new Set([
   'shreerammodi/ebb',
   'shreerammodi/cardmirror-ebb',
 ]);
+const ALLOWLIST_FETCH_TIMEOUT_MS = 4000;
+const ALLOWLIST_MAX_ENTRIES = 200;
+const ALLOWLIST_CACHE_NAME = 'plugin-allowlist.json';
+const OWNER_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+
+/** Injected by main at registration (pairing-ipc's relayUrl) — a getter
+ *  so settings-driven self-hosted overrides stay live; null in tests. */
+let relayUrlSupplier: (() => string) | null = null;
+export function setAllowlistRelayUrlSupplier(fn: () => string): void {
+  relayUrlSupplier = fn;
+}
+
+/** Parse a server allowlist response into a repo set, or null when the
+ *  shape is wrong / empty (treated as fetch failure by the caller). */
+export function parseAllowlistResponse(body: unknown): Set<string> | null {
+  const repos = (body as { repos?: unknown } | null)?.repos;
+  if (!Array.isArray(repos)) return null;
+  const out = new Set<string>();
+  for (const r of repos.slice(0, ALLOWLIST_MAX_ENTRIES)) {
+    if (typeof r === 'string' && OWNER_REPO_RE.test(r.trim())) {
+      out.add(r.trim().toLowerCase());
+    }
+  }
+  return out.size > 0 ? out : null;
+}
+
+function allowlistCachePath(): string {
+  return path.join(app.getPath('userData'), ALLOWLIST_CACHE_NAME);
+}
+
+async function fetchServerAllowlist(): Promise<Set<string> | null> {
+  const base = relayUrlSupplier?.();
+  if (!base) return null;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ALLOWLIST_FETCH_TIMEOUT_MS);
+    const res = await fetch(`${base}/plugin-allowlist`, { signal: ctl.signal }).finally(() =>
+      clearTimeout(timer),
+    );
+    if (!res.ok) return null;
+    return parseAllowlistResponse(await res.json());
+  } catch {
+    return null;
+  }
+}
+
+/** The effective allowlist: live server list → disk cache → baked floor. */
+async function currentAllowlist(): Promise<ReadonlySet<string>> {
+  const fetched = await fetchServerAllowlist();
+  if (fetched) {
+    try {
+      const tmp = `${allowlistCachePath()}.tmp`;
+      await fs.writeFile(tmp, JSON.stringify({ repos: [...fetched] }, null, 2));
+      await fs.rename(tmp, allowlistCachePath());
+    } catch {
+      /* cache write is best-effort */
+    }
+    return fetched;
+  }
+  try {
+    const cached = parseAllowlistResponse(
+      JSON.parse(await fs.readFile(allowlistCachePath(), 'utf8')),
+    );
+    if (cached) return cached;
+  } catch {
+    /* no cache — fall through to baked */
+  }
+  return PLUGIN_INSTALL_ALLOWLIST;
+}
 
 let communityInstallsUnlocked = false;
 export function setCommunityInstallsUnlocked(on: boolean): void {
@@ -176,9 +256,10 @@ export function setCommunityInstallsUnlocked(on: boolean): void {
 export function checkInstallAllowed(
   ownerRepo: string,
   unlocked: boolean = communityInstallsUnlocked,
+  allowlist: ReadonlySet<string> = PLUGIN_INSTALL_ALLOWLIST,
 ): string | null {
   if (unlocked) return null;
-  if (PLUGIN_INSTALL_ALLOWLIST.has(ownerRepo.toLowerCase())) return null;
+  if (allowlist.has(ownerRepo.toLowerCase())) return null;
   return 'This repository is not on the curated plugin list.';
 }
 
@@ -216,7 +297,11 @@ export async function inspectFromGithub(
   const parsed = parseRepoRef(ref);
   if (!parsed) return { ok: false, error: 'Enter a GitHub URL or owner/repo.' };
   const ownerRepo = `${parsed.owner}/${parsed.repo}`;
-  const blocked = checkInstallAllowed(ownerRepo.toLowerCase());
+  const blocked = checkInstallAllowed(
+    ownerRepo.toLowerCase(),
+    communityInstallsUnlocked,
+    await currentAllowlist(),
+  );
   if (blocked) return { ok: false, error: blocked };
   let release: GithubRelease | null;
   try {
