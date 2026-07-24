@@ -5,6 +5,37 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Changed
+
+- **Enter continues below a live view.** With the cursor at the very
+  bottom of a live view, Enter used to do nothing — the mirrored
+  content is read-only, so there was nowhere for a new line to go. It
+  now starts a new line just below the live view and moves the cursor
+  there.
+
+### Fixed
+
+- **Live views show their card numbers in the navigation pane.** With
+  numbering on, numbered cards inside a live view showed their numbers
+  in the editor but not in the outline (linked copies were fine). A
+  live view's outline rows now carry the same numbers the editor
+  shows.
+
+- **Sections dragged between panes respect the outline depth.** A
+  heading dragged from one pane to another landed fully expanded in
+  the destination's navigation pane, ignoring its default expansion
+  level. Dropped sections now collapse to the destination pane's
+  depth; sections you had expanded yourself stay as they were.
+
+- **Find closes when you switch panes.** Leaving find (or
+  find/replace) open in one pane and clicking into another could
+  leave the first pane's search highlights stuck — closing the bar
+  from the new pane cleared the wrong one. Switching focus to a
+  different pane or document now closes the find bar and clears its
+  highlights and navigation-pane markers.
+
 ## 0.1.0-beta.18 — 2026-07-23
 
 ### Added

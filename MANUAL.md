@@ -1250,7 +1250,8 @@ without unlinking. Once you change a copy so it no longer matches its source, it
 glyph icon turns from an intact chain into a **broken chain** — a reminder that
 your copy has diverged from the original (a Refresh would replace your edits). A
 *live view* is read-only; to change what it shows, edit the source (use **Go to
-source section** in the menu to jump there).
+source section** in the menu to jump there). Pressing **Enter** at the very
+bottom of a live view starts a new line just below it.
 
 **When the source moves on.** Separately from your own edits, a linked copy can
 drift because its *source* changed. CardMirror marks such a copy with a small

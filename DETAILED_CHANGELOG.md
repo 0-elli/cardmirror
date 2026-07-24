@@ -5,6 +5,59 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+- **Enter below a live view**
+  (`src/editor/self-transclusion-commands.ts` `enterBelowSelfRef`,
+  bound FIRST in the Enter chain in `buildEditorPlugins`). With the
+  caret at the bottom of a `self_ref` mirror, Enter was dead: the
+  mirror is read-only, so the split it would produce was rejected by
+  the content plugin's `filterTransaction` — and the styled-Enter /
+  tag-end handlers claimed the key first and died the same way
+  (handled-but-filtered). The new command detects the bottom edge
+  structurally (caret at its textblock's end, every wrapper up to the
+  window a last child), inserts a fresh paragraph after the window,
+  and puts the caret in it; anywhere else in the mirror the key stays
+  a deliberate no-op, and outside live views it never triggers. One
+  shared keymap assembly serves both single- and three-pane.
+
+- **Live-view rows carry nav-pane numbers** (`src/editor/nav-panel.ts`
+  `collectOutlineWithWindows` + `render`,
+  `HeadingEntry.windowCardPos`). `computeNumbering` files a live
+  view's labels under the REAL doc positions of the window's mirrored
+  children, but the nav's projected (windowed) rows were skipped by
+  the glyph pass entirely — numbers appeared in the editor and not
+  the outline. The projection walk now records each card-heading
+  row's real wrapper position (`windowCardPos`) and the glyph pass
+  resolves windowed rows through it, so outline numbers match the
+  editor's, including host-continued counts.
+
+- **Cross-pane drop vs nav depth: ordering**
+  (`src/editor/multi-pane-shell.ts` drag-'end' handler). The
+  drop-aware collapse (`applyMaxLevelToNewHeadings`) diffs the doc's
+  heading ids against the ids seen at the nav's LAST RENDER — but the
+  handler ran `flushHeavyUpdateNow` first, whose nav update re-renders
+  and refreshes that baseline, so the dropped ids looked already-seen
+  and the collapse silently no-opped (drops landed fully expanded,
+  ignoring the pane's depth setting). The collapse now runs before
+  the flush; the ordering constraint is documented at both ends and
+  pinned by tests, including the hazard itself (an intervening render
+  eats the diff).
+
+- **Find bar: close on focus switch; cleanup targets the opened pane**
+  (`src/editor/index.ts` `setActiveView`,
+  `src/editor/find-replace-ui.ts`). The bar resolves "the view"
+  lazily so it follows the focused pane — which meant that after a
+  pane switch, closing it cleared the NEW pane's (empty) find state
+  while the outgoing pane's match decorations and nav-pane hit
+  markers stayed stuck. `setActiveView` now closes an open bar on any
+  real view-identity change (pane switch, stack switch, home screen —
+  not the per-transaction re-run with the same view), and the bar
+  captures the view + nav panel it OPENED against and cleans those on
+  close — skipping the editor refocus on this path (focus is already
+  moving) and skipping a destroyed opened view outright (its
+  decorations died with it).
+
 ## 0.1.0-beta.18 — 2026-07-23
 
 - **Atomic-save in-place fallback** (`apps/desktop/src/doc-writes.ts`
