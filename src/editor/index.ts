@@ -78,6 +78,7 @@ import {
 import { resolveMobileLayout } from './mobile-layout.js';
 import { mobilePlugin, setMobileShellActive } from './mobile-plugin.js';
 import { installCardCutterGate, cardCutterActive } from './card-cutter-gate.js';
+import { installPluginCommunityGate } from './plugin-community-gate.js';
 import { openCutLaunchSheet } from './card-cutter-ui.js';
 import {
   quickCardsStore,
@@ -8139,6 +8140,21 @@ async function initPlugins(): Promise<void> {
   if (!settings.get('pluginsEnabled')) return;
   const host = getElectronHost();
   if (!host?.pluginList || !host.pluginLoad) return; // desktop only
+  // A registration lands AFTER every open view already built its keymap
+  // (this whole function runs async post-boot), so a plugin's defaultKey
+  // would be dead in the editor until an unrelated reconfigure. Rebuild
+  // every open view's plugin set on each successful registration — same
+  // reconfigure the ribbonKeyOverrides subscriber uses, per-uid so collab
+  // bindings stay only on their session-owning doc.
+  const rebuildKeymapsForPluginCommands = (): void => {
+    for (const { uid, view: v } of getSpeechDocResolver().allViews()) {
+      try {
+        v.updateState(v.state.reconfigure({ plugins: buildEditorPlugins(uid) }));
+      } catch (err) {
+        console.warn('[plugins] keymap rebuild failed for a view:', err);
+      }
+    }
+  };
   installPluginRegistry((pluginId) =>
     createPluginApi(pluginId, {
       appVersion,
@@ -8168,6 +8184,7 @@ async function initPlugins(): Promise<void> {
         }
       },
     }),
+    { onRegistered: rebuildKeymapsForPluginCommands },
   );
   let installed: { id: string; name: string }[];
   try {
@@ -8192,6 +8209,10 @@ async function initPlugins(): Promise<void> {
   }
 }
 void initPlugins();
+// Console gate for community (non-allowlisted) plugin installs. Installs
+// `__plugins('community-on')` and re-arms main's unlock flag from the
+// stored setting each boot; enforcement lives in main's installer.
+installPluginCommunityGate();
 // Experimental, console-gated AI card cutter. Installs the
 // `__cardcutter('on')` console entry point; does nothing visible
 // until enabled.

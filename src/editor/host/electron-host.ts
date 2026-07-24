@@ -170,8 +170,13 @@ interface ElectronAPI {
     enginePath?: string | null,
   ): Promise<{ ok: boolean; path?: string; error?: string }>;
   /** Plugin manager (GitHub install; optional so an older preload
-   *  tolerates its absence). */
-  pluginInstall?(ref: string): Promise<Record<string, unknown>>;
+   *  tolerates its absence). Install is two-phase: inspect stages the
+   *  release main-side and returns consent-dialog facts; commit writes
+   *  after consent; discard drops the staged release on decline. */
+  pluginInstallInspect?(ref: string): Promise<Record<string, unknown>>;
+  pluginInstallCommit?(token: string): Promise<Record<string, unknown>>;
+  pluginInstallDiscard?(token: string): Promise<void>;
+  pluginCommunityInstalls?(on: boolean): Promise<void>;
   pluginList?(): Promise<unknown[]>;
   pluginUninstall?(id: string): Promise<void>;
   pluginCheckUpdate?(id: string, repoRef: string): Promise<Record<string, unknown>>;
@@ -549,8 +554,17 @@ export class ElectronHost implements Host {
 
   /** Plugin manager (GitHub install). No-ops gracefully on an older
    *  preload that predates the plugin surface. */
-  async pluginInstall(ref: string): Promise<Record<string, unknown>> {
-    return (await api().pluginInstall?.(ref)) ?? { ok: false, error: 'unsupported' };
+  async pluginInstallInspect(ref: string): Promise<Record<string, unknown>> {
+    return (await api().pluginInstallInspect?.(ref)) ?? { ok: false, error: 'unsupported' };
+  }
+  async pluginInstallCommit(token: string): Promise<Record<string, unknown>> {
+    return (await api().pluginInstallCommit?.(token)) ?? { ok: false, error: 'unsupported' };
+  }
+  async pluginInstallDiscard(token: string): Promise<void> {
+    await api().pluginInstallDiscard?.(token);
+  }
+  async pluginCommunityInstalls(on: boolean): Promise<void> {
+    await api().pluginCommunityInstalls?.(on);
   }
   async pluginList(): Promise<unknown[]> {
     return (await api().pluginList?.()) ?? [];

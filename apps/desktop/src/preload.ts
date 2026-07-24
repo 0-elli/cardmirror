@@ -910,8 +910,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  `pluginLoadFile` fetch a bundle's source from main and run it in
    *  the renderer's MAIN world (same mechanism as cardCutterLoad),
    *  where it self-registers via window.__registerCardMirrorPlugin. */
-  pluginInstall: (ref: string): Promise<Record<string, unknown>> =>
-    ipcRenderer.invoke('host:plugin-install', ref),
+  pluginInstallInspect: (ref: string): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-install-inspect', ref),
+  pluginInstallCommit: (token: string): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-install-commit', token),
+  pluginInstallDiscard: (token: string): Promise<void> =>
+    ipcRenderer.invoke('host:plugin-install-discard', token),
+  pluginCommunityInstalls: (on: boolean): Promise<void> =>
+    ipcRenderer.invoke('host:plugin-community-installs', on),
   pluginList: (): Promise<unknown[]> => ipcRenderer.invoke('host:plugin-list'),
   pluginUninstall: (id: string): Promise<void> => ipcRenderer.invoke('host:plugin-uninstall', id),
   pluginCheckUpdate: (id: string, repoRef: string): Promise<Record<string, unknown>> =>

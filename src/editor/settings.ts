@@ -1357,6 +1357,11 @@ export interface Settings {
    *  loading of enabled plugins, and the manage-plugins UI). Off by
    *  default. Desktop only for v1. */
   pluginsEnabled: boolean;
+  /** Plugins: unlock GitHub installs from OUTSIDE the curated allowlist.
+   *  Console-only (`window.__plugins('community-on')`), no settings row —
+   *  plugins are full-trust code, so casual discovery is the thing being
+   *  prevented. Re-armed into main each boot; enforcement lives there. */
+  pluginCommunityInstalls: boolean;
   /** Pairing: master switch for cross-machine card sharing (the send /
    *  receive pills + the background poller). Off by default. Desktop only
    *  for v1. */
@@ -1703,6 +1708,7 @@ const DEFAULTS: Settings = {
   cardCutterMorphologyShaving: false,
   cardCutterClarifyingQuestions: 'when-ambiguous',
   pluginsEnabled: false,
+  pluginCommunityInstalls: false,
   pairingEnabled: false,
   pairingPollSeconds: 30,
   pairingRelayUrl: '',
@@ -4335,6 +4341,7 @@ function sanitize(s: Settings): Settings {
         ? s.cardCutterClarifyingQuestions
         : 'when-ambiguous',
     pluginsEnabled: s.pluginsEnabled === true,
+    pluginCommunityInstalls: s.pluginCommunityInstalls === true,
     pairingEnabled: s.pairingEnabled === true,
     pairingConnectedUntil: Number.isFinite(Number(s.pairingConnectedUntil))
       ? Math.max(0, Number(s.pairingConnectedUntil))

@@ -169,7 +169,18 @@ export function renderPluginsPanel(container: HTMLElement): void {
             return;
           }
           if (await confirmDialog(`Update ${p.name} to v${res.latest}?`)) {
-            const r = (await host!.pluginInstall(p.repo ?? '')) as
+            // Same-repo reinstall of an already-consented plugin: the update
+            // confirm above IS the consent, so inspect rolls straight into
+            // commit. Nothing touches the existing install unless commit runs.
+            const ins = (await host!.pluginInstallInspect(p.repo ?? '')) as
+              | { ok: true; pending: string }
+              | { ok: false; error: string }
+              | undefined;
+            if (!ins?.ok) {
+              showError(`Update failed: ${ins && 'error' in ins ? ins.error : 'unavailable'}`);
+              return;
+            }
+            const r = (await host!.pluginInstallCommit(ins.pending)) as
               | { ok: true }
               | { ok: false; error: string }
               | undefined;
@@ -206,8 +217,14 @@ export function renderPluginsPanel(container: HTMLElement): void {
       clearError();
       installBtn.disabled = true;
       try {
-        const res = (await host.pluginInstall(ref)) as
-          | { ok: true; plugin: InstalledPlugin }
+        // Two-phase: inspect stages the release main-side (no disk writes),
+        // then the consent dialog runs on its facts — including the ACTUAL
+        // owner/repo, which the manifest can't spoof — and only consent
+        // commits. Declining discards the staged files, so a declined
+        // REINSTALL leaves the existing working version untouched (the old
+        // install-then-ask flow deleted it).
+        const res = (await host.pluginInstallInspect(ref)) as
+          | { ok: true; pending: string; plugin: InstalledPlugin; ownerRepo: string }
           | { ok: false; error: string }
           | undefined;
         if (!res || !res.ok) {
@@ -216,11 +233,22 @@ export function renderPluginsPanel(container: HTMLElement): void {
         }
         const p = res.plugin;
         const consent = await confirmDialog(
-          `Install ${p.name} v${p.version} by ${p.author ?? 'an unknown author'}? ` +
+          `Install ${p.name} v${p.version} by ${p.author ?? 'an unknown author'} ` +
+            `from github.com/${res.ownerRepo}? ` +
             'This plugin runs with full access to CardMirror and your documents.',
         );
         if (!consent) {
-          await host.pluginUninstall(p.id);
+          await host.pluginInstallDiscard(res.pending);
+          return;
+        }
+        const committed = (await host.pluginInstallCommit(res.pending)) as
+          | { ok: true }
+          | { ok: false; error: string }
+          | undefined;
+        if (!committed?.ok) {
+          showError(
+            `Install failed: ${committed && 'error' in committed ? committed.error : 'unavailable'}`,
+          );
           return;
         }
         setPluginEnabled(p.id, true);

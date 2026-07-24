@@ -8,6 +8,7 @@
 import { app } from 'electron';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export const MANIFEST_NAME = 'cardmirror-plugin.json';
 export const BUNDLE_NAME = 'plugin.js';
@@ -146,11 +147,71 @@ async function downloadAsset(release: GithubRelease, name: string): Promise<stri
   return text;
 }
 
-export async function installFromGithub(
+/**
+ * Curated install sources. Plugins are FULL-TRUST code (they run in the
+ * renderer main world with the whole preload surface), so the GitHub
+ * installer only accepts repos on this list — its current purpose is
+ * delivering the ebb integration plugin. Community/arbitrary-repo installs
+ * unlock via the console flag (`setCommunityInstallsUnlocked`, wired to a
+ * renderer console command like the card-cutter switch); the dev
+ * "Load plugin from file…" path stays as the session-only escape hatch.
+ * Enforced HERE in main so the renderer can't bypass it.
+ */
+export const PLUGIN_INSTALL_ALLOWLIST: ReadonlySet<string> = new Set([
+  'shreerammodi/cardmirror-ebb',
+]);
+
+let communityInstallsUnlocked = false;
+export function setCommunityInstallsUnlocked(on: boolean): void {
+  communityInstallsUnlocked = on;
+}
+
+/** The allowlist verdict for a parsed ref — null to allow, message to block. */
+export function checkInstallAllowed(
+  ownerRepo: string,
+  unlocked: boolean = communityInstallsUnlocked,
+): string | null {
+  if (unlocked) return null;
+  if (PLUGIN_INSTALL_ALLOWLIST.has(ownerRepo.toLowerCase())) return null;
+  return 'This repository is not on the curated plugin list.';
+}
+
+/**
+ * Two-phase install: `inspectFromGithub` fetches, validates, and STAGES a
+ * release in memory — nothing touches disk — returning what the consent
+ * dialog needs (manifest + the actual owner/repo, which the manifest cannot
+ * spoof). `commitPendingInstall` writes the staged files only after the
+ * renderer reports consent; `discardPendingInstall` drops them on decline.
+ * The old single-call install wrote FIRST and asked after, so declining a
+ * reinstall deleted the existing working version.
+ */
+interface PendingInstall {
+  manifest: PluginManifest;
+  bundleText: string;
+  expiresAt: number;
+}
+const pendingInstalls = new Map<string, PendingInstall>();
+/** Consent dialogs are humans reading text; a stale token is a bug or a
+ *  replay. Ten minutes is generous. */
+const PENDING_TTL_MS = 10 * 60 * 1000;
+
+function prunePendingInstalls(now: number): void {
+  for (const [token, p] of pendingInstalls) {
+    if (p.expiresAt <= now) pendingInstalls.delete(token);
+  }
+}
+
+export async function inspectFromGithub(
   ref: string,
-): Promise<{ ok: true; plugin: PluginManifest } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; pending: string; plugin: PluginManifest; ownerRepo: string }
+  | { ok: false; error: string }
+> {
   const parsed = parseRepoRef(ref);
   if (!parsed) return { ok: false, error: 'Enter a GitHub URL or owner/repo.' };
+  const ownerRepo = `${parsed.owner}/${parsed.repo}`;
+  const blocked = checkInstallAllowed(ownerRepo.toLowerCase());
+  if (blocked) return { ok: false, error: blocked };
   let release: GithubRelease | null;
   try {
     release = await fetchLatestRelease(parsed.owner, parsed.repo);
@@ -174,26 +235,42 @@ export async function installFromGithub(
   if (v.manifest.minAppVersion && compareVersions(app.getVersion(), v.manifest.minAppVersion) < 0) {
     return { ok: false, error: `This plugin needs CardMirror ${v.manifest.minAppVersion} or newer.` };
   }
-  const ownerRepo = `${parsed.owner}/${parsed.repo}`;
   const collision = checkInstallCollision(await readInstalledManifest(v.manifest.id), ownerRepo);
   if (collision) return { ok: false, error: collision };
   // Persist the source repo so checkPluginUpdate (and the settings UI)
   // know where this install came from. Written into the saved manifest,
   // not just returned — the info must survive an app restart.
   v.manifest.repo = ownerRepo;
-  const savedManifestText = JSON.stringify(v.manifest, null, 2);
-  const dir = pluginDir(v.manifest.id);
+  const now = Date.now();
+  prunePendingInstalls(now);
+  const token = randomUUID();
+  pendingInstalls.set(token, { manifest: v.manifest, bundleText, expiresAt: now + PENDING_TTL_MS });
+  return { ok: true, pending: token, plugin: v.manifest, ownerRepo };
+}
+
+export async function commitPendingInstall(
+  token: string,
+): Promise<{ ok: true; plugin: PluginManifest } | { ok: false; error: string }> {
+  prunePendingInstalls(Date.now());
+  const staged = pendingInstalls.get(String(token));
+  if (!staged) return { ok: false, error: 'This install request expired. Try again.' };
+  pendingInstalls.delete(String(token));
+  const dir = pluginDir(staged.manifest.id);
   await fs.mkdir(dir, { recursive: true });
   for (const [name, text] of [
-    [MANIFEST_NAME, savedManifestText],
-    [BUNDLE_NAME, bundleText],
+    [MANIFEST_NAME, JSON.stringify(staged.manifest, null, 2)],
+    [BUNDLE_NAME, staged.bundleText],
   ] as const) {
     const finalPath = path.join(dir, name);
     const tmpPath = `${finalPath}.tmp`;
     await fs.writeFile(tmpPath, text);
     await fs.rename(tmpPath, finalPath);
   }
-  return { ok: true, plugin: v.manifest };
+  return { ok: true, plugin: staged.manifest };
+}
+
+export function discardPendingInstall(token: string): void {
+  pendingInstalls.delete(String(token));
 }
 
 export async function listInstalled(): Promise<PluginManifest[]> {

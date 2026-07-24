@@ -45,6 +45,10 @@ export interface SpeechDocResolver {
   /** The view for `uid` if it's mounted in THIS renderer, else
    *  `null`. */
   viewForUid(uid: string): EditorView | null;
+  /** Every (uid, view) registered in THIS renderer — i.e., every open
+   *  editor across panes/stacks. Used by whole-workspace reconfigures
+   *  (e.g., rebuilding keymaps after a plugin registers commands). */
+  allViews(): { uid: string; view: EditorView }[];
   /** The uid for `view` if it's registered in this renderer, else
    *  `null`. Used by the send module to look up the uid of a
    *  destination view so it can fire `notifySliceLanded`. */
@@ -98,6 +102,10 @@ class DefaultSpeechDocResolver implements SpeechDocResolver {
 
   viewForUid(uid: string): EditorView | null {
     return this.views.get(uid)?.view ?? null;
+  }
+
+  allViews(): { uid: string; view: EditorView }[] {
+    return [...this.views.entries()].map(([uid, entry]) => ({ uid, view: entry.view }));
   }
 
   uidForView(view: EditorView): string | null {

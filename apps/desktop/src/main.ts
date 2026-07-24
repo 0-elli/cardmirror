@@ -46,7 +46,10 @@ import {
   nearestExistingDir,
 } from './doc-writes.js';
 import {
-  installFromGithub,
+  inspectFromGithub,
+  commitPendingInstall,
+  discardPendingInstall,
+  setCommunityInstallsUnlocked,
   listInstalled,
   readPluginSource,
   uninstallPlugin,
@@ -721,7 +724,24 @@ ipcMain.handle('host:cardcutter-read', async (_event, explicit: string | null) =
 // live in userData/plugins/<id>/ next to the legacy cardcutter file.
 // The renderer asks for a bundle's source and runs it in its main
 // world, same as the card-cutter path above. ──
-ipcMain.handle('host:plugin-install', async (_e, ref: string) => installFromGithub(String(ref)));
+// Two-phase install: inspect stages the release in memory and returns what
+// the consent dialog needs (incl. the real owner/repo); commit writes only
+// after consent; discard drops the staged files on decline. The allowlist
+// check lives inside inspectFromGithub — main-side, so the renderer can't
+// route around it. The unlock flag arrives over its own channel (the
+// renderer's console command re-arms it each boot from its stored setting).
+ipcMain.handle('host:plugin-install-inspect', async (_e, ref: string) =>
+  inspectFromGithub(String(ref)),
+);
+ipcMain.handle('host:plugin-install-commit', async (_e, token: string) =>
+  commitPendingInstall(String(token)),
+);
+ipcMain.handle('host:plugin-install-discard', async (_e, token: string) => {
+  discardPendingInstall(String(token));
+});
+ipcMain.handle('host:plugin-community-installs', async (_e, on: boolean) => {
+  setCommunityInstallsUnlocked(on === true);
+});
 ipcMain.handle('host:plugin-list', async () => listInstalled());
 ipcMain.handle('host:plugin-read', async (_e, id: string) => {
   const source = await readPluginSource(String(id));

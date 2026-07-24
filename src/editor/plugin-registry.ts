@@ -118,9 +118,16 @@ export function registerPluginDefinition(
 }
 
 /** Install the window global. `createApi` mints one capability object
- *  per plugin id (dependency-injected so tests can stub it). */
+ *  per plugin id (dependency-injected so tests can stub it).
+ *  `opts.onRegistered` fires after each SUCCESSFUL registration — the
+ *  host uses it to rebuild live keymaps, since every editor view built
+ *  before this plugin registered baked its keymap without the plugin's
+ *  `defaultKey`s (initPlugins runs async after boot, so on a cold
+ *  launch that is EVERY open view — without the rebuild the keys stay
+ *  dead until an unrelated reconfigure). */
 export function installPluginRegistry(
   createApi: (pluginId: string) => CardMirrorPluginApi,
+  opts: { onRegistered?: (pluginId: string) => void } = {},
 ): void {
   makeApi = createApi;
   window.__registerCardMirrorPlugin = (def) => {
@@ -128,6 +135,11 @@ export function installPluginRegistry(
     if (res.ok) {
       const count = [...commands.values()].filter((c) => c.pluginId === def.id).length;
       console.log(`[plugins] registered ${def.id} (${count} commands)`);
+      try {
+        opts.onRegistered?.(String(def.id));
+      } catch (err) {
+        console.error('[plugins] onRegistered hook failed:', err);
+      }
     } else {
       console.warn(`[plugins] registration rejected: ${res.error}`);
       showToast(`Plugin failed to load: ${res.error}`);

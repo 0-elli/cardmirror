@@ -4,6 +4,9 @@ import {
   compareVersions,
   validateManifest,
   checkInstallCollision,
+  checkInstallAllowed,
+  commitPendingInstall,
+  discardPendingInstall,
 } from '../../apps/desktop/src/plugin-manager.js';
 
 describe('parseRepoRef', () => {
@@ -69,5 +72,31 @@ describe('checkInstallCollision', () => {
   });
   it('blocks when the existing install has no stored repo', () => {
     expect(checkInstallCollision({ ...existing, repo: undefined }, 'owner/demo')).toContain('already owns the id');
+  });
+});
+
+describe('checkInstallAllowed (curated allowlist)', () => {
+  it('allows an allowlisted repo while locked', () => {
+    expect(checkInstallAllowed('shreerammodi/cardmirror-ebb', false)).toBeNull();
+  });
+  it('is case-insensitive about the ref', () => {
+    expect(checkInstallAllowed('ShreeramModi/CardMirror-ebb', false)).toBeNull();
+  });
+  it('blocks a non-allowlisted repo while locked', () => {
+    expect(checkInstallAllowed('somebody/some-plugin', false)).toMatch(/curated/);
+  });
+  it('allows any repo once community installs are unlocked', () => {
+    expect(checkInstallAllowed('somebody/some-plugin', true)).toBeNull();
+  });
+});
+
+describe('pending-install staging', () => {
+  it('commit with an unknown/expired token fails without touching disk', async () => {
+    const r = await commitPendingInstall('nope-never-issued');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/expired/i);
+  });
+  it('discard of an unknown token is a silent no-op', () => {
+    expect(() => discardPendingInstall('nope')).not.toThrow();
   });
 });
