@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 0.1.0-beta.18 — 2026-07-23
 
 - **Atomic-save in-place fallback** (`apps/desktop/src/doc-writes.ts`
   `writeAtomic`; field report: Windows + Dropbox, ELOCKED on nearly
