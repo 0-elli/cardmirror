@@ -39,8 +39,9 @@ for the parts that aren't.
 17. [Settings reference](#17-settings-reference)
 18. [Appearance and accessibility](#18-appearance-and-accessibility)
 19. [Keyboard shortcuts](#19-keyboard-shortcuts)
-20. [What's not here yet](#20-whats-not-here-yet)
-21. [Glossary](#21-glossary)
+20. [Plugins (experimental)](#20-plugins-experimental)
+21. [What's not here yet](#21-whats-not-here-yet)
+22. [Glossary](#22-glossary)
 
 ## 1. Getting started
 
@@ -2310,17 +2311,8 @@ remove one, **↺** to restore its default. A few window-level shortcuts
   navigation, comments), separate from the body font; includes
   dyslexia-friendly options.
 
-**Plugins (experimental).** The Settings → **Plugins** tab holds the
-master switch (**Enable plugins** — takes effect on the next launch)
-and the install list, where you can add extensions — initially the
-companion integration for the ebb flowing app. Plugins
-run with **full access to CardMirror and your documents**, so installs
-are limited to a curated list and every install shows a consent prompt
-naming the exact GitHub repository it comes from. A plugin's commands
-appear in the command palette and can be rebound in Keyboard shortcuts
-like any other command. Uninstalling removes the plugin, its settings,
-and its shortcuts immediately. Developers: see the repository README
-for the plugin API.
+**Plugins** — the Plugins tab has its own chapter: see
+[section 20](#20-plugins-experimental).
 
 ---
 
@@ -2443,7 +2435,39 @@ The full, current list is always in the app: press **📖** in the ribbon.
 
 ---
 
-## 20. What's not here yet
+## 20. Plugins (experimental)
+
+Plugins extend CardMirror with new commands and integrations written
+by third parties. The system is experimental and desktop-only.
+
+**Turning it on.** The Settings → **Plugins** tab holds the master
+switch (**Enable plugins** — takes effect on the next launch) and the
+install list.
+
+**Installing.** Paste a GitHub URL or `owner/repo` into the install
+field. Plugins run with **full access to CardMirror and your
+documents**, so installs are limited to a curated list, and every
+install shows a consent prompt naming the exact GitHub repository the
+code comes from — nothing is written until you accept. The first
+listed integration is the companion plugin for the
+[ebb](https://github.com/shreerammodi/ebb) flowing app. (If you run a
+self-hosted relay, its operator curates the list; see the relay
+README.)
+
+**Using.** A plugin's commands appear in the command palette and the
+printed shortcut reference, and can be rebound in Settings → Keyboard
+like any built-in command.
+
+**Uninstalling.** The Uninstall button removes the plugin, its
+settings, and its shortcuts immediately; any background code it was
+running stops on the next launch.
+
+**For developers.** The plugin API and the local bridge protocol are
+documented in the repository README and reference docs.
+
+---
+
+## 21. What's not here yet
 
 CardMirror is in active development. Planned, but not built yet:
 
@@ -2471,7 +2495,7 @@ revision metadata.
 
 ---
 
-## 21. Glossary
+## 22. Glossary
 
 - **Pocket / Hat / Block / Tag** — the four heading levels (Word Heading
   1–4).
