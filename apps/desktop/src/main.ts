@@ -55,6 +55,13 @@ import {
   uninstallPlugin,
   checkPluginUpdate,
 } from './plugin-manager.js';
+import {
+  grantReadPath,
+  grantReadDir,
+  setLibraryRoots,
+  grantLegacyRecents,
+  isReadAllowed,
+} from './read-scope.js';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { gzip as zlibGzip, gunzip as zlibGunzip } from 'node:zlib';
@@ -295,6 +302,7 @@ async function openExternalFile(filePath: string): Promise<void> {
   const format: 'cmir' | 'docx' | null =
     ext === '.cmir' ? 'cmir' : ext === '.docx' ? 'docx' : null;
   if (!format) return;
+  grantReadPath(filePath); // OS handed it to us → the user opened it
   // Duplicate-open guard for the OS-open path. The in-app Open dialog
   // gets this via `host:open-path-check`; Finder / Dock / "Open with…"
   // double-clicks arrive here and must run the same check, or a file
@@ -673,6 +681,9 @@ ipcMain.handle(
       },
     );
     if (result.canceled || result.filePaths.length === 0) return null;
+    // A user-picked directory puts its subtree in play for path reads
+    // (folder-scan features enumerate inside it).
+    grantReadDir(result.filePaths[0]!);
     return result.filePaths[0]!;
   },
 );
@@ -685,6 +696,7 @@ ipcMain.handle('host:open-file', async (event, opts: { filters?: FileFilter[] })
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   const filePath = result.filePaths[0]!;
+  grantReadPath(filePath); // user-picked → reopenable by path (recents)
   const bytes = await readDocumentBytes(filePath);
   return {
     name: path.basename(filePath),
@@ -776,8 +788,28 @@ ipcMain.handle('host:plugin-pick-file', async (event) => {
 // the recents list and shouldn't pop a file picker. Returns null
 // (rather than throwing) when the file is missing / unreadable so
 // the caller can prune a stale recent entry gracefully.
+//
+// SCOPED (PR #25 review): only paths the user put in play — library
+// roots, session dialog picks, OS opens, or past grants — are served;
+// see read-scope.ts. Everything else reads as missing.
+//
+// The renderer mirrors its File-search folders here (boot + on change),
+// and imports its pre-existing recents ONCE (the import channel dies as
+// soon as the grant journal exists — it can't mint grants after that).
+ipcMain.handle('host:sync-library-roots', async (_event, roots: unknown) => {
+  setLibraryRoots(Array.isArray(roots) ? roots.map(String) : []);
+});
+// Fired by the preload's getPathForFile — a real dropped file resolved
+// by webUtils. Not on the exposed electronAPI surface.
+ipcMain.on('host:grant-dropped-path', (_event, p: unknown) => {
+  if (typeof p === 'string' && p) grantReadPath(p);
+});
+ipcMain.handle('host:grant-legacy-recents', async (_event, paths: unknown) =>
+  grantLegacyRecents(Array.isArray(paths) ? paths.map(String) : []),
+);
 ipcMain.handle('host:read-file-at-path', async (_event, filePath: string) => {
   if (typeof filePath !== 'string' || !filePath) return null;
+  if (!(await isReadAllowed(filePath))) return null;
   try {
     const bytes = await readDocumentBytes(filePath);
     const ext = path.extname(filePath).toLowerCase();
@@ -1352,6 +1384,7 @@ ipcMain.handle(
     });
     if (result.canceled || !result.filePath) return null;
     await saveNewDoc(result.filePath, bytesToBuffer(bytes));
+    grantReadPath(result.filePath); // a saved file is reopenable by path
     return {
       name: path.basename(result.filePath),
       handle: result.filePath,
@@ -1594,6 +1627,7 @@ ipcMain.handle('host:spawn-window', async (_event, payload: InitialDocPayload | 
   // was previously owned by a window that died without
   // releasing.)
   if (payload && typeof payload.handle === 'string' && payload.handle) {
+    grantReadPath(payload.handle); // doc handed to a new window stays readable there
     const norm = canonicalOpenPath(payload.handle);
     const prevOwner = openPathOwners.get(norm);
     if (prevOwner !== undefined && prevOwner !== newWin.id) {

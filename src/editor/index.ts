@@ -117,7 +117,7 @@ import { openBulkCompress, runCompressSingleFileWeb } from './bulk-compress-ui.j
 import { bulkCompressEnabled } from './bulk-compress-gate.js';
 import { openClean, runCleanSingleFileWeb } from './clean-ui.js';
 import { homeScreen, type HomeScreenCallbacks } from './home-screen.js';
-import { recordRecent, removeRecent, type RecentFile } from './recents-store.js';
+import { recordRecent, removeRecent, listRecents, type RecentFile } from './recents-store.js';
 import { isAutosaveOnForPath, setAutosaveForPath } from './autosave-prefs-store.js';
 import {
   settings,
@@ -8213,6 +8213,29 @@ void initPlugins();
 // `__plugins('community-on')` and re-arms main's unlock flag from the
 // stored setting each boot; enforcement lives in main's installer.
 installPluginCommunityGate();
+// Read-scope plumbing (scoped host.readFileAtPath, PR #25 review):
+// mirror the File-search folders into main at boot + on change, and
+// hand main the pre-existing recents ONCE so they stay reopenable —
+// the import channel closes itself after the first journal write.
+{
+  const eh = getElectronHost();
+  if (eh) {
+    let lastRoots = settings.get('fileSearchRoots');
+    void eh.syncLibraryRoots(lastRoots);
+    settings.subscribe(() => {
+      const roots = settings.get('fileSearchRoots');
+      if (roots !== lastRoots) {
+        lastRoots = roots;
+        void eh.syncLibraryRoots(roots);
+      }
+    });
+    void eh.grantLegacyRecents(
+      listRecents()
+        .map((r) => r.handle)
+        .filter((h): h is string => typeof h === 'string' && h.length > 0),
+    );
+  }
+}
 // Experimental, console-gated AI card cutter. Installs the
 // `__cardcutter('on')` console entry point; does nothing visible
 // until enabled.

@@ -90,7 +90,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  removed the `File.path` property, so drag-to-open resolves it through
    *  `webUtils.getPathForFile` here in the preload. Returns '' if the file has
    *  no real path (e.g. dragged from another app, not a folder). */
-  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  getPathForFile: (file: File): string => {
+    const p = webUtils.getPathForFile(file);
+    // A real dropped/picked File resolving to a path IS a user gesture —
+    // grant it so the scoped read-file-at-path can serve the drop-to-open
+    // flow. Unforgeable from the page: a synthetic File has no path, and
+    // this channel is preload-internal (not on the exposed API). `send`
+    // (not invoke) so the grant lands in main before the renderer's
+    // follow-up read invoke — same-renderer IPC stays ordered.
+    if (p) ipcRenderer.send('host:grant-dropped-path', p);
+    return p;
+  },
 
   /** Read the system clipboard's plain-text content. Used by the
    *  F2 (Paste Plain) command on Electron — bypasses the Chromium
@@ -173,6 +183,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Read a file at a known path (no picker) for the home screen's
    *  "open recent" flow. Resolves null when the path is gone /
    *  unreadable so the caller can prune the stale recent. */
+  /** Read-scope plumbing (see main's read-scope.ts): the renderer mirrors
+   *  its File-search folders and one-shot-imports pre-existing recents so
+   *  scoped `readFileAtPath` keeps serving them. */
+  syncLibraryRoots: (roots: string[]): Promise<void> =>
+    ipcRenderer.invoke('host:sync-library-roots', roots),
+  grantLegacyRecents: (paths: string[]): Promise<boolean> =>
+    ipcRenderer.invoke('host:grant-legacy-recents', paths),
   readFileAtPath: (filePath: string) =>
     ipcRenderer.invoke('host:read-file-at-path', filePath) as Promise<{
       name: string;

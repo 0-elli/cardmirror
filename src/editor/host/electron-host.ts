@@ -184,6 +184,8 @@ interface ElectronAPI {
   pluginLoad?(id: string): Promise<{ ok: boolean; error?: string }>;
   pluginLoadFile?(filePath: string): Promise<{ ok: boolean; error?: string }>;
   getPathForFile(file: File): string;
+  syncLibraryRoots?(roots: string[]): Promise<void>;
+  grantLegacyRecents?(paths: string[]): Promise<boolean>;
   readFileAtPath(filePath: string): Promise<{
     name: string;
     bytes: Uint8Array;
@@ -631,6 +633,13 @@ export class ElectronHost implements Host {
    *  when the path is missing / unreadable (caller prunes the
    *  stale recent). ElectronHost-only — the home screen guards
    *  on host kind before calling. */
+  /** Read-scope plumbing — no-ops gracefully on an older preload. */
+  async syncLibraryRoots(roots: string[]): Promise<void> {
+    await api().syncLibraryRoots?.(roots);
+  }
+  async grantLegacyRecents(paths: string[]): Promise<boolean> {
+    return (await api().grantLegacyRecents?.(paths)) ?? false;
+  }
   async readFileAtPath(filePath: string): Promise<{
     name: string;
     bytes: Uint8Array;
