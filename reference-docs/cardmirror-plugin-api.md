@@ -1,11 +1,17 @@
 # CardMirror plugin API v1
 
 The published contract for CardMirror plugins and for flowing apps.
-This document freezes the v1 surface. The sources of truth are
-`src/editor/plugin-api.ts`, `src/editor/plugin-registry.ts`,
-`apps/desktop/src/plugin-manager.ts`,
+The sources of truth are `src/editor/plugin-api.ts`,
+`src/editor/plugin-registry.ts`, `apps/desktop/src/plugin-manager.ts`,
 `apps/desktop/src/bridge-handshake.ts`, and
 `apps/desktop/src/fast-paste-bridge.ts`.
+
+Stability: **sections 4 and 5 (the cardmirror-bridge handshake and the
+HTTP routes) are FROZEN** — flowing apps ship against them, and changes
+must stay backward compatible. **Sections 1 to 3 and 6 (the renderer
+plugin API) are a DRAFT**: v1 plugins are full-trust code (see the
+install model below), and a future sandboxed v2 may change this surface
+— write plugins against it with that expectation.
 
 Audience: plugin authors and authors of flowing apps. Sections 1 to 3
 and 6 cover renderer plugins. Sections 4 and 5 cover cross-app
@@ -46,19 +52,40 @@ Example:
 }
 ```
 
+### The curated allowlist
+
+Plugins run with full access to CardMirror and the user's documents, so
+the GitHub installer only accepts repositories on a curated allowlist
+built into the app (`PLUGIN_INSTALL_ALLOWLIST` in
+`apps/desktop/src/plugin-manager.ts`). The check runs in the main
+process — the renderer cannot route around it. To get a plugin listed,
+open an issue or PR against CardMirror.
+
+Users who understand the trust model can unlock arbitrary-repo installs
+from the developer console with `__plugins('community-on')` (persisted;
+`__plugins('community-off')` reverts, `__plugins('status')` reports).
+The "Load plugin from file..." developer path below is independent of
+the allowlist.
+
 ### Install flow
 
 1. The user pastes a GitHub URL or an `owner/repo` shorthand into the
    Plugins settings tab.
-2. The main process fetches the latest GitHub release and downloads
-   the two assets. Each asset must be 5 MiB or less.
+2. The main process checks the allowlist, fetches the latest GitHub
+   release, and downloads the two assets. Each asset must be 5 MiB or
+   less.
 3. The app validates the manifest and applies the version gates below.
 4. The app checks for an id collision. If a different repository
    already owns the id, install fails and asks the user to uninstall
    the existing plugin first.
-5. The app writes both files into `userData/plugins/<id>/` with an
-   atomic write (tmp file, then rename).
-6. The user enables the plugin in the Plugins tab. Enabled plugins
+5. The app stages the release in memory and asks for consent. The
+   dialog shows the manifest's name/version/author AND the actual
+   `owner/repo` the release came from (which a manifest cannot spoof).
+   Nothing touches disk before consent; declining a reinstall leaves
+   the existing installed version untouched.
+6. On consent, the app writes both files into `userData/plugins/<id>/`
+   with an atomic write (tmp file, then rename).
+7. The user enables the plugin in the Plugins tab. Enabled plugins
    load from disk at each launch and work offline.
 
 A developer path exists: "Load plugin from file..." in the Plugins tab
@@ -71,8 +98,10 @@ loads a local `plugin.js` without an install.
 - If `minAppVersion` is newer than the app version, install fails with
   "This plugin needs CardMirror `<minAppVersion>` or newer."
 - Both gates also run at every app launch, not only at install. An
-  installed plugin that fails either gate does not load and does not
-  appear in the Plugins tab.
+  installed plugin that fails the `minAppVersion` gate does not load
+  (the app refuses to serve its bundle) but stays LISTED in the
+  Plugins tab, marked "needs CardMirror `<version>` or newer" with its
+  toggle disabled — it can still be uninstalled.
 - The gate is two-sided. At run time, read `api.appVersion` and refuse
   an app that is too old for your plugin.
 
@@ -214,10 +243,13 @@ export interface CardMirrorPluginApi {
   extracted item. The resolver tries the focused document first, then
   every open window. `doc-not-open` carries `docTitle` so you can tell
   the user which document to open.
-- `flowApps()` - live flowing apps from the handshake directory
-  (section 4). Stale entries fail the liveness ping and do not appear.
+- `flowApps()` - every REGISTERED flowing app from the handshake
+  directory (section 4), each with a `running` flag from a liveness
+  ping. Closed apps are listed with `running: false` — selection UIs
+  must not require an app to be running; a send to one fails at
+  runtime with `app-not-running`.
 - `flowPost(appId, route, body)` - a brokered loopback POST to a
-  flowing app. The main process reads the target's handshake file,
+  flowing app. The main process reads the target's handshake files,
   attaches the token header, and applies a timeout. Plugins never see
   tokens or sockets. `unsupported` means the desktop host surface is
   absent. The `ok` field shows transport success only. Read the
@@ -282,20 +314,36 @@ directory. The directory per platform:
 - Linux: `$XDG_DATA_HOME/cardmirror-bridge/` (fallback
   `~/.local/share/cardmirror-bridge/`)
 
-Each app writes `<appId>.json` on launch and deletes it on quit. The
-write must be atomic: write a tmp file, then rename it into place.
-CardMirror writes `cardmirror.json` with `kind: "editor"`. Flowing
-apps register with `kind: "flow"`. The file name (without `.json`) is
-the app id and must match `^[a-z0-9][a-z0-9-]*$`.
+Each app writes TWO files, atomically (write a tmp file, then rename
+it into place):
 
-File format, schema 1:
+- `<appId>.json` — the IDENTITY file. Written on launch, **never
+  deleted**. This is what app pickers list, so a closed app stays
+  selectable in a peer's settings.
+- `<appId>.session.json` — the SESSION file. Written on launch with a
+  fresh token, **deleted on quit**. Its absence means the app isn't
+  running right now.
+
+CardMirror writes `cardmirror.json` / `cardmirror.session.json` with
+`kind: "editor"`. Flowing apps register with `kind: "flow"`. The file
+name (without the suffix) is the app id and must match
+`^[a-z0-9][a-z0-9-]*$`.
+
+Identity file, schema 1:
 
 ```json
 {
   "schema": 1,
   "app": "ebb",
   "appVersion": "0.3.0",
-  "kind": "flow",
+  "kind": "flow"
+}
+```
+
+Session file:
+
+```json
+{
   "port": 17700,
   "token": "hoyfR3k9vXqLmZ2wN8cT1bUj",
   "pid": 12345
@@ -304,15 +352,26 @@ File format, schema 1:
 
 Rules:
 
-- The token is random and rotates each session. A port scan finds
-  nothing usable without the current file.
+- The token is random and rotates each session — which is WHY the
+  session data lives in its own deleted-on-quit file: a kept combined
+  file would advertise a dead or wrong endpoint.
 - Every request between apps carries the target's token in the
   `X-Bridge-Token` header. The receiver must compare it in constant
   time.
 - Liveness: a reader sends `GET /ping` with the token before it trusts
-  a file. A stale file from a crashed process fails the ping, and the
-  reader skips it.
+  a session file. A stale session from a crashed process fails the
+  ping and reads as "registered but not running" — never as absent.
+  Sending to a registered app with no live session fails with
+  `app-not-running`; a dead connection is a runtime error, not a
+  reason to hide the app from selection.
+- Create the directory `0700` and write both files `0600` where the
+  platform supports modes — session tokens must not be readable by
+  other users on a shared machine.
 - Bind the endpoint to `127.0.0.1` only. Never bind `0.0.0.0`.
+- Compatibility: a reader should tolerate a combined single
+  `<appId>.json` carrying `port`/`token` (the pre-split shape) by
+  treating those fields as the session. Writers must produce the
+  two-file form.
 
 ## 5. CardMirror's HTTP routes for flowing apps
 
