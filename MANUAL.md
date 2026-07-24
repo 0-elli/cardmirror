@@ -2312,8 +2312,7 @@ remove one, **↺** to restore its default. A few window-level shortcuts
 
 **Plugins (beta).** Settings → General → **Enable plugins** (restart
 required) reveals a Plugins tab where you can install extensions —
-initially the companion integration for the ebb flowing app (still in
-development at the time of writing). Plugins
+initially the companion integration for the ebb flowing app. Plugins
 run with **full access to CardMirror and your documents**, so installs
 are limited to a curated list and every install shows a consent prompt
 naming the exact GitHub repository it comes from. A plugin's commands

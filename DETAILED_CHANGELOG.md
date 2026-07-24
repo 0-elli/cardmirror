@@ -9,8 +9,7 @@ in each release, see `CHANGELOG.md`.
 
 - **Plugin API v1 + cardmirror-bridge** (PR #25 by Shreeram Modi,
   author of the [ebb](https://github.com/shreerammodi/ebb) flowing
-  app — its integration plugin is still in development; merged with
-  the agreed modification set; ~4k LOC. Spec:
+  app; merged with the agreed modification set; ~4k LOC. Spec:
   `reference-docs/cardmirror-plugin-api.md` — bridge sections frozen,
   plugin-API sections draft). Plugins are one-GitHub-repo packages
   (manifest + bundle release assets) loaded into the renderer main
@@ -47,7 +46,7 @@ in each release, see `CHANGELOG.md`.
   suite 42→47): negotiated gzip on blob-heavy JSON, conditional
   snapshots (`haveSnap`), presence no-echo.
 
-- **`minimizeWindow` command + macOS Window menu**
+- **`minimizeWindow` command (all platforms) + macOS Window menu**
   (`ribbon-commands.ts`, main.ts). The custom app menu never carried
   the standard Window menu, so Cmd+M (which exists only as its
   Minimize accelerator) did nothing. Minimize is a first-class

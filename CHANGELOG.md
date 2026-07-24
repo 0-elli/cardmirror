@@ -14,19 +14,18 @@ see `DETAILED_CHANGELOG.md`.
   commands — searchable in the palette and rebindable like built-ins —
   and can talk to companion apps such as the
   [ebb](https://github.com/shreerammodi/ebb) flowing app over a local
-  bridge. The ebb integration plugin itself is still in development —
-  this release ships the plumbing so it installs the moment it's
-  published. Because plugins run with full access to the editor and
+  bridge. Because plugins run with full access to the editor and
   your documents, installs are limited to a curated list, and every
   install asks for consent naming the exact GitHub repository it comes
   from. Developers: the API and bridge protocol are documented in the
   repository. Thanks to Shreeram Modi for building the plugin API and
   the cardmirror-bridge.
 
-- **Cmd+M minimizes on macOS.** The standard Window menu is back
-  (Minimize, Bring All to Front), and Minimize is a real command —
-  rebindable in Keyboard shortcuts, searchable in the palette, with
-  the menu shortcut following your binding.
+- **Minimize is a keyboard command on every platform.** Cmd+M on
+  macOS — where the standard Window menu (Minimize, Bring All to
+  Front) is also back — and Ctrl+M on Windows and Linux. It's a real
+  command: rebindable in Keyboard shortcuts, searchable in the
+  palette, and on macOS the menu shortcut follows your binding.
 
 ### Changed
 
