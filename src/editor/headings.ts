@@ -25,8 +25,10 @@ export interface HeadingEntry {
   cite: string | null;
   /** Position of the enclosing live zone (`transclusion_ref`), or null when this
    *  heading isn't transcluded. Entries sharing a `zonePos` form one transcluded
-   *  run — used for the nav-pane rail and to keep a zone heading's drag inside
-   *  its zone. */
+   *  run — used for the nav-pane rail, by the drag path to promote a transcluded
+   *  heading's drag to the whole zone (`zoneRangeForEntry`), and by drop-slot
+   *  rendering to keep every slot outside the zone (only the run's first slot
+   *  survives, remapped to before the zone). */
   zonePos: number | null;
   /** True for a synthetic outline entry projected from an intra-doc live window
    *  (`self_ref`). Its content isn't in the doc, so it's a READ-ONLY nav row:

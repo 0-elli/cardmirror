@@ -332,3 +332,45 @@ describe('buildCopyTransaction', () => {
     expect(buildCopyTransaction(state, [], 0)).toBeNull();
   });
 });
+
+describe('duplicate-range dedup (same-zone multi-select)', () => {
+  // A nav multi-select of several headings inside the SAME live zone promotes
+  // each of them to the identical whole-zone range. Without dedup the move
+  // path deleted that range once per duplicate — the second delete ate
+  // whatever content slid into the range after the first cut.
+  it('move with duplicate identical ranges cuts the range once and loses nothing', () => {
+    const card1 = cardWith('A', 'a');
+    const card2 = cardWith('B', 'b');
+    const card3 = cardWith('C', 'c');
+    const doc = makeDoc(card1, card2, card3);
+    const state = EditorState.create({ doc, schema });
+    const from = card1.nodeSize;
+    const to = from + card2.nodeSize;
+    const dup = [
+      dragItemForRange(from, to, 'card', 4),
+      dragItemForRange(from, to, 'card', 4),
+    ];
+    const tr = buildMoveTransaction(state, dup, doc.content.size);
+    expect(tr).not.toBeNull();
+    const newDoc = tr!.doc;
+    expect(newDoc.childCount).toBe(3); // C survived
+    expect([...Array(3)].map((_, i) => newDoc.child(i).firstChild!.textContent)).toEqual([
+      'A',
+      'C',
+      'B',
+    ]);
+  });
+
+  it('copy with duplicate identical ranges clones once', () => {
+    const card1 = cardWith('A', 'a');
+    const doc = makeDoc(card1);
+    const state = EditorState.create({ doc, schema });
+    const dup = [
+      dragItemForRange(0, card1.nodeSize, 'card', 4),
+      dragItemForRange(0, card1.nodeSize, 'card', 4),
+    ];
+    const tr = buildCopyTransaction(state, dup, doc.content.size);
+    expect(tr).not.toBeNull();
+    expect(tr!.doc.childCount).toBe(2); // original + ONE clone
+  });
+});
