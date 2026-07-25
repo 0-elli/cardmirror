@@ -544,8 +544,12 @@ in this folder. In short: the body is
 `{ "text": "...", "role": "card" | "cite" | "inline", "newParagraph": true, "omitted": false }`,
 and the response is `{ "ok": true, "inserted": true, "docTitle": "..." }`
 or `{ "ok": false, "error": "no-target-doc" | "doc-readonly" | "bad-request" }`
-— plus the consent-layer responses above. Targeting is the focused
-window only: activate the CardMirror window before calling.
+— plus the consent-layer responses above. Targeting: the focused
+CardMirror window, else the most recently focused one (so a flow app
+can send while it holds focus itself, without stealing focus per
+send). An app whose target is one SPECIFIC window (a target picker)
+should activate that window before calling — focus is the only
+window-addressing the wire has. Never an arbitrary window.
 
 ### POST /jump
 

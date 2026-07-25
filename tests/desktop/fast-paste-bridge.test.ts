@@ -10,6 +10,7 @@ import {
   setMockFocusedWindow,
   setMockAllWindows,
   makeMockWindow,
+  emitAppEvent,
 } from './_electron-stub.js';
 import * as bridge from '../../apps/desktop/src/fast-paste-bridge.js';
 
@@ -93,6 +94,7 @@ describe('fast-paste-bridge', () => {
     // with consent out of the way; the consent block below manages its
     // own state.
     bridge.resetExternalConsentForTests();
+    bridge.resetFocusTrackingForTests();
     fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
   });
 
@@ -264,7 +266,7 @@ describe('fast-paste-bridge', () => {
     await inserted;
   });
 
-  it('no focused window → no-target-doc returned without renderer round-trip', async () => {
+  it('no focused window and no focus history → no-target-doc, no round-trip', async () => {
     setMockFocusedWindow(null);
     const ep = bridge.getRunningEndpoint()!;
     const r = await fetchJson({
@@ -274,6 +276,29 @@ describe('fast-paste-bridge', () => {
     expect(r.status).toBe(200);
     expect(r.json).toEqual({ ok: false, error: 'no-target-doc' });
     expect(sentToRenderer).toHaveLength(0);
+  });
+
+  it('background app → insert targets the most recently focused doc window', async () => {
+    // ebb's send style: it POSTs while ebb itself holds OS focus, so
+    // getFocusedWindow() is null — the insert must land in the window
+    // the user most recently worked in, never an arbitrary one. (FDP
+    // never reaches this path: it activates its picked window first.)
+    const docWin = makeMockWindow();
+    emitAppEvent('browser-window-focus', docWin);
+    // A later timer-popout focus must NOT steal the target.
+    emitAppEvent('browser-window-focus', makeMockWindow({ url: 'http://localhost/timer.html' }));
+    setMockFocusedWindow(null);
+    setMockAllWindows([docWin]);
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'from background', role: 'card', newParagraph: true },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sentToRenderer).toHaveLength(1);
+    expect(sentToRenderer[0]!.channel).toBe('external:insert-text');
+    fireRendererAck({ requestId: sentToRenderer[0]!.payload.requestId, ok: true });
+    expect((await inserted).json.ok).toBe(true);
   });
 
   it('stop deletes the discovery file', async () => {
@@ -395,6 +420,7 @@ describe('external-app consent (identity gate)', () => {
     resetElectronStub(consentDataDir);
     await bridge.startFastPasteBridge();
     bridge.resetExternalConsentForTests();
+    bridge.resetFocusTrackingForTests();
     fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
   });
 

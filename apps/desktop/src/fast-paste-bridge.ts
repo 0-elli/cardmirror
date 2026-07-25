@@ -33,9 +33,9 @@
  * decision (see external-consent.ts) — new routes inherit this
  * default unless explicitly classed as discovery.
  *
- * Insert routing is the focused window ONLY — the client activates
- * the target CardMirror window before calling, so a fallback to
- * "any window" could only ever mistarget.
+ * Insert routing: the focused window, else the most recently
+ * focused doc window (flow apps send while THEY hold focus), never
+ * an arbitrary any-window pick — that could mistarget.
  */
 
 import { app, BrowserWindow, ipcMain } from 'electron';
@@ -171,23 +171,51 @@ function focusedRenderTarget(): BrowserWindow | null {
   // Fall back to the first available window so a non-focused-but-
   // running app can still serve `/ping` (and consent prompts/toasts
   // still land somewhere) and not look broken. Inserts do NOT use
-  // this fallback — see strictFocusedTarget.
+  // this fallback — see insertTarget.
   const all = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
   return all.length > 0 ? all[0]! : null;
 }
 
-/** Insert targeting: the focused window or nothing. The client
- *  activates the target CardMirror window before calling, so when no
- *  window is focused the right answer is `no-target-doc` — an
- *  any-window fallback could only ever land text in the wrong doc. */
-function strictFocusedTarget(): BrowserWindow | null {
+/** The most recently focused DOC window — the insert target while
+ *  CardMirror is in the background. The two client styles differ: FDP
+ *  activates its picked window before calling (focus IS how its target
+ *  picker's choice travels — the wire has no window addressing), while
+ *  ebb deliberately sends without activating (a flow app must not
+ *  steal focus on every send), so its inserts land in the window the
+ *  user most recently worked in. The timer pop-out never tracks — it
+ *  has no insert handler. */
+let lastFocusedWindow: BrowserWindow | null = null;
+let focusTrackingInstalled = false;
+
+function installFocusTracking(): void {
+  if (focusTrackingInstalled) return;
+  focusTrackingInstalled = true;
+  (app as unknown as {
+    on?: (event: string, cb: (evt: unknown, win: BrowserWindow) => void) => void;
+  }).on?.('browser-window-focus', (_evt, win) => {
+    if (win.webContents.getURL().endsWith('timer.html')) return;
+    lastFocusedWindow = win;
+  });
+}
+
+export function resetFocusTrackingForTests(): void {
+  lastFocusedWindow = null;
+}
+
+/** Insert targeting: the focused window, else the most recently
+ *  focused doc window, else `no-target-doc`. Never an arbitrary
+ *  "first window in the list" — with several windows open that could
+ *  land text in the wrong doc. */
+function insertTarget(): BrowserWindow | null {
   const focused = BrowserWindow.getFocusedWindow();
-  return focused && !focused.isDestroyed() ? focused : null;
+  if (focused && !focused.isDestroyed()) return focused;
+  if (lastFocusedWindow && !lastFocusedWindow.isDestroyed()) return lastFocusedWindow;
+  return null;
 }
 
 function dispatchToRenderer(payload: InsertPayload): Promise<RendererAck> {
   return new Promise((resolve) => {
-    const win = strictFocusedTarget();
+    const win = insertTarget();
     if (!win) {
       resolve({ requestId: '', ok: false, error: 'no-target-doc' });
       return;
@@ -634,6 +662,7 @@ function tryListen(server: http.Server, port: number): Promise<number> {
 
 export async function startFastPasteBridge(): Promise<void> {
   if (serverState) return;
+  installFocusTracking();
   if (!ipcSubscribed) {
     ipcMain.on('external:insert-result', onRendererAck);
     ipcMain.on('external:jump-result', onJumpAck);

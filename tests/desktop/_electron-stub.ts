@@ -67,6 +67,8 @@ export function resetElectronStub(userDataPath: string): void {
   (app as any).__userData = userDataPath;
 }
 
+const appEventListeners = new Map<string, Array<(evt: unknown, ...args: any[]) => void>>();
+
 export const app = {
   __userData: '/tmp',
   getPath: (name: string) => {
@@ -74,7 +76,18 @@ export const app = {
     return (app as any).__userData as string;
   },
   getVersion: () => 'TEST-1.2.3',
+  on: (event: string, listener: (evt: unknown, ...args: any[]) => void) => {
+    const arr = appEventListeners.get(event) ?? [];
+    arr.push(listener);
+    appEventListeners.set(event, arr);
+  },
 };
+
+/** Fire an app-level event (e.g. 'browser-window-focus') into every
+ *  registered listener, the way Electron's app emitter would. */
+export function emitAppEvent(event: string, ...args: any[]): void {
+  for (const l of appEventListeners.get(event) ?? []) l(null, ...args);
+}
 
 export const BrowserWindow = {
   getFocusedWindow: () => mockFocusedWindow,
