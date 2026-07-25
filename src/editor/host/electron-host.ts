@@ -460,7 +460,7 @@ interface ElectronAPI {
     handler: (req: {
       requestId: string;
       text: string;
-      role: 'card' | 'cite' | 'inline';
+      role: string; // ExternalInsertRole (external-insert.ts) — heading roles included since PR #28
       newParagraph: boolean;
       omitted: boolean;
       target?: string;

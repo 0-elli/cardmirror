@@ -161,11 +161,25 @@ function readRequestBody(req: http.IncomingMessage, maxBytes = 4 * 1024 * 1024):
   });
 }
 
-function normalizeRole(value: unknown): 'card' | 'cite' | 'inline' {
-  if (value === 'cite') return 'cite';
-  if (value === 'inline') return 'inline';
+/** Roles the renderer's insert primitive understands
+ *  (`src/editor/external-insert.ts` — keep the two in step). The heading
+ *  levels come from the outline (`src/editor/headings.ts`); a client that
+ *  sends one gets that style applied, so the relay must not flatten them. */
+const INSERT_ROLES = new Set([
+  'pocket',
+  'hat',
+  'block',
+  'tag',
+  'analytic',
+  'body',
+  'card',
+  'cite',
+  'inline',
+]);
+
+function normalizeRole(value: unknown): string {
   // Unknown values degrade to `card` per §10.
-  return 'card';
+  return typeof value === 'string' && INSERT_ROLES.has(value) ? value : 'card';
 }
 
 function focusedRenderTarget(): BrowserWindow | null {

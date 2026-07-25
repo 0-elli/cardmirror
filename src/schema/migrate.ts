@@ -100,6 +100,80 @@ export function dropEmptyZones(doc: PMNode): PMNode {
   return changed ? doc.type.create(doc.attrs, Fragment.fromArray(out), doc.marks) : doc;
 }
 
+/**
+ * Heal structurally invalid `analytic_unit`s. The schema requires
+ * `analytic (card_body | undertag | cite_paragraph | table)*` — one analytic
+ * head, optional tail — but files written by older builds can carry units that
+ * violate it (a delete/drag path that hollowed the unit without removing the
+ * shell). `nodeFromJSON` accepted these silently for years; the beta.21
+ * reject-invalid check turned them into "file is damaged" refusals (first
+ * field report: beta.17 → beta.22, an EMPTY unit `<>`). Now a known-legacy
+ * shape, so it heals — one normalize loop covers every variant losslessly:
+ *
+ *   - empty unit                → dropped (nothing inside to lose)
+ *   - headless children         → float up to the parent (all legal there)
+ *   - analytic mid-tail         → re-heads its own unit, absorbing what
+ *                                 follows (same absorb rule as
+ *                                 `splitCardOnAnalytics`)
+ *
+ * Zones are walked one level deep (they're flat by the time this runs —
+ * `flattenNestedZones` precedes it in the parseNative chain).
+ */
+export function healAnalyticUnits(doc: PMNode): PMNode {
+  const healed = healUnitsIn(doc.content);
+  return healed === doc.content ? doc : doc.type.create(doc.attrs, healed, doc.marks);
+}
+
+function unitNeedsHeal(unit: PMNode): boolean {
+  if (unit.childCount === 0) return true;
+  let bad = unit.firstChild!.type.name !== 'analytic';
+  unit.forEach((c, _off, idx) => {
+    if (idx > 0 && c.type.name === 'analytic') bad = true;
+  });
+  return bad;
+}
+
+function healUnitsIn(frag: Fragment): Fragment {
+  let changed = false;
+  const out: PMNode[] = [];
+  frag.forEach((child) => {
+    if (child.type.name === 'transclusion_ref') {
+      const inner = healUnitsIn(child.content);
+      if (inner !== child.content) {
+        changed = true;
+        out.push(child.type.create(child.attrs, inner, child.marks));
+      } else {
+        out.push(child);
+      }
+      return;
+    }
+    if (child.type.name === 'analytic_unit' && unitNeedsHeal(child)) {
+      changed = true;
+      const kids: PMNode[] = [];
+      child.forEach((c) => kids.push(c));
+      let i = 0;
+      // Children before the first analytic float up to the parent level.
+      while (i < kids.length && kids[i]!.type.name !== 'analytic') {
+        out.push(kids[i]!);
+        i++;
+      }
+      // Each analytic re-heads a unit that absorbs what follows it.
+      while (i < kids.length) {
+        const unitChildren: PMNode[] = [kids[i]!];
+        i++;
+        while (i < kids.length && kids[i]!.type.name !== 'analytic') {
+          unitChildren.push(kids[i]!);
+          i++;
+        }
+        out.push(child.type.create(child.attrs, Fragment.fromArray(unitChildren), child.marks));
+      }
+      return;
+    }
+    out.push(child);
+  });
+  return changed ? Fragment.fromArray(out) : frag;
+}
+
 /** Recursively replace every `transclusion_ref` in a fragment with its content
  *  (any depth). Returns the same fragment when there was nothing to unwrap. */
 function unwrapZonesIn(frag: Fragment): Fragment {

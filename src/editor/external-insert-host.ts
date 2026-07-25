@@ -111,6 +111,7 @@ function handle(req: InsertRequest, opts: ExternalInsertHostOpts): InsertResult 
     }
     const tr = buildExternalInsertTransaction(view.state, {
       text: req.text,
+      role: req.role,
       newParagraph: req.newParagraph,
     });
     if (!tr) {

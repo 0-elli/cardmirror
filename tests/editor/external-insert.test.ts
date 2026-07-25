@@ -207,6 +207,75 @@ describe('buildExternalInsertTransaction — newParagraph=true (card / cite)', (
   });
 });
 
+describe('buildExternalInsertTransaction — heading roles', () => {
+  // Cursor mid-body of the doc's only card, for every case below.
+  function stateInCard() {
+    const doc = makeDoc([cardWith(tag('TAG'), cardBody('hello world'))]);
+    return makeState(doc).apply(
+      makeState(doc).tr.setSelection(
+        TextSelection.create(doc, findPos(doc, (n) => n.isText && n.text === 'hello world', 6)),
+      ),
+    );
+  }
+
+  function shapeAfter(role: any, text = 'X') {
+    const state = stateInCard();
+    const tr = buildExternalInsertTransaction(state, { text, role, newParagraph: true });
+    expect(tr).not.toBeNull();
+    return shapeOf(state.apply(tr!).doc);
+  }
+
+  it('analytic — lands in its own analytic_unit, leaving the card whole', () => {
+    expect(shapeAfter('analytic')).toEqual([
+      'card[tag("TAG"), card_body("hello world")]',
+      'analytic_unit[analytic("X")]',
+    ]);
+  });
+
+  it('tag — lands as a new card headed by that tag', () => {
+    expect(shapeAfter('tag')).toEqual([
+      'card[tag("TAG"), card_body("hello world")]',
+      'card[tag("X")]',
+    ]);
+  });
+
+  it.each(['pocket', 'hat', 'block'])('%s — lands as a bare doc-level heading', (role) => {
+    expect(shapeAfter(role)).toEqual([
+      'card[tag("TAG"), card_body("hello world")]',
+      `${role}("X")`,
+    ]);
+  });
+
+  it('one heading per line', () => {
+    expect(shapeAfter('analytic', 'first\nsecond')).toEqual([
+      'card[tag("TAG"), card_body("hello world")]',
+      'analytic_unit[analytic("first")]',
+      'analytic_unit[analytic("second")]',
+    ]);
+  });
+
+  it('stamps a heading id — an id-less heading is invisible to the nav pane', () => {
+    const state = stateInCard();
+    const tr = buildExternalInsertTransaction(state, {
+      text: 'X',
+      role: 'block',
+      newParagraph: true,
+    });
+    const ids: unknown[] = [];
+    state.apply(tr!).doc.descendants((n: any) => {
+      if (n.type.name === 'block') ids.push(n.attrs['id']);
+    });
+    expect(ids).toHaveLength(1);
+    expect(typeof ids[0]).toBe('string');
+  });
+
+  it('body / omitted role still build body paragraphs', () => {
+    const expected = ['card[tag("TAG"), card_body("hello "), card_body("Xworld")]'];
+    expect(shapeAfter('body')).toEqual(expected);
+    expect(shapeAfter(undefined)).toEqual(expected);
+  });
+});
+
 describe('buildExternalInsertTransaction — newParagraph=false (inline)', () => {
   it('inserts text at cursor with no block break', () => {
     const doc = makeDoc([

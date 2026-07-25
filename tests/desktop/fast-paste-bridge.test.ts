@@ -266,6 +266,21 @@ describe('fast-paste-bridge', () => {
     await inserted;
   });
 
+  it.each(['pocket', 'hat', 'block', 'tag', 'analytic', 'body'])(
+    'heading role "%s" reaches the renderer unflattened',
+    async (role) => {
+      const ep = bridge.getRunningEndpoint()!;
+      const inserted = fetchJson({
+        method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+        body: { text: 'X', role, newParagraph: true },
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(sentToRenderer[0]!.payload.role).toBe(role);
+      fireRendererAck({ requestId: sentToRenderer[0]!.payload.requestId, ok: true });
+      await inserted;
+    },
+  );
+
   it('no focused window and no focus history → no-target-doc, no round-trip', async () => {
     setMockFocusedWindow(null);
     const ep = bridge.getRunningEndpoint()!;

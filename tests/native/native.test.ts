@@ -350,3 +350,90 @@ describe('parseNative structural validation (reject-invalid)', () => {
     expect(parsed.doc.firstChild!.firstChild!.attrs['id']).toBeTruthy();
   });
 });
+
+describe('healAnalyticUnits (beta.22 field report: empty analytic_unit)', () => {
+  // Files written by older builds can carry analytic_units that violate
+  // `analytic (card_body | undertag | cite_paragraph | table)*`. beta.17
+  // opened them silently; the beta.21 reject-invalid check refused the
+  // whole file ("Invalid content for node analytic_unit: <>"). Known
+  // legacy shapes heal losslessly; check() still guards everything else.
+  const envelope = (doc: unknown): Uint8Array =>
+    new TextEncoder().encode(
+      JSON.stringify({ format: 'cardmirror-doc', formatVersion: 1, doc }),
+    );
+  const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+  const analytic = (text: string) => ({
+    type: 'analytic',
+    attrs: { id: 'a-1' },
+    content: [{ type: 'text', text }],
+  });
+  const body = (text: string) => ({ type: 'card_body', content: [{ type: 'text', text }] });
+
+  it('drops a completely empty analytic_unit (the reported file shape)', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [para('before'), { type: 'analytic_unit', content: [] }, para('after')],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.childCount).toBe(2);
+    expect(doc.textContent).toBe('beforeafter');
+  });
+
+  it('floats headless-unit children up to the parent level', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [{ type: 'analytic_unit', content: [body('stranded body')] }],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.firstChild!.type.name).toBe('card_body');
+    expect(doc.textContent).toBe('stranded body');
+  });
+
+  it('re-heads a mid-tail analytic into its own unit', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'analytic_unit',
+          content: [body('floats up'), analytic('the head'), body('absorbed')],
+        },
+      ],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.childCount).toBe(2);
+    expect(doc.child(0).type.name).toBe('card_body');
+    const unit = doc.child(1);
+    expect(unit.type.name).toBe('analytic_unit');
+    expect(unit.childCount).toBe(2);
+    expect(unit.firstChild!.type.name).toBe('analytic');
+    expect(doc.textContent).toBe('floats upthe headabsorbed');
+  });
+
+  it('heals an empty unit inside a live zone too', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'transclusion_ref',
+          attrs: { src: 'x.cmir', base: 'doc' },
+          content: [para('zone text'), { type: 'analytic_unit', content: [] }],
+        },
+      ],
+    });
+    const { doc } = parseNative(file);
+    const zone = doc.firstChild!;
+    expect(zone.type.name).toBe('transclusion_ref');
+    expect(zone.childCount).toBe(1);
+    expect(zone.textContent).toBe('zone text');
+  });
+
+  it('leaves a well-formed analytic_unit byte-identical', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [{ type: 'analytic_unit', content: [analytic('fine'), body('tail')] }],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.firstChild!.type.name).toBe('analytic_unit');
+    expect(doc.firstChild!.childCount).toBe(2);
+  });
+});

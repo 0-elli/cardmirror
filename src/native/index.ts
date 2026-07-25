@@ -34,6 +34,7 @@ import { stampMissingHeadingIds } from '../schema/ids.js';
 import {
   splitInCardAnalytics,
   flattenNestedZones,
+  healAnalyticUnits,
   dropEmptyZones,
   stripImageVisualMarks,
 } from '../schema/migrate.js';
@@ -204,8 +205,10 @@ export function parseNative(bytes: Uint8Array): ParseNativeResult {
   try {
     doc = stripImageVisualMarks(
       dropEmptyZones(
-        flattenNestedZones(
-          splitInCardAnalytics(stampMissingHeadingIds(schema.nodeFromJSON(file.doc))),
+        healAnalyticUnits(
+          flattenNestedZones(
+            splitInCardAnalytics(stampMissingHeadingIds(schema.nodeFromJSON(file.doc))),
+          ),
         ),
       ),
     );
