@@ -5937,8 +5937,20 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   font-weight: 500;
 }
 .pmd-external-apps-decision {
-  flex: 0 0 auto;
-  width: auto;
+  /* Bare native select, same as the custom-ribbon rows' dropdowns —
+     compact metrics that line up with the 22px forget button. */
+  flex: 0 0 9rem;
+}
+
+/* Allow all / Block all: the per-app rows are inoperative — greyed and
+   disabled (same treatment as dependency-gated settings rows). */
+.pmd-external-apps-inoperative .pmd-external-apps-row,
+.pmd-external-apps-inoperative .pmd-pairing-empty {
+  opacity: 0.55;
+}
+.pmd-external-apps-inoperative select,
+.pmd-external-apps-inoperative button {
+  cursor: not-allowed;
 }
 
 /* Gear on an enabled plugin's row → its own settings modal. Icon

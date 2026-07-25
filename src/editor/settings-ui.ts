@@ -2840,6 +2840,12 @@ function buildExternalAppsEditor(): HTMLElement {
   function render(): void {
     wrap.innerHTML = '';
     const consents = settings.get('externalAppConsents');
+    // Per-app decisions only operate under the "Ask for each app"
+    // policy — under Allow all / Block all the rows are kept (the
+    // stored decisions come back when the policy does) but greyed
+    // and disabled so they don't read as live controls.
+    const operative = settings.get('externalInsertPolicy') === 'ask';
+    wrap.classList.toggle('pmd-external-apps-inoperative', !operative);
     if (consents.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'pmd-pairing-empty';
@@ -2858,7 +2864,7 @@ function buildExternalAppsEditor(): HTMLElement {
       labels.set(consent.id, label);
 
       const decision = document.createElement('select');
-      decision.className = 'pmd-settings-text pmd-external-apps-decision';
+      decision.className = 'pmd-external-apps-decision';
       decision.title = 'Permission';
       for (const [value, text] of [
         ['allow', 'Allowed'],
@@ -2870,6 +2876,7 @@ function buildExternalAppsEditor(): HTMLElement {
         if (value === consent.decision) opt.selected = true;
         decision.appendChild(opt);
       }
+      decision.disabled = !operative;
       decision.addEventListener('change', () => {
         const next = decision.value === 'deny' ? 'deny' : 'allow';
         settings.set(
@@ -2885,6 +2892,7 @@ function buildExternalAppsEditor(): HTMLElement {
       forget.className = 'pmd-pairing-delete';
       setIcon(forget, 'close');
       forget.title = 'Forget this app (it will ask again next time)';
+      forget.disabled = !operative;
       forget.addEventListener('click', () => {
         settings.set(
           'externalAppConsents',
