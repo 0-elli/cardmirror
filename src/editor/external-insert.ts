@@ -26,18 +26,85 @@
  *   - `newParagraph: false` — `tr.insertText(text)` at the current
  *     selection. Plain inline characters, no marks, no new block.
  *
+ *   - a HEADING role (`pocket` / `hat` / `block` / `tag` /
+ *     `analytic`) — one heading node per line, snapped to the
+ *     outline slot a drag would drop it at. See below.
+ *
  * No equation-marker handling (§4.4) in v1 — the spec lets v1
  * insert the placeholder as plain body text.
  */
 
-import { Fragment, Slice } from 'prosemirror-model';
+import { Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { type EditorState, type Transaction } from 'prosemirror-state';
+import { newHeadingId } from '../schema/ids.js';
+import { nearestValidInsertPos } from './insert-position.js';
 
-export type ExternalInsertRole = 'card' | 'cite' | 'inline';
+/**
+ * What the sender wants the text to become. `pocket` / `hat` / `block` /
+ * `tag` / `analytic` are the outline's heading levels (`./headings.ts`);
+ * `body` / `card` / `cite` all land as body paragraphs, and `inline` as
+ * bare characters.
+ */
+export type ExternalInsertRole =
+  | 'pocket'
+  | 'hat'
+  | 'block'
+  | 'tag'
+  | 'analytic'
+  | 'body'
+  | 'card'
+  | 'cite'
+  | 'inline';
 
 export interface ExternalInsertOpts {
   text: string;
+  /** Omitted means `card` — body paragraphs, the pre-role behavior. */
+  role?: ExternalInsertRole;
   newParagraph: boolean;
+}
+
+/**
+ * The container a heading level needs around it to be schema-legal at the
+ * doc root. Pocket / hat / block stand alone; `tag` is only ever a card's
+ * first child and `analytic` only ever an analytic_unit's, which is why
+ * sending one of those inserts a whole (single-heading) card or unit.
+ */
+const HEADING_CONTAINER: Record<string, 'card' | 'analytic_unit' | undefined> = {
+  pocket: undefined,
+  hat: undefined,
+  block: undefined,
+  tag: 'card',
+  analytic: 'analytic_unit',
+};
+
+function isHeadingRole(role: ExternalInsertRole): boolean {
+  // hasOwn, not `in`: the role comes off the wire, and `in` would answer
+  // true for every Object.prototype key.
+  return Object.hasOwn(HEADING_CONTAINER, role);
+}
+
+/** One heading node (in its required container) per line, or null when the
+ *  schema doesn't carry the types — same defensive rail as the body path. */
+function buildHeadingNodes(
+  state: EditorState,
+  role: ExternalInsertRole,
+  lines: string[],
+): PMNode[] | null {
+  const headingType = state.schema.nodes[role];
+  if (!headingType) return null;
+  const containerName = HEADING_CONTAINER[role];
+  const containerType = containerName ? state.schema.nodes[containerName] : undefined;
+  if (containerName && !containerType) return null;
+  return lines.map((line) => {
+    // Heading nodes carry a stable id (schema/ids.ts); one built without it
+    // is invisible to the nav pane, so stamp it here rather than relying on
+    // the load-time repair walk.
+    const heading = headingType.create(
+      { id: newHeadingId() },
+      line ? state.schema.text(line) : null,
+    );
+    return containerType ? containerType.create(null, heading) : heading;
+  });
 }
 
 /** Build the insertion transaction for an external `/insert` call.
@@ -49,6 +116,19 @@ export function buildExternalInsertTransaction(
   opts: ExternalInsertOpts,
 ): Transaction | null {
   const { text, newParagraph } = opts;
+  const role = opts.role ?? 'card';
+
+  if (isHeadingRole(role)) {
+    // A heading is never inline, so the role outranks `newParagraph`.
+    const nodes = buildHeadingNodes(state, role, text.split(/\r\n|\r|\n/));
+    if (!nodes) return null;
+    const content = Fragment.fromArray(nodes);
+    // Dropping a doc-level object at a raw caret inside a card makes PM split
+    // the card and leave a phantom blank-tag sibling behind; snap to the
+    // outline slot a drag would use instead (mirrors the receive-pill insert).
+    const at = nearestValidInsertPos(state.doc, state.selection.head, content);
+    return state.tr.insert(at, content);
+  }
 
   if (!newParagraph) {
     // Inline mode: drop the text into the current selection as
