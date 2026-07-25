@@ -2549,11 +2549,12 @@ function makeStarButton(starred: boolean, disabled: boolean, onToggle: () => voi
   return btn;
 }
 
-/** Up / down reorder pair for a pairing row — the Find-category-order
- *  arrow pattern (same button class, disabled at the ends). Reorders
- *  the settings array itself: array order is what the send pill
- *  renders, so the pill follows automatically. */
-function makePairingReorderButtons(
+/** Up / down reorder pair for a settings-list row — the Find-category-order
+ *  arrow pattern (same button class, disabled at the ends). Reorders the
+ *  settings array itself: array order is what the consumer renders (send
+ *  pill, tag groups, ribbon custom buttons), so the UI follows
+ *  automatically. */
+function makeReorderButtons(
   idx: number,
   count: number,
   onSwap: (a: number, b: number) => void,
@@ -2632,7 +2633,7 @@ function buildPairingPartnersEditor(): HTMLElement {
       });
       row.appendChild(codeInput);
 
-      for (const b of makePairingReorderButtons(idx, partners.length, (a, b2) => {
+      for (const b of makeReorderButtons(idx, partners.length, (a, b2) => {
         const cur = settings.get('pairingPartners').slice();
         const tmp = cur[a]!;
         cur[a] = cur[b2]!;
@@ -2774,7 +2775,19 @@ function buildRibbonCustomButtonsEditor(): HTMLElement {
       del.title = 'Remove button';
       del.addEventListener('click', () => commit(get().filter((_, i) => i !== idx)));
 
-      rowEl.append(preview, iconSelect, cmdSelect, del);
+      rowEl.append(preview, iconSelect, cmdSelect);
+      // Row order IS ribbon order (column-major, 2 per column), so the
+      // reorder arrows move the button on the ribbon itself.
+      for (const b of makeReorderButtons(idx, buttons.length, (a, b2) => {
+        const arr = [...get()];
+        const tmp = arr[a]!;
+        arr[a] = arr[b2]!;
+        arr[b2] = tmp;
+        commit(arr);
+      })) {
+        rowEl.appendChild(b);
+      }
+      rowEl.appendChild(del);
       list.appendChild(rowEl);
     });
     addBtn.style.display = buttons.length >= MAX_RIBBON_CUSTOM_BUTTONS ? 'none' : '';
@@ -2996,7 +3009,7 @@ function buildPairingGroupsEditor(): HTMLElement {
       });
       header.appendChild(labelInput);
 
-      for (const b of makePairingReorderButtons(idx, groups.length, (a, b2) => {
+      for (const b of makeReorderButtons(idx, groups.length, (a, b2) => {
         const cur = settings.get('pairingGroups').slice();
         const tmp = cur[a]!;
         cur[a] = cur[b2]!;
