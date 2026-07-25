@@ -27,7 +27,7 @@ services:
       # Which GitHub repos your users' plugin installers accept
       # (comma-separated owner/repo). Plugins are full-trust code —
       # curate deliberately. Defaults to the app's baked list.
-      RELAY_PLUGIN_ALLOWLIST: ${RELAY_PLUGIN_ALLOWLIST:-shreerammodi/ebb}
+      RELAY_PLUGIN_ALLOWLIST: ${RELAY_PLUGIN_ALLOWLIST:-shreerammodi/ebb,shreerammodi/cardmirror-ebb-plugin}
     ports:
       - "8410:8000"
 

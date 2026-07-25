@@ -359,7 +359,7 @@ def relay_health() -> dict:
 # RELAY_PLUGIN_ALLOWLIST (comma-separated owner/repo); the default
 # matches the app's baked floor. Individuals who want arbitrary repos
 # use the in-app console unlock instead: __plugins('community-on').
-_DEFAULT_PLUGIN_ALLOWLIST = "shreerammodi/ebb"
+_DEFAULT_PLUGIN_ALLOWLIST = "shreerammodi/ebb,shreerammodi/cardmirror-ebb-plugin"
 
 
 @app.get("/relay/plugin-allowlist")
