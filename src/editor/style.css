@@ -5904,6 +5904,11 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   align-items: flex-start;
   gap: 0.4rem;
   margin-top: 0.5rem;
+  /* The section-title rhythm assumes the preceding element supplies the
+     0.75rem run-up to its divider (settings rows do via padding-bottom);
+     without this the Verbatim Flow heading below the panel sat flush
+     against the Load-plugin-from-file button. */
+  padding-bottom: 0.75rem;
 }
 .pmd-plugins-dev p {
   margin: 0;
