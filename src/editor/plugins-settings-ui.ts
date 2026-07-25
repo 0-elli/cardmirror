@@ -5,7 +5,9 @@
  * off Electron this panel never mounts (category is electronOnly).
  */
 import { getElectronHost } from './host/index.js';
-import { unregisterPlugin } from './plugin-registry.js';
+import { setIcon } from './icons';
+import { pluginSettingsDefs, unregisterPlugin } from './plugin-registry.js';
+import { openPluginSettingsModal } from './plugin-settings-modal.js';
 import { isPluginEnabled, setPluginEnabled } from './plugins-store.js';
 import { settings } from './settings.js';
 import { confirmDialog } from './text-prompt.js';
@@ -157,9 +159,13 @@ export function renderPluginsPanel(container: HTMLElement): void {
             clearError();
             const r = await host!.pluginLoad(p.id);
             if (!r.ok) showError(`${p.name} failed to load: ${r.error ?? 'unknown error'}`);
+            // Re-render so the gear appears once the just-registered
+            // plugin's declared settings are known.
+            guarded(refresh);
           });
         } else {
           showToast('Plugin disabled. It stops fully on the next launch.');
+          guarded(refresh);
         }
       });
       const update = document.createElement('button');
@@ -242,7 +248,23 @@ export function renderPluginsPanel(container: HTMLElement): void {
           guarded(refresh);
         });
       });
-      row.append(enable, label, update, remove);
+      row.append(enable, label);
+      // Gear → the plugin's own settings modal. Only when the plugin is
+      // enabled AND its registration declared settings — a disabled
+      // plugin's bundle never ran, so its settings defs are unknown (and
+      // the modal would have nothing trustworthy to render).
+      if (!p.incompatible && isPluginEnabled(p.id) && pluginSettingsDefs(p.id).length > 0) {
+        const gear = document.createElement('button');
+        gear.type = 'button';
+        gear.className = 'pmd-plugins-gear';
+        gear.title = `${p.name} settings`;
+        setIcon(gear, 'settings', { label: `${p.name} settings` });
+        gear.addEventListener('click', () => {
+          openPluginSettingsModal(p.id, p.name);
+        });
+        row.append(gear);
+      }
+      row.append(update, remove);
       list.append(row);
     }
   }

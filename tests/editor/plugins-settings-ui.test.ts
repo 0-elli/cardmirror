@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 
 const hostState = vi.hoisted(() => ({ host: {} as Record<string, unknown> }));
 const settingsState = vi.hoisted(() => ({
@@ -7,7 +7,10 @@ const settingsState = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/editor/toast.js', () => ({ showToast: vi.fn() }));
-vi.mock('../../src/editor/text-prompt.js', () => ({ confirmDialog: vi.fn() }));
+vi.mock('../../src/editor/text-prompt.js', () => ({
+  confirmDialog: vi.fn(),
+  captureFocusForDialog: () => () => {},
+}));
 vi.mock('../../src/editor/settings.js', () => ({
   settings: {
     get: (k: string) => (k === 'ribbonKeyOverrides' ? settingsState.overrides : true),
@@ -20,8 +23,14 @@ vi.mock('../../src/editor/host/index.js', () => ({
   getElectronHost: () => hostState.host,
 }));
 
+import {
+  installPluginRegistry,
+  registerPluginDefinition,
+  resetPluginRegistryForTests,
+} from '../../src/editor/plugin-registry.js';
 import { renderPluginsPanel } from '../../src/editor/plugins-settings-ui.js';
 import { confirmDialog } from '../../src/editor/text-prompt.js';
+import type { CardMirrorPluginApi } from '../../src/editor/plugin-api.js';
 
 /** Wait out the panel's initial `refresh()` microtask. */
 const settled = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -164,5 +173,71 @@ describe('uninstall cleans up completely (Shreeram review, 2026-07-24)', () => {
     expect(settingsState.overrides['demo.hello']).toBeUndefined();
     expect(settingsState.overrides['openSettings']).toBe('Mod-Alt-6'); // static untouched
     resetPluginRegistryForTests();
+  });
+});
+
+describe('per-plugin settings gear', () => {
+  const stubApi = { showToast: () => {} } as unknown as CardMirrorPluginApi;
+
+  /** Register `demo` in the real registry, with or without settings. */
+  function registerDemo(withSettings: boolean): void {
+    installPluginRegistry(() => stubApi);
+    const res = registerPluginDefinition({
+      id: 'demo',
+      name: 'Demo',
+      apiVersion: 1,
+      commands: [{ id: 'demo.x', label: 'X', run: () => {} }],
+      settings: withSettings
+        ? [{ key: 'on', label: 'Auto-send', type: 'boolean', default: true }]
+        : undefined,
+    });
+    expect(res.ok).toBe(true);
+  }
+
+  function setEnabled(on: boolean): void {
+    localStorage.setItem('pmd-plugins', JSON.stringify({ enabled: { demo: on } }));
+  }
+
+  async function renderedGear(): Promise<HTMLButtonElement | null> {
+    const el = document.createElement('div');
+    renderPluginsPanel(el);
+    await settled();
+    return el.querySelector<HTMLButtonElement>('.pmd-plugins-gear');
+  }
+
+  afterEach(() => {
+    localStorage.clear();
+    resetPluginRegistryForTests();
+    document.querySelector<HTMLButtonElement>('.pmd-plugin-settings-dialog .pmd-text-prompt-ok')?.click();
+  });
+
+  it('shows the gear only for an enabled plugin that declared settings', async () => {
+    registerDemo(true);
+    setEnabled(true);
+    const gear = await renderedGear();
+    expect(gear).toBeTruthy();
+    expect(gear!.getAttribute('title')).toBe('Demo settings');
+  });
+
+  it('hides the gear when the plugin is disabled', async () => {
+    registerDemo(true);
+    setEnabled(false);
+    expect(await renderedGear()).toBeNull();
+  });
+
+  it('hides the gear when the plugin declared no settings', async () => {
+    registerDemo(false);
+    setEnabled(true);
+    expect(await renderedGear()).toBeNull();
+  });
+
+  it('clicking the gear opens the plugin settings modal', async () => {
+    registerDemo(true);
+    setEnabled(true);
+    const gear = await renderedGear();
+    gear!.click();
+    const modal = document.querySelector('.pmd-plugin-settings-dialog');
+    expect(modal).toBeTruthy();
+    expect(modal!.querySelector('.pmd-route-header')!.textContent).toBe('Demo settings');
   });
 });

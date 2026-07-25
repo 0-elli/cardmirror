@@ -5907,6 +5907,54 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   margin: 0;
 }
 
+/* Gear on an enabled plugin's row → its own settings modal. Icon
+   button, muted-until-hover like .pmd-bulk-close. */
+.pmd-plugins-gear {
+  appearance: none;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--pmd-c-text-muted);
+  padding: 0.15rem;
+}
+.pmd-plugins-gear:hover {
+  color: var(--pmd-c-text);
+}
+
+/* The plugin-settings modal itself — route-dialog vocabulary, settings
+   controls inside. Changes apply immediately; Done just closes. */
+.pmd-plugin-settings-dialog {
+  width: min(26rem, 92vw);
+}
+.pmd-plugin-settings-rows {
+  margin: 0.5rem 0 0.25rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.pmd-plugin-settings-row {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--pmd-c-divider-faint);
+}
+.pmd-plugin-settings-row:last-child {
+  border-bottom: none;
+}
+.pmd-plugin-settings-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.pmd-plugin-settings-label .pmd-settings-toggle {
+  margin-top: 0;
+}
+.pmd-plugin-settings-row .pmd-settings-row-desc {
+  margin: 0.3rem 0 0;
+}
+
 .pmd-settings-row {
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--pmd-c-divider-faint);

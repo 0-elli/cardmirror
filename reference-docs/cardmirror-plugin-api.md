@@ -153,11 +153,26 @@ export interface PluginCommandDef {
   run: (api: CardMirrorPluginApi) => void | Promise<void>;
 }
 
+export type PluginSettingValue = boolean | string | number;
+
+export interface PluginSettingDef {
+  key: string;
+  label: string;
+  type: 'boolean' | 'text' | 'number' | 'select';
+  /** Must match `type`; for `select`, must be one of `options`. */
+  default: PluginSettingValue;
+  /** Required for `select` (the choices), forbidden otherwise. */
+  options?: readonly string[];
+  /** Muted helper line rendered under the control. */
+  description?: string;
+}
+
 export interface PluginDefinition {
   id: string;
   name: string;
   apiVersion: number;
   commands: PluginCommandDef[];
+  settings?: PluginSettingDef[];
 }
 ```
 
@@ -173,6 +188,26 @@ Rules:
   minted for its plugin id. Registered commands appear in the command
   palette and the keymap.
 
+### Declared settings (since 0.1.0-beta.22)
+
+The optional `settings` array declares user-configurable settings.
+CardMirror renders the controls: an enabled plugin that declared
+settings gets a gear on its row in Settings → Plugins, which opens a
+modal with one control per entry (checkbox, text field, number field,
+or dropdown). Changes apply immediately — there is no save step.
+
+- `key` must match `[a-zA-Z0-9][a-zA-Z0-9_-]*` and be unique within
+  the plugin.
+- Values persist in the plugin's storage bag under the reserved
+  `__settings` key, so they survive restarts and are removed with the
+  plugin on uninstall.
+- Read values with `api.settings.get(key)` (section 3). A stored value
+  that no longer matches the declared type — or, for `select`, is no
+  longer among `options` — reads as the declared `default`.
+- The gear only appears while the plugin is enabled: a disabled
+  plugin's bundle never ran, so its declared settings are unknown to
+  the host.
+
 ### Failure behavior
 
 Registration never throws and never crashes the app. The registry
@@ -185,6 +220,11 @@ toast "Plugin failed to load: `<reason>`". Rejection reasons:
 - `commands` is not an array.
 - A command id lacks the `<pluginId>.` prefix, or is a duplicate.
 - A command lacks a `label` or a `run` function.
+- A declared setting is off-shape: bad or duplicate `key`, missing
+  `label`, unknown `type`, a `default` that doesn't match `type`, a
+  `select` without a non-empty `options` list (or whose `default`
+  isn't among them), or `options` on a non-`select` type. One bad
+  setting rejects the whole registration.
 
 A `run` function that throws, or that returns a rejected promise, does
 not crash the app. The registry logs the error and shows a toast with
@@ -235,6 +275,8 @@ export interface FlowAppInfo {
   appVersion: string;
   schema: number;
   kind: 'flow';
+  /** A session file exists AND the app answered /ping just now. */
+  running: boolean;
 }
 
 export type FlowPostResult =
@@ -243,7 +285,13 @@ export type FlowPostResult =
 
 export interface PluginStorage {
   get(key: string): unknown;
+  /** `__settings` is reserved for declared-setting values (section 2). */
   set(key: string, value: unknown): void;
+}
+
+export interface PluginSettingsApi {
+  get(key: string): boolean | string | number | undefined;
+  onChanged(cb: (key: string, value: boolean | string | number) => void): () => void;
 }
 
 export interface CardMirrorPluginApi {
@@ -255,6 +303,7 @@ export interface CardMirrorPluginApi {
   docInfo(): { docId: string; docTitle: string } | null;
   showToast(message: string): void;
   storage: PluginStorage;
+  settings: PluginSettingsApi;
 }
 ```
 
@@ -284,7 +333,13 @@ export interface CardMirrorPluginApi {
   `null` when there is none or the doc has no id yet.
 - `showToast(message)` - a transient notification in the app.
 - `storage` - per-plugin persistent key-value storage. Values must be
-  JSON-serializable.
+  JSON-serializable. The `__settings` key is reserved (section 2).
+- `settings` (since 0.1.0-beta.22) - values of the settings declared in
+  the definition. `get(key)` returns the current value (the declared
+  default when the user hasn't set it) or `undefined` for undeclared
+  keys. `onChanged(cb)` fires when the user changes a value in the
+  settings modal and returns an unsubscribe function — most plugins
+  can skip it and read lazily in each command's `run`.
 
 ### Extraction rules
 
@@ -482,6 +537,15 @@ window.__registerCardMirrorPlugin?.({
   id: 'item-counter',
   name: 'Item Counter',
   apiVersion: 1,
+  settings: [
+    {
+      key: 'tags-only',
+      label: 'Count tags only',
+      type: 'boolean',
+      default: false,
+      description: 'Ignore every extracted kind except tags.',
+    },
+  ],
   commands: [
     {
       id: 'item-counter.countSelection',
@@ -494,7 +558,10 @@ window.__registerCardMirrorPlugin?.({
           api.showToast('Extraction failed: ' + result.error);
           return;
         }
-        const n = result.items.length;
+        const items = api.settings.get('tags-only')
+          ? result.items.filter((i) => i.kind === 'tag')
+          : result.items;
+        const n = items.length;
         api.showToast(
           'Extracted ' + n + (n === 1 ? ' item from "' : ' items from "') +
             result.docTitle + '"',

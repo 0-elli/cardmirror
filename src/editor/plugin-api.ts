@@ -8,6 +8,7 @@ import { getElectronHost } from './host/index.js';
 import { showToast } from './toast.js';
 import { extractSelection } from './plugin-extract.js';
 import { jumpToTokenInView } from './plugin-jump.js';
+import { getPluginSettingValue, subscribePluginSettings } from './plugin-settings.js';
 import { parseSourceToken } from './plugin-source-token.js';
 
 export type ExtractedKind =
@@ -63,7 +64,23 @@ export type FlowPostResult =
 
 export interface PluginStorage {
   get(key: string): unknown;
+  /** `__settings` is reserved — it holds the values of the settings the
+   *  plugin declared at registration (rendered by the host's settings
+   *  modal). Writing it directly only corrupts your own settings; reads
+   *  through `api.settings.get` fall back to declared defaults. */
   set(key: string, value: unknown): void;
+}
+
+export interface PluginSettingsApi {
+  /** Current value of a setting DECLARED in the plugin definition's
+   *  `settings` array (the declared default when the user hasn't set
+   *  it); undefined for undeclared keys. */
+  get(key: string): boolean | string | number | undefined;
+  /** Fires when the user changes one of this plugin's settings in the
+   *  settings modal. Returns an unsubscribe function. Most plugins
+   *  don't need this — reading lazily via `get` when a command runs
+   *  always sees the current value. */
+  onChanged(cb: (key: string, value: boolean | string | number) => void): () => void;
 }
 
 export interface CardMirrorPluginApi {
@@ -75,6 +92,7 @@ export interface CardMirrorPluginApi {
   docInfo(): { docId: string; docTitle: string } | null;
   showToast(message: string): void;
   storage: PluginStorage;
+  settings: PluginSettingsApi;
 }
 
 export interface PluginApiDeps {
@@ -163,6 +181,14 @@ export function createPluginApi(pluginId: string, deps: PluginApiDeps): CardMirr
         } catch {
           /* quota — non-fatal */
         }
+      },
+    },
+    settings: {
+      get(key) {
+        return getPluginSettingValue(pluginId, key);
+      },
+      onChanged(cb) {
+        return subscribePluginSettings(pluginId, cb);
       },
     },
   };

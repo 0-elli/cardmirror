@@ -20,11 +20,30 @@ export interface PluginCommandDef {
   run: (api: CardMirrorPluginApi) => void | Promise<void>;
 }
 
+export type PluginSettingValue = boolean | string | number;
+
+/** A user-configurable setting a plugin declares at registration. The
+ *  host renders the controls (gear on the plugin's Settings row); the
+ *  plugin reads values through `api.settings`. Values persist in the
+ *  plugin's storage bag, so uninstall cleanup covers them for free. */
+export interface PluginSettingDef {
+  key: string;
+  label: string;
+  type: 'boolean' | 'text' | 'number' | 'select';
+  /** Must match `type`; for `select`, must be one of `options`. */
+  default: PluginSettingValue;
+  /** Required for `select` (the choices), forbidden otherwise. */
+  options?: readonly string[];
+  /** Muted helper line rendered under the control. */
+  description?: string;
+}
+
 export interface PluginDefinition {
   id: string;
   name: string;
   apiVersion: number;
   commands: PluginCommandDef[];
+  settings?: PluginSettingDef[];
 }
 
 declare global {
@@ -36,6 +55,7 @@ declare global {
 interface RegisteredPlugin {
   def: PluginDefinition;
   api: CardMirrorPluginApi;
+  settings: PluginSettingDef[];
 }
 
 const plugins = new Map<string, RegisteredPlugin>();
@@ -43,9 +63,62 @@ const commands = new Map<string, { pluginId: string; cmd: PluginCommandDef }>();
 let makeApi: ((pluginId: string) => CardMirrorPluginApi) | null = null;
 
 const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+const SETTING_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+const SETTING_TYPES = new Set(['boolean', 'text', 'number', 'select']);
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === 'string');
+}
+
+/** Validate + snapshot a definition's `settings` array. Same discipline
+ *  as commands: every field is read exactly once, and any off-shape
+ *  entry rejects the whole registration — the settings modal renders
+ *  these blind, so it must be able to trust the shape. */
+function validateSettings(
+  def: PluginDefinition,
+): { ok: true; settings: PluginSettingDef[] } | { ok: false; error: string } {
+  const raw = def.settings;
+  if (raw === undefined) return { ok: true, settings: [] };
+  if (!Array.isArray(raw)) return { ok: false, error: 'settings must be an array' };
+  const snapshots: PluginSettingDef[] = [];
+  const seen = new Set<string>();
+  for (const s of raw) {
+    if (!s || typeof s !== 'object') return { ok: false, error: 'settings entries must be objects' };
+    const { key, label, type, options, description } = s;
+    const dflt = s.default;
+    if (typeof key !== 'string' || !SETTING_KEY_RE.test(key)) {
+      return { ok: false, error: `setting key "${String(key)}" is invalid` };
+    }
+    if (seen.has(key)) return { ok: false, error: `duplicate setting key "${key}"` };
+    if (typeof label !== 'string' || !label) {
+      return { ok: false, error: `setting "${key}" has no label` };
+    }
+    if (typeof type !== 'string' || !SETTING_TYPES.has(type)) {
+      return { ok: false, error: `setting "${key}" has invalid type "${String(type)}"` };
+    }
+    if (description !== undefined && typeof description !== 'string') {
+      return { ok: false, error: `setting "${key}" has an invalid description` };
+    }
+    if (type === 'select') {
+      if (!isStringArray(options) || options.length === 0 || options.some((o) => !o)) {
+        return { ok: false, error: `select setting "${key}" needs a non-empty options list` };
+      }
+      if (typeof dflt !== 'string' || !options.includes(dflt)) {
+        return { ok: false, error: `select setting "${key}" default must be one of its options` };
+      }
+    } else {
+      if (options !== undefined) {
+        return { ok: false, error: `setting "${key}" has options but is not a select` };
+      }
+      const wanted = type === 'text' ? 'string' : type;
+      if (typeof dflt !== wanted || (type === 'number' && !Number.isFinite(dflt))) {
+        return { ok: false, error: `setting "${key}" default must be a ${wanted}` };
+      }
+    }
+    seen.add(key);
+    snapshots.push({ key, label, type, default: dflt, options, description });
+  }
+  return { ok: true, settings: snapshots };
 }
 
 export function registerPluginDefinition(
@@ -104,17 +177,31 @@ export function registerPluginDefinition(
     seen.add(id);
     snapshots.push({ id, label, keywords, defaultKey, run });
   }
+  const settingsRes = validateSettings(def);
+  if (!settingsRes.ok) return settingsRes;
   if (plugins.has(def.id)) {
     // Already registered: an identical command-id list is a silent no-op
-    // success (the re-enable path); any difference still rejects.
+    // success (the re-enable path); any difference still rejects. The
+    // settings snapshots ARE refreshed — the dev load-from-file loop
+    // re-runs a bundle whose declared settings may have changed even
+    // when its command ids haven't.
     const same = seen.size === ownIds.size && [...seen].every((id) => ownIds.has(id));
-    if (same) return { ok: true };
+    if (same) {
+      plugins.get(def.id)!.settings = settingsRes.settings;
+      return { ok: true };
+    }
     return { ok: false, error: `plugin "${def.id}" already registered` };
   }
   const api = makeApi(def.id);
-  plugins.set(def.id, { def, api });
+  plugins.set(def.id, { def, api, settings: settingsRes.settings });
   for (const c of snapshots) commands.set(c.id, { pluginId: def.id, cmd: c });
   return { ok: true };
+}
+
+/** Declared settings of a registered plugin — [] when it declared none
+ *  or isn't registered (never loaded this session, or unregistered). */
+export function pluginSettingsDefs(pluginId: string): readonly PluginSettingDef[] {
+  return plugins.get(pluginId)?.settings ?? [];
 }
 
 /** Fired after any registration OR unregistration changes the command

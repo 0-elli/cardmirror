@@ -10,9 +10,11 @@ import {
   pluginCommandIds,
   pluginCommandLabel,
   pluginDefaultKey,
+  pluginSettingsDefs,
   runPluginCommand,
   registeredPlugins,
   resetPluginRegistryForTests,
+  unregisterPlugin,
   type PluginDefinition,
 } from '../../src/editor/plugin-registry.js';
 import type { CardMirrorPluginApi } from '../../src/editor/plugin-api.js';
@@ -132,5 +134,83 @@ describe('plugin registry', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Demo'));
+  });
+});
+
+describe('plugin settings declarations', () => {
+  const SETTINGS = [
+    { key: 'auto-send', label: 'Auto-send', type: 'boolean' as const, default: true },
+    { key: 'endpoint', label: 'Endpoint', type: 'text' as const, default: '', description: 'Where to post' },
+    { key: 'batch', label: 'Batch size', type: 'number' as const, default: 5 },
+    { key: 'mode', label: 'Mode', type: 'select' as const, default: 'fast', options: ['fast', 'careful'] },
+  ];
+
+  it('registers all four setting types and snapshots them', () => {
+    installPluginRegistry(() => stubApi);
+    expect(registerPluginDefinition(def({ settings: [...SETTINGS] })).ok).toBe(true);
+    const defs = pluginSettingsDefs('demo');
+    expect(defs.map((d) => d.key)).toEqual(['auto-send', 'endpoint', 'batch', 'mode']);
+    expect(defs[3]!.options).toEqual(['fast', 'careful']);
+    expect(defs[1]!.description).toBe('Where to post');
+  });
+
+  it('returns [] for a plugin without settings or not registered', () => {
+    installPluginRegistry(() => stubApi);
+    expect(registerPluginDefinition(def()).ok).toBe(true);
+    expect(pluginSettingsDefs('demo')).toEqual([]);
+    expect(pluginSettingsDefs('ghost')).toEqual([]);
+  });
+
+  it('defs vanish when the plugin unregisters', () => {
+    installPluginRegistry(() => stubApi);
+    registerPluginDefinition(def({ settings: [SETTINGS[0]!] }));
+    expect(pluginSettingsDefs('demo').length).toBe(1);
+    unregisterPlugin('demo');
+    expect(pluginSettingsDefs('demo')).toEqual([]);
+  });
+
+  it('rejects every off-shape settings declaration', () => {
+    installPluginRegistry(() => stubApi);
+    const bad: unknown[] = [
+      'not-an-array',
+      [{ key: 'bad key!', label: 'X', type: 'boolean', default: true }],
+      [{ key: 'a', label: 'A', type: 'boolean', default: true }, { key: 'a', label: 'B', type: 'boolean', default: false }],
+      [{ key: 'a', label: '', type: 'boolean', default: true }],
+      [{ key: 'a', label: 'A', type: 'color', default: '#fff' }],
+      [{ key: 'a', label: 'A', type: 'select', default: 'x' }],
+      [{ key: 'a', label: 'A', type: 'select', default: 'x', options: [] }],
+      [{ key: 'a', label: 'A', type: 'select', default: 'z', options: ['x', 'y'] }],
+      [{ key: 'a', label: 'A', type: 'boolean', default: true, options: ['x'] }],
+      [{ key: 'a', label: 'A', type: 'boolean', default: 'yes' }],
+      [{ key: 'a', label: 'A', type: 'number', default: Number.NaN }],
+      [{ key: 'a', label: 'A', type: 'text', default: 7 }],
+      [{ key: 'a', label: 'A', type: 'boolean', default: true, description: 42 }],
+      [null],
+    ];
+    for (const settings of bad) {
+      const res = registerPluginDefinition(def({ settings: settings as never }));
+      expect(res.ok, JSON.stringify(settings)).toBe(false);
+    }
+    // Every rejection is whole-definition: nothing registered at all.
+    expect(pluginCommandIds()).toEqual([]);
+  });
+
+  it('snapshots are immune to post-registration mutation of the definition', () => {
+    installPluginRegistry(() => stubApi);
+    const settings = [{ key: 'a', label: 'A', type: 'boolean' as const, default: true }];
+    registerPluginDefinition(def({ settings }));
+    settings[0]!.label = 'HIJACKED';
+    (settings as unknown[]).push({ key: 'b', label: 'B', type: 'boolean', default: false });
+    const defs = pluginSettingsDefs('demo');
+    expect(defs.length).toBe(1);
+    expect(defs[0]!.label).toBe('A');
+  });
+
+  it('the re-enable no-op refreshes settings snapshots (dev reload path)', () => {
+    installPluginRegistry(() => stubApi);
+    registerPluginDefinition(def({ settings: [{ key: 'a', label: 'Old', type: 'boolean', default: true }] }));
+    const res = registerPluginDefinition(def({ settings: [{ key: 'a', label: 'New', type: 'boolean', default: true }] }));
+    expect(res.ok).toBe(true);
+    expect(pluginSettingsDefs('demo')[0]!.label).toBe('New');
   });
 });
