@@ -2047,17 +2047,6 @@ export const SETTING_METADATA: SettingMeta[] = [
     aliases: ['fourth preset', 'four presets', 'preset 4'],
   },
   {
-    key: 'flowHostOnLaunch',
-    label: 'Keep a Verbatim Flow connection warm',
-    description:
-      'Start the background connection to Excel when CardMirror launches, so your first Send to Flow is fast instead of waiting a second or two for it to spin up. Leave off to start it on demand the first time you use a Flow command (every send after that is fast either way). You can also start it any time with the "Start Flow Connection" command.',
-    kind: 'toggle',
-    category: 'general',
-    section: 'Integrations',
-    windowsOnly: true,
-    aliases: ['flow', 'verbatim flow', 'powershell', 'warm', 'prewarm', 'excel'],
-  },
-  {
     key: 'showOnboardingStarter',
     label: 'Onboarding doc for new documents',
     description:
@@ -3523,6 +3512,20 @@ export const SETTING_METADATA: SettingMeta[] = [
     kind: 'toggle',
     category: 'plugins',
     electronOnly: true,
+  },
+  {
+    // Lives on the Plugins tab (it's plugin-shaped: a bundled Verbatim
+    // integration) but is NOT gated by Enable plugins — the settings-ui
+    // plugins block re-appends this row below the plugin manager.
+    key: 'flowHostOnLaunch',
+    label: 'Keep a Verbatim Flow connection warm',
+    description:
+      'Start the background connection to Excel when CardMirror launches, so your first Send to Flow is fast instead of waiting a second or two for it to spin up. Leave off to start it on demand the first time you use a Flow command (every send after that is fast either way). You can also start it any time with the "Start Flow Connection" command.',
+    kind: 'toggle',
+    category: 'plugins',
+    section: 'Verbatim Flow',
+    windowsOnly: true,
+    aliases: ['flow', 'verbatim flow', 'powershell', 'warm', 'prewarm', 'excel'],
   },
 ];
 

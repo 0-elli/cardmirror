@@ -505,6 +505,20 @@ class SettingsModal {
         const section = document.createElement('section');
         section.className = 'pmd-plugins-panel';
         panel.appendChild(section);
+        // The Verbatim Flow row sits BELOW the plugin manager: it's
+        // plugin-shaped (a bundled integration) but unconditionally
+        // available — deliberately NOT behind Enable plugins, so its row
+        // renders even while the manager shows only the gate placeholder.
+        // The generic loop above already built it (with its section
+        // heading right before it); re-appending moves both to the end.
+        const flowRow = panel.querySelector('[data-setting-key="flowHostOnLaunch"]');
+        if (flowRow) {
+          const heading = flowRow.previousElementSibling;
+          if (heading?.classList.contains('pmd-settings-section-title')) {
+            panel.appendChild(heading);
+          }
+          panel.appendChild(flowRow);
+        }
         void import('./plugins-settings-ui.js').then((m) => m.renderPluginsPanel(section));
       }
       this.dialog.appendChild(panel);
