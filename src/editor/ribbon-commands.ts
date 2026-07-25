@@ -6364,10 +6364,14 @@ export function commandAliasesFor(id: AnyCommandId): readonly string[] {
  * muscle memory but aren't surfaced in the chrome.
  */
 export function primaryKeyFor(
-  id: RibbonCommandId,
-  overrides: Partial<Record<RibbonCommandId, string | string[]>> = {},
+  id: AnyCommandId,
+  overrides: Partial<Record<string, string | string[]>> = {},
 ): string {
-  const spec = overrides[id] ?? DEFAULT_RIBBON_KEYS[id];
+  const spec =
+    overrides[id] ??
+    (DEFAULT_RIBBON_KEYS as Partial<Record<string, string | string[]>>)[id] ??
+    pluginDefaultKey(id) ??
+    '';
   const keys = keysArray(spec);
   return keys[0] ?? '';
 }

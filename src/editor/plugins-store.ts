@@ -87,4 +87,15 @@ export function reconcilePluginState(installedIds: ReadonlySet<string>): void {
     if (key !== undefined) kept[cmdId] = key;
   }
   if (dropped > 0) settings.set('ribbonKeyOverrides', kept);
+  // Custom ribbon buttons bound to a gone plugin's commands unconfigure the
+  // same way (dot-prefix test — setting commands use `toggle:`/`cycle:`, no
+  // dot, and static ribbon ids are dot-free).
+  const customButtons = settings.get('ribbonCustomButtons');
+  const keptButtons = customButtons.filter((b) => {
+    const dot = b.command.indexOf('.');
+    return dot <= 0 || installedIds.has(b.command.slice(0, dot));
+  });
+  if (keptButtons.length !== customButtons.length) {
+    settings.set('ribbonCustomButtons', keptButtons);
+  }
 }

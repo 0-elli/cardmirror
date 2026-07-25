@@ -301,17 +301,19 @@ export interface KeyboardMacro {
 }
 
 /** A user-configured custom ribbon button: runs `command` when clicked and
- *  shows `icon`. Up to 6 sit to the right of the comments buttons; an empty
+ *  shows `icon`. Up to 10 sit to the right of the comments buttons; an empty
  *  list hides the whole section. */
 export interface RibbonCustomButton {
-  /** Command to run: a `RibbonCommandId`, or a setting command
-   *  `toggle:<settingKey>` / `cycle:<settingKey>` (see setting-commands.ts). */
+  /** Command to run: a `RibbonCommandId`, a plugin command id
+   *  (`<pluginId>.<name>`), or a setting command `toggle:<settingKey>` /
+   *  `cycle:<settingKey>` (see setting-commands.ts). */
   command: string;
   icon: IconName;
 }
 
-/** Max custom ribbon buttons (the reserved slots to the right of comments). */
-export const MAX_RIBBON_CUSTOM_BUTTONS = 6;
+/** Max custom ribbon buttons (the reserved slots to the right of comments —
+ *  5 columns of 2). */
+export const MAX_RIBBON_CUSTOM_BUTTONS = 10;
 
 /** "New paragraph on Enter" choices — 'normal' means the default Enter
  *  behavior for that context; the rest name a structural style. */
@@ -1191,7 +1193,7 @@ export interface Settings {
    * map fall back to `DEFAULT_RIBBON_KEYS`.
    */
   ribbonKeyOverrides: Partial<Record<string, string | string[]>>;
-  /** Up to 6 user-configured custom buttons, shown to the right of the
+  /** Up to 10 user-configured custom buttons, shown to the right of the
    *  comments buttons on the ribbon (empty = the section is hidden). */
   ribbonCustomButtons: RibbonCustomButton[];
   /** User-defined "press a key → type this text" macros. */
@@ -2511,7 +2513,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'ribbonCustomButtons',
     label: 'Custom ribbon buttons',
     description:
-      'Up to 6 buttons to the right of the comments buttons, each running a command of your choice with an icon you pick. Add as many as you like — with none configured the section is hidden. They are the third thing to disappear when the ribbon runs out of room.',
+      'Up to 10 buttons to the right of the comments buttons, each running a command of your choice with an icon you pick. Add as many as you like — with none configured the section is hidden. They are the third thing to disappear when the ribbon runs out of room.',
     kind: 'ribbonCustomButtons',
     category: 'appearance',
     section: 'Custom ribbon buttons',

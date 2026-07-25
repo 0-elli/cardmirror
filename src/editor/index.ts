@@ -265,6 +265,7 @@ import { setIcon } from './icons.js';
 import { runSettingCommand, settingCommandLabel } from './setting-commands.js';
 import {
   buildRibbonKeymap,
+  commandLabelFor,
   getRibbonCommand,
   formatKeyForDisplay,
   primaryKeyFor,
@@ -2477,7 +2478,9 @@ refreshFlashcardDueDot();
 /** Rebuild the user-configured custom ribbon buttons from settings. Each runs
  *  a chosen command with a chosen icon; entries whose command is no longer
  *  available are skipped, and the whole panel is hidden when nothing valid is
- *  configured. Called at boot and whenever `ribbonCustomButtons` changes. */
+ *  configured. Called at boot, whenever `ribbonCustomButtons` changes, and on
+ *  plugin registration changes (a button bound to a plugin command appears
+ *  once its plugin loads — async after boot — and vanishes on uninstall). */
 function renderCustomRibbonButtons(): void {
   const panel = document.getElementById('custom-ribbon-panel');
   if (!panel) return;
@@ -2488,14 +2491,12 @@ function renderCustomRibbonButtons(): void {
   let shown = 0;
   for (const cfg of settings.get('ribbonCustomButtons')) {
     const cmd = cfg.command;
-    // A custom button binds a ribbon command OR a setting command
-    // (toggle:/cycle:). Resolve a label from whichever it is; skip when it's
-    // neither available nor a known setting command (obsolete / gated-off).
+    // A custom button binds a ribbon command (static or plugin) OR a setting
+    // command (toggle:/cycle:). Resolve a label from whichever it is; skip
+    // when it's neither available nor a known setting command (obsolete /
+    // gated-off / its plugin not loaded).
     const settingLabel = settingCommandLabel(cmd);
-    const ribbonLabel =
-      !settingLabel && available.has(cmd as RibbonCommandId)
-        ? RIBBON_COMMAND_LABELS[cmd as RibbonCommandId]
-        : undefined;
+    const ribbonLabel = !settingLabel && available.has(cmd) ? commandLabelFor(cmd) : undefined;
     const label = settingLabel ?? ribbonLabel;
     if (!label) continue;
     const btn = document.createElement('button');
@@ -2506,12 +2507,13 @@ function renderCustomRibbonButtons(): void {
     // Keep the editor selection alive across the click (selection commands).
     btn.addEventListener('mousedown', (e) => e.preventDefault());
     btn.addEventListener('click', () => {
-      if (!runSettingCommand(cmd)) runRibbonCommandById(cmd as RibbonCommandId);
+      if (!runSettingCommand(cmd)) runRibbonCommandById(cmd);
     });
     // Ribbon commands use the managed tooltip (label + live shortcut); setting
-    // commands aren't in that registry, so give them a plain title.
+    // commands aren't in that registry, so give them a plain title. Plugin
+    // commands aren't in RIBBON_COMMAND_LABELS, so hand the tooltip its label.
     if (settingLabel) btn.title = settingLabel;
-    else registerRibbonTooltip({ el: btn, commandId: cmd as RibbonCommandId });
+    else registerRibbonTooltip({ el: btn, commandId: cmd, label: ribbonLabel });
     panel.appendChild(btn);
     shown++;
   }
@@ -8159,6 +8161,10 @@ async function initPlugins(): Promise<void> {
         console.warn('[plugins] keymap rebuild failed for a view:', err);
       }
     }
+    // Custom ribbon buttons can bind plugin commands: one bound to a command
+    // of the just-registered plugin materializes now (boot rendered before
+    // the async plugin load), and an uninstalled plugin's button vanishes.
+    renderCustomRibbonButtons();
   };
   installPluginRegistry((pluginId) =>
     createPluginApi(pluginId, {

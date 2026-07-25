@@ -35,14 +35,18 @@ describe('ribbonCustomButtons sanitize', () => {
         { command: 'c', icon: 'check' },
         { command: 'd', icon: 'heart' },
         { command: 'e', icon: 'zap' },
-        { command: 'f', icon: 'bell' }, // 7th valid → dropped by the cap
+        { command: 'f', icon: 'trophy' },
+        { command: 'g', icon: 'rocket' },
+        { command: 'h', icon: 'globe' },
+        { command: 'i', icon: 'anchor' },
+        { command: 'j', icon: 'bell' }, // 11th valid → dropped by the cap
       ] as unknown as RibbonCustomButton[],
     });
     const out = s.get('ribbonCustomButtons');
-    expect(out).toHaveLength(MAX_RIBBON_CUSTOM_BUTTONS); // 6
+    expect(out).toHaveLength(MAX_RIBBON_CUSTOM_BUTTONS); // 10
     expect(out[0]).toEqual({ command: 'toggleReadMode', icon: 'star' });
     expect(out.every((b) => !!b.command && !!b.icon)).toBe(true);
-    // The 7th valid entry (bell) was cut by the cap, not the malformed ones.
+    // The 11th valid entry (bell) was cut by the cap, not the malformed ones.
     expect(out.map((b) => b.icon)).not.toContain('bell');
   });
 });

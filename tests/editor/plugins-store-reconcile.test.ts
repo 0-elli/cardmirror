@@ -15,6 +15,7 @@ import { settings } from '../../src/editor/settings.js';
 beforeEach(() => {
   localStorage.clear();
   settings.set('ribbonKeyOverrides', {});
+  settings.set('ribbonCustomButtons', []);
 });
 
 describe('reconcilePluginState', () => {
@@ -45,9 +46,27 @@ describe('reconcilePluginState', () => {
   it('an installed-but-not-loaded plugin keeps everything (load failure ≠ uninstall)', () => {
     setPluginEnabled('flaky', true);
     settings.set('ribbonKeyOverrides', { 'flaky.go': 'Mod-Alt-4' });
+    settings.set('ribbonCustomButtons', [{ command: 'flaky.go', icon: 'star' }]);
     // 'flaky' IS in the installed set — it just never registered this session.
     reconcilePluginState(new Set(['flaky']));
     expect(isPluginEnabled('flaky')).toBe(true);
     expect(settings.get('ribbonKeyOverrides')['flaky.go']).toBe('Mod-Alt-4');
+    expect(settings.get('ribbonCustomButtons')).toEqual([{ command: 'flaky.go', icon: 'star' }]);
+  });
+
+  it('unconfigures custom ribbon buttons of directory-absent plugins only', () => {
+    settings.set('ribbonCustomButtons', [
+      { command: 'gone.go', icon: 'star' },
+      { command: 'alive.go', icon: 'flag' },
+      // Static ribbon ids and setting commands have no dot prefix — never touched.
+      { command: 'toggleReadMode', icon: 'check' },
+      { command: 'toggle:paraIntegrity', icon: 'zap' },
+    ]);
+    reconcilePluginState(new Set(['alive']));
+    expect(settings.get('ribbonCustomButtons')).toEqual([
+      { command: 'alive.go', icon: 'flag' },
+      { command: 'toggleReadMode', icon: 'check' },
+      { command: 'toggle:paraIntegrity', icon: 'zap' },
+    ]);
   });
 });

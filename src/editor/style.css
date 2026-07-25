@@ -1710,9 +1710,11 @@ body:not(.pmd-inplace-save) #autosave-btn { display: none; }
 .ribbon-doc-ops-panel-3col {
   grid-template-columns: auto auto auto;
 }
-/* Custom buttons vary in count (0–6): fill column-major (2 per column, adding
-   columns rightward) so a few buttons stay compact instead of leaving a gappy
-   half-empty row. Capped at 3 columns by the -3col template = 6 buttons. */
+/* Custom buttons vary in count (0–10): fill column-major (2 per column,
+   adding columns rightward) so a few buttons stay compact instead of leaving
+   a gappy half-empty row. Columns beyond the -3col template are implicit
+   tracks — auto-sized like the explicit ones — so the panel grows to 5
+   columns; the real cap is MAX_RIBBON_CUSTOM_BUTTONS at the data level. */
 #custom-ribbon-panel {
   grid-auto-flow: column;
 }

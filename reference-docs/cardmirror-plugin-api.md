@@ -186,7 +186,9 @@ Rules:
 - Every command needs a non-empty `label` and a `run` function.
 - Each registered plugin receives one `CardMirrorPluginApi` object,
   minted for its plugin id. Registered commands appear in the command
-  palette and the keymap.
+  palette and the keymap, and (since 0.1.0-beta.22) users can bind
+  them to custom ribbon buttons — uninstalling the plugin unconfigures
+  any buttons bound to its commands.
 
 ### Declared settings (since 0.1.0-beta.22)
 

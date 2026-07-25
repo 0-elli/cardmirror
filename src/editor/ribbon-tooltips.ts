@@ -39,15 +39,16 @@ import {
   primaryKeyFor,
   formatKeyForDisplay,
   RIBBON_COMMAND_LABELS,
-  type RibbonCommandId,
+  type AnyCommandId,
 } from './ribbon-commands.js';
 
 export interface RibbonTooltipTarget {
   el: HTMLElement;
   /** A command id to derive both label (via RIBBON_COMMAND_LABELS) and shortcut
    *  (via primaryKeyFor + formatKeyForDisplay). Pass this for any button that
-   *  maps 1:1 to a ribbon command. */
-  commandId?: RibbonCommandId;
+   *  maps 1:1 to a ribbon command. Plugin command ids work for the shortcut
+   *  half but aren't in the static label table — pass `label` alongside. */
+  commandId?: AnyCommandId;
   /** Explicit label override. Used for buttons whose tooltip text doesn't match
    *  `RIBBON_COMMAND_LABELS[commandId]` (e.g., the state-aware autosave toggle,
    *  the Paste Text button). Falls back to the command-id-derived label. */
@@ -87,7 +88,10 @@ export function reapplyAllRibbonTooltips(): void {
 function applyOne(t: RibbonTooltipTarget): void {
   const mode = settings.get('ribbonTooltipMode');
   const label =
-    t.label ?? (t.commandId ? RIBBON_COMMAND_LABELS[t.commandId] : '');
+    t.label ??
+    (t.commandId
+      ? ((RIBBON_COMMAND_LABELS as Partial<Record<string, string>>)[t.commandId] ?? '')
+      : '');
   let shortcut: string | null = null;
   if (t.commandId) {
     const key = primaryKeyFor(t.commandId, settings.get('ribbonKeyOverrides'));

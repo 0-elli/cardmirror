@@ -70,7 +70,38 @@ export type IconName =
   | 'bell'
   | 'zap'
   | 'lightbulb'
-  | 'scissors';
+  | 'scissors'
+  // Second wave of the curated custom-button set (cap grew 6 → 10).
+  | 'rocket'
+  | 'target'
+  | 'globe'
+  | 'calendar'
+  | 'mail'
+  | 'camera'
+  | 'music'
+  | 'shield'
+  | 'lock'
+  | 'key'
+  | 'sun'
+  | 'moon'
+  | 'smile'
+  | 'thumbs-up'
+  | 'trophy'
+  | 'gift'
+  | 'send'
+  | 'puzzle'
+  | 'palette'
+  | 'megaphone'
+  | 'filter'
+  | 'tool'
+  | 'pin'
+  | 'book'
+  | 'coins'
+  | 'archive'
+  | 'infinity'
+  | 'anchor'
+  | 'hash'
+  | 'compass';
 
 /** Curated set of icons offered when a user picks an icon for a custom
  *  ribbon button — a sensible general-purpose spread from the Untitled UI
@@ -100,6 +131,36 @@ export const CUSTOM_BUTTON_ICONS: IconName[] = [
   'upload',
   'printer',
   'timer',
+  'rocket',
+  'target',
+  'globe',
+  'compass',
+  'calendar',
+  'mail',
+  'send',
+  'camera',
+  'music',
+  'palette',
+  'megaphone',
+  'book',
+  'pin',
+  'shield',
+  'lock',
+  'key',
+  'sun',
+  'moon',
+  'smile',
+  'thumbs-up',
+  'trophy',
+  'gift',
+  'puzzle',
+  'filter',
+  'tool',
+  'coins',
+  'archive',
+  'infinity',
+  'anchor',
+  'hash',
 ];
 
 /** Create an icon span. Decorative by default (`aria-hidden`); pass a

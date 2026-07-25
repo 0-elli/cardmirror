@@ -69,7 +69,7 @@ import { applyTimerProfile } from './timer-profile.js';
 import { showToast } from './toast.js';
 import { setIcon, CUSTOM_BUTTON_ICONS, type IconName } from './icons';
 import { availableRibbonCommandIds } from './ribbon-availability.js';
-import { RIBBON_COMMAND_LABELS, type RibbonCommandId } from './ribbon-commands.js';
+import { commandLabelFor, RIBBON_COMMAND_LABELS, type RibbonCommandId } from './ribbon-commands.js';
 import { settingCommandOptions } from './setting-commands.js';
 import {
   FILE_OBJECT_KINDS,
@@ -2674,7 +2674,7 @@ function buildPairingPartnersEditor(): HTMLElement {
   return wrap;
 }
 
-/** Custom ribbon buttons editor: up to 6 rows, each choosing an icon + a
+/** Custom ribbon buttons editor: up to 10 rows, each choosing an icon + a
  *  command. The ribbon rebuilds live via the settings subscriber. */
 function buildRibbonCustomButtonsEditor(): HTMLElement {
   const wrap = document.createElement('div');
@@ -2696,15 +2696,17 @@ function buildRibbonCustomButtonsEditor(): HTMLElement {
     render();
   };
 
-  // Bindable actions, by label: every ribbon command (with a label) plus the
-  // generated Toggle/Cycle setting commands, sorted alphabetically.
+  // Bindable actions, by label: every ribbon command (with a label), the
+  // generated Toggle/Cycle setting commands, and any registered plugin
+  // commands (labels from the plugin registry — commandLabelFor resolves
+  // both pools), sorted alphabetically. A plugin command's entry exists
+  // only while the plugin is enabled; uninstall unconfigures its buttons.
   const options: { value: string; label: string }[] = [
     ...settingCommandOptions().map((o) => ({ value: o.command, label: o.label })),
-    ...availableRibbonCommandIds()
-      // Static ribbon commands only: plugin ids (also returned by
-      // availableRibbonCommandIds now) aren't offered as custom buttons.
-      .filter((id): id is RibbonCommandId => id in RIBBON_COMMAND_LABELS)
-      .map((id) => ({ value: id as string, label: RIBBON_COMMAND_LABELS[id] })),
+    ...availableRibbonCommandIds().map((id) => ({
+      value: id as string,
+      label: commandLabelFor(id),
+    })),
   ].sort((a, b) => a.label.localeCompare(b.label));
 
   function render(): void {

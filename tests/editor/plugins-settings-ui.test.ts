@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 const hostState = vi.hoisted(() => ({ host: {} as Record<string, unknown> }));
 const settingsState = vi.hoisted(() => ({
   overrides: {} as Record<string, string | string[]>,
+  customButtons: [] as { command: string; icon: string }[],
 }));
 
 vi.mock('../../src/editor/toast.js', () => ({ showToast: vi.fn() }));
@@ -13,9 +14,17 @@ vi.mock('../../src/editor/text-prompt.js', () => ({
 }));
 vi.mock('../../src/editor/settings.js', () => ({
   settings: {
-    get: (k: string) => (k === 'ribbonKeyOverrides' ? settingsState.overrides : true),
+    get: (k: string) =>
+      k === 'ribbonKeyOverrides'
+        ? settingsState.overrides
+        : k === 'ribbonCustomButtons'
+          ? settingsState.customButtons
+          : true,
     set: (k: string, v: unknown) => {
       if (k === 'ribbonKeyOverrides') settingsState.overrides = v as Record<string, string>;
+      if (k === 'ribbonCustomButtons') {
+        settingsState.customButtons = v as { command: string; icon: string }[];
+      }
     },
   },
 }));
@@ -38,6 +47,7 @@ const settled = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => {
   document.body.innerHTML = '';
   settingsState.overrides = {};
+  settingsState.customButtons = [];
   hostState.host = {
     pluginList: () => Promise.resolve([{ id: 'demo', name: 'Demo', version: '1.0.0' }]),
   };
@@ -149,6 +159,10 @@ describe('uninstall cleans up completely (Shreeram review, 2026-07-24)', () => {
       commands: [{ id: 'demo.hello', label: 'Hi', run: () => {} }],
     });
     settingsState.overrides = { 'demo.hello': 'Mod-Alt-5', openSettings: 'Mod-Alt-6' };
+    settingsState.customButtons = [
+      { command: 'demo.hello', icon: 'star' },
+      { command: 'toggleReadMode', icon: 'flag' },
+    ];
     const calls: string[] = [];
     hostState.host = {
       pluginList: () => Promise.resolve([{ id: 'demo', name: 'Demo', version: '1.0.0' }]),
@@ -172,6 +186,9 @@ describe('uninstall cleans up completely (Shreeram review, 2026-07-24)', () => {
     expect(pluginCommandIds()).toEqual([]); // deregistered NOW, not at restart
     expect(settingsState.overrides['demo.hello']).toBeUndefined();
     expect(settingsState.overrides['openSettings']).toBe('Mod-Alt-6'); // static untouched
+    // A custom ribbon button bound to the plugin's command unconfigures;
+    // buttons bound to static commands stay.
+    expect(settingsState.customButtons).toEqual([{ command: 'toggleReadMode', icon: 'flag' }]);
     resetPluginRegistryForTests();
   });
 });

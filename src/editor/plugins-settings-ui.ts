@@ -240,6 +240,13 @@ export function renderPluginsPanel(container: HTMLElement): void {
             if (key !== undefined) kept[cmdId] = key;
           }
           if (dropped > 0) settings.set('ribbonKeyOverrides', kept);
+          // Same for custom ribbon buttons bound to this plugin's commands —
+          // an unconfigured button disappears rather than sitting dead.
+          const customButtons = settings.get('ribbonCustomButtons');
+          const keptButtons = customButtons.filter((b) => !b.command.startsWith(`${p.id}.`));
+          if (keptButtons.length !== customButtons.length) {
+            settings.set('ribbonCustomButtons', keptButtons);
+          }
           showToast(
             removedCmds.length > 0
               ? `${p.name} uninstalled. Its background code stops on the next launch.`
