@@ -492,7 +492,7 @@ interface ElectronAPI {
    *  fire-and-forget notes (lastSeen stamps, unidentified-caller
    *  notices). Optional so an older preload tolerates their absence. */
   syncExternalConsent?(state: {
-    enabled: boolean;
+    policy: 'off' | 'ask' | 'open';
     apps: Record<string, 'allow' | 'deny'>;
   }): void;
   onExternalConsentPrompt?(

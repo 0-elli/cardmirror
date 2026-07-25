@@ -16,7 +16,7 @@
  *     consent prompt, that the sending app needs an update — the
  *     route layer owns that notification, since it can fingerprint
  *     which legacy app is likely knocking)
- *   - master toggle off   → 'off'
+ *   - policy 'off'        → 'off'   (policy 'open' → everything 'allow')
  *   - remembered deny     → 'deny'
  *   - remembered allow    → 'allow'
  *   - unknown app         → 'ask' — the caller queues the action (cap
@@ -36,9 +36,15 @@ export function parseAppId(raw: string | string[] | undefined): string | null {
 export type ConsentDisposition = 'allow' | 'deny' | 'off' | 'unidentified' | 'ask';
 export type PromptOutcome = 'allow-always' | 'allow-once' | 'deny' | 'dismissed';
 
+export type ExternalInsertPolicy = 'off' | 'ask' | 'open';
+
 export interface ConsentMirror {
-  enabled: boolean;
-  /** appId → remembered decision. */
+  /** `ask` (default): per-app consent, unidentified rejected. `open`:
+   *  everything allowed, identification optional — keeps legacy
+   *  senders (pre-X-App-Id Fast Debate Paste) working. `off`: the
+   *  whole gated surface is closed. */
+  policy: ExternalInsertPolicy;
+  /** appId → remembered decision (consulted in `ask` mode). */
   apps: Record<string, 'allow' | 'deny'>;
 }
 
@@ -59,7 +65,7 @@ interface PendingApp {
 }
 
 export class ConsentGate {
-  private mirror: ConsentMirror = { enabled: true, apps: {} };
+  private mirror: ConsentMirror = { policy: 'ask', apps: {} };
   private pending = new Map<string, PendingApp>();
 
   constructor(private hooks: ConsentGateHooks) {}
@@ -73,8 +79,9 @@ export class ConsentGate {
    *  stamp themselves once a permitted request actually SUCCEEDS, so
    *  the timestamp means "last served insert/jump", not "last knock". */
   check(appId: string | null): ConsentDisposition {
+    if (this.mirror.policy === 'off') return 'off';
+    if (this.mirror.policy === 'open') return 'allow';
     if (appId === null) return 'unidentified';
-    if (!this.mirror.enabled) return 'off';
     const decision = this.mirror.apps[appId];
     if (decision === 'deny') return 'deny';
     if (decision === 'allow') return 'allow';
@@ -124,7 +131,7 @@ export class ConsentGate {
   }
 
   resetForTests(): void {
-    this.mirror = { enabled: true, apps: {} };
+    this.mirror = { policy: 'ask', apps: {} };
     this.pending.clear();
   }
 }

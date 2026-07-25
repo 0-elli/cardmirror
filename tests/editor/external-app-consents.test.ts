@@ -6,10 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { SettingsStore, type ExternalAppConsent } from '../../src/editor/settings.js';
 
 describe('externalAppConsents sanitize', () => {
-  it('defaults empty / enabled and rejects non-arrays', () => {
+  it('defaults empty / ask and rejects non-arrays', () => {
     const s = new SettingsStore();
     expect(s.get('externalAppConsents')).toEqual([]);
-    expect(s.get('externalInsertsEnabled')).toBe(true);
+    expect(s.get('externalInsertPolicy')).toBe('ask');
     s.replaceAll({ externalAppConsents: 'nope' as unknown as ExternalAppConsent[] });
     expect(s.get('externalAppConsents')).toEqual([]);
   });
@@ -32,11 +32,13 @@ describe('externalAppConsents sanitize', () => {
     ]);
   });
 
-  it('externalInsertsEnabled only turns off on explicit false', () => {
+  it('externalInsertPolicy accepts the three modes, garbage falls to ask', () => {
     const s = new SettingsStore();
-    s.replaceAll({ externalInsertsEnabled: false });
-    expect(s.get('externalInsertsEnabled')).toBe(false);
-    s.replaceAll({ externalInsertsEnabled: 'nonsense' as unknown as boolean });
-    expect(s.get('externalInsertsEnabled')).toBe(true);
+    s.replaceAll({ externalInsertPolicy: 'off' });
+    expect(s.get('externalInsertPolicy')).toBe('off');
+    s.replaceAll({ externalInsertPolicy: 'open' });
+    expect(s.get('externalInsertPolicy')).toBe('open');
+    s.replaceAll({ externalInsertPolicy: 'nonsense' as unknown as 'ask' });
+    expect(s.get('externalInsertPolicy')).toBe('ask');
   });
 });

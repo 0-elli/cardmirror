@@ -45,14 +45,23 @@ describe('parseAppId', () => {
 describe('ConsentGate.check', () => {
   it('maps identity + mirror state to dispositions, side-effect-free', () => {
     const { gate, seen } = makeGate([]);
-    gate.setState({ enabled: true, apps: { good: 'allow', bad: 'deny' } });
+    gate.setState({ policy: 'ask', apps: { good: 'allow', bad: 'deny' } });
     expect(gate.check(null)).toBe('unidentified');
     expect(gate.check('good')).toBe('allow');
     expect(gate.check('bad')).toBe('deny');
     expect(gate.check('stranger')).toBe('ask');
-    gate.setState({ enabled: false, apps: { good: 'allow' } });
+    gate.setState({ policy: 'off', apps: { good: 'allow' } });
     expect(gate.check('good')).toBe('off');
+    expect(gate.check(null)).toBe('off');
     expect(seen).toEqual([]);
+  });
+
+  it("policy 'open' allows everyone — even unidentified and denied apps", () => {
+    const { gate } = makeGate([]);
+    gate.setState({ policy: 'open', apps: { bad: 'deny' } });
+    expect(gate.check(null)).toBe('allow');
+    expect(gate.check('bad')).toBe('allow');
+    expect(gate.check('stranger')).toBe('allow');
   });
 });
 

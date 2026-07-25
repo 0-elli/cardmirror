@@ -342,7 +342,7 @@ function onConsentPromptAck(_evt: unknown, ack: ConsentPromptAck): void {
 /** Coerce a renderer-supplied mirror to a safe shape (the renderer is
  *  trusted code, but the IPC payload shape is still validated). */
 function sanitizeMirror(raw: unknown): ConsentMirror {
-  const r = (raw ?? {}) as { enabled?: unknown; apps?: unknown };
+  const r = (raw ?? {}) as { policy?: unknown; apps?: unknown };
   const apps: Record<string, 'allow' | 'deny'> = {};
   if (r.apps && typeof r.apps === 'object') {
     for (const [id, decision] of Object.entries(r.apps as Record<string, unknown>)) {
@@ -351,7 +351,8 @@ function sanitizeMirror(raw: unknown): ConsentMirror {
       }
     }
   }
-  return { enabled: r.enabled !== false, apps };
+  const policy = r.policy === 'off' || r.policy === 'open' ? r.policy : 'ask';
+  return { policy, apps };
 }
 
 function onConsentSync(_evt: unknown, raw: unknown): void {
@@ -580,7 +581,7 @@ async function handleRequest(
       focusedWindow: d.windowId === focusedId,
       isSpeech: d.uid === speechUid,
     }));
-    noteSeen(appId!);
+    if (appId) noteSeen(appId);
     jsonResponse(res, 200, { ok: true, docs });
     return;
   }

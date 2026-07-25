@@ -329,6 +329,9 @@ export interface ExternalAppConsent {
 /** Same shape the bridge enforces on `X-App-Id` (main side). */
 export const EXTERNAL_APP_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/** See `Settings.externalInsertPolicy`. */
+export type ExternalInsertPolicy = 'off' | 'ask' | 'open';
+
 /** "New paragraph on Enter" choices — 'normal' means the default Enter
  *  behavior for that context; the rest name a structural style. */
 export type EnterAfterStyle =
@@ -584,11 +587,15 @@ export interface Settings {
    *  that talks to Excel is started at app launch, so the first Send to
    *  Flow is fast instead of paying the cold start. */
   flowHostOnLaunch: boolean;
-  /** Master switch for the local bridge's gated routes (`/insert`,
-   *  `/jump`): whether external apps may insert text / steer the
-   *  editor at all. Enforced in MAIN (mirrored via
-   *  `host:sync-external-consent`); per-app decisions below. */
-  externalInsertsEnabled: boolean;
+  /** Policy for the local bridge's gated routes (`/insert`, `/jump`,
+   *  `/docs`). `ask` (default): identified apps get per-app consent,
+   *  unidentified callers are rejected with guidance. `open`: accept
+   *  everything, identification optional — keeps legacy senders (Fast
+   *  Debate Paste builds that predate X-App-Id) fully working.
+   *  `off`: block the whole surface. Enforced in MAIN (mirrored via
+   *  `host:sync-external-consent`); per-app decisions below apply in
+   *  `ask` mode. */
+  externalInsertPolicy: ExternalInsertPolicy;
   /** Per-app consent decisions for the local bridge, keyed by the
    *  app's self-declared `X-App-Id`. Written by the first-contact
    *  consent prompt and the External apps settings rows. */
@@ -1551,7 +1558,7 @@ const DEFAULTS: Settings = {
   disableCursorBlink: false,
   accessibilityTreeEnabled: false,
   flowHostOnLaunch: false,
-  externalInsertsEnabled: true,
+  externalInsertPolicy: 'ask',
   externalAppConsents: [],
   overrideHighlightColor: false,
   overrideHighlightSlots: ['#ffff00'],
@@ -1825,6 +1832,7 @@ export interface SettingMeta {
     | 'bodyFont'
     | 'uiFont'
     | 'ribbonTooltipMode'
+    | 'externalInsertPolicy'
     | 'cardNumberFormat'
     | 'cardNumberSubFormat'
     | 'cardNumberIndent'
@@ -3542,15 +3550,15 @@ export const SETTING_METADATA: SettingMeta[] = [
     // Lives on the Plugins tab below the plugin manager (re-appended by
     // the settings-ui plugins block, like Verbatim Flow) and is NOT
     // gated by Enable plugins — the bridge is not the plugin system.
-    key: 'externalInsertsEnabled',
-    label: 'Accept inserts from external apps',
+    key: 'externalInsertPolicy',
+    label: 'Inserts from external apps',
     description:
-      'Let local companion apps (like ebb or Fast Debate Paste) insert text and jump to sources over the local bridge. Each app asks for permission the first time; manage the decisions below. This does not affect plugins running inside CardMirror.',
-    kind: 'toggle',
+      'Local companion apps (like ebb or Fast Debate Paste) can insert text and jump to sources over the local bridge. "Ask for each app" (default) prompts the first time an app sends and remembers your answer below. "Allow all" accepts every sender — including older apps that don\u2019t identify themselves. "Block all" turns the whole surface off. This does not affect plugins running inside CardMirror.',
+    kind: 'externalInsertPolicy',
     category: 'plugins',
     section: 'External apps',
     electronOnly: true,
-    aliases: ['external apps', 'bridge', 'inbound inserts', 'consent'],
+    aliases: ['external apps', 'bridge', 'inbound inserts', 'consent', 'allow all'],
   },
   {
     // Lives on the Plugins tab (it's plugin-shaped: a bundled Verbatim
@@ -3997,7 +4005,10 @@ function sanitize(s: Settings): Settings {
     disableCursorBlink: s.disableCursorBlink === true,
     accessibilityTreeEnabled: s.accessibilityTreeEnabled === true,
     flowHostOnLaunch: s.flowHostOnLaunch === true,
-    externalInsertsEnabled: s.externalInsertsEnabled !== false,
+    externalInsertPolicy:
+      s.externalInsertPolicy === 'off' || s.externalInsertPolicy === 'open'
+        ? s.externalInsertPolicy
+        : 'ask',
     externalAppConsents: sanitizeExternalAppConsents(s.externalAppConsents),
     overrideHighlightColor: !!s.overrideHighlightColor,
     overrideHighlightSlots: sanitizeColorSlots(

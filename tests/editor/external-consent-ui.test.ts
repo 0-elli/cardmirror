@@ -27,17 +27,17 @@ type PromptReq = {
 type Note = { kind: 'seen' | 'unidentified'; appId?: string; when?: string };
 
 function mockBridge(): {
-  synced: Array<{ enabled: boolean; apps: Record<string, string> }>;
+  synced: Array<{ policy: string; apps: Record<string, string> }>;
   results: Array<{ requestId: string; outcome: string }>;
   firePrompt: (req: PromptReq) => void;
   fireNote: (note: Note) => void;
 } {
-  const synced: Array<{ enabled: boolean; apps: Record<string, string> }> = [];
+  const synced: Array<{ policy: string; apps: Record<string, string> }> = [];
   const results: Array<{ requestId: string; outcome: string }> = [];
   let promptHandler: ((req: PromptReq) => void) | null = null;
   let noteHandler: ((note: Note) => void) | null = null;
   (window as unknown as { electronAPI: unknown }).electronAPI = {
-    syncExternalConsent: (s: { enabled: boolean; apps: Record<string, string> }) => synced.push(s),
+    syncExternalConsent: (s: { policy: string; apps: Record<string, string> }) => synced.push(s),
     onExternalConsentPrompt: (h: (req: PromptReq) => void) => {
       promptHandler = h;
       return () => {};
@@ -63,7 +63,7 @@ let uninstall: (() => void) | null = null;
 beforeEach(() => {
   localStorage.clear();
   settings.set('externalAppConsents', []);
-  settings.set('externalInsertsEnabled', true);
+  settings.set('externalInsertPolicy', 'ask');
   vi.mocked(promptForRouteChoice).mockReset();
   vi.mocked(alertDialog).mockClear();
   vi.mocked(showToast).mockClear();
@@ -80,9 +80,9 @@ describe('external consent renderer bridge', () => {
     const bridge = mockBridge();
     uninstall = installExternalConsent();
     expect(bridge.synced).toHaveLength(1);
-    expect(bridge.synced[0]).toEqual({ enabled: true, apps: { ebb: 'allow' } });
-    settings.set('externalInsertsEnabled', false);
-    expect(bridge.synced.at(-1)).toMatchObject({ enabled: false });
+    expect(bridge.synced[0]).toEqual({ policy: 'ask', apps: { ebb: 'allow' } });
+    settings.set('externalInsertPolicy', 'open');
+    expect(bridge.synced.at(-1)).toMatchObject({ policy: 'open' });
     recordExternalAppDecision('other', 'deny');
     expect(bridge.synced.at(-1)!.apps).toEqual({ ebb: 'allow', other: 'deny' });
   });

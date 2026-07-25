@@ -479,6 +479,14 @@ stable identifier for the sending app matching
 `X-App-Id: ebb`). New routes added to this surface inherit this
 requirement by default unless explicitly classed as discovery.
 
+The user picks the overall policy in Settings → Plugins → External
+apps: **Ask for each app** (the default — everything below describes
+this mode), **Allow all** (every sender accepted, identification
+optional — the pre-identity behavior, kept so legacy senders like old
+Fast Debate Paste builds still work when the user opts into it), or
+**Block all**. Clients MUST still send `X-App-Id` — the default mode
+rejects requests without it.
+
 The first request from an app raises a consent prompt in CardMirror
 naming the app (name + version come from its registered identity file
 when present, else the raw id): **Always Allow / Allow Once / Deny**.

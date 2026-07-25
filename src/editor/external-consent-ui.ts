@@ -36,7 +36,10 @@ interface ConsentNote {
 /** Preload surface this module reads — structural, so the renderer
  *  build takes no dependency on the desktop preload. */
 interface ConsentBridge {
-  syncExternalConsent(state: { enabled: boolean; apps: Record<string, 'allow' | 'deny'> }): void;
+  syncExternalConsent(state: {
+    policy: 'off' | 'ask' | 'open';
+    apps: Record<string, 'allow' | 'deny'>;
+  }): void;
   onExternalConsentPrompt(handler: (req: ConsentPromptRequest) => void): () => void;
   sendExternalConsentPromptResult(result: { requestId: string; outcome: string }): void;
   onExternalConsentNote(handler: (note: ConsentNote) => void): () => void;
@@ -87,7 +90,7 @@ export function installExternalConsent(): () => void {
   const sync = (): void => {
     const apps: Record<string, 'allow' | 'deny'> = {};
     for (const c of settings.get('externalAppConsents')) apps[c.id] = c.decision;
-    bridge.syncExternalConsent({ enabled: settings.get('externalInsertsEnabled'), apps });
+    bridge.syncExternalConsent({ policy: settings.get('externalInsertPolicy'), apps });
   };
   sync();
   const unsubscribeSettings = settings.subscribe(sync);

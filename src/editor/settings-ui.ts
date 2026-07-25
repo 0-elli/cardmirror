@@ -521,8 +521,8 @@ class SettingsModal {
           }
           panel.appendChild(row);
         };
-        moveRowToEnd('externalInsertsEnabled');
-        if (panel.querySelector('[data-setting-key="externalInsertsEnabled"]')) {
+        moveRowToEnd('externalInsertPolicy');
+        if (panel.querySelector('[data-setting-key="externalInsertPolicy"]')) {
           panel.appendChild(buildExternalAppsEditor());
         }
         moveRowToEnd('flowHostOnLaunch');
@@ -740,6 +740,8 @@ class SettingsModal {
       label.appendChild(buildFormattingPanelModeEditor());
     } else if (meta.kind === 'ribbonTooltipMode') {
       label.appendChild(buildRibbonTooltipModeEditor());
+    } else if (meta.kind === 'externalInsertPolicy') {
+      label.appendChild(buildExternalInsertPolicyEditor());
     } else if (meta.kind === 'cardNumberFormat') {
       label.appendChild(buildCardNumberFormatEditor());
     } else if (meta.kind === 'cardNumberSubFormat') {
@@ -3391,6 +3393,28 @@ function buildCardNumberColorEditor(): HTMLElement {
     probe.remove();
   });
   return wrap;
+}
+
+function buildExternalInsertPolicyEditor(): HTMLElement {
+  const select = document.createElement('select');
+  select.className = 'pmd-formatting-panel-mode-select';
+  const options: { value: 'ask' | 'open' | 'off'; label: string }[] = [
+    { value: 'ask', label: 'Ask for each app' },
+    { value: 'open', label: 'Allow all (identification optional)' },
+    { value: 'off', label: 'Block all' },
+  ];
+  for (const o of options) {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    if (o.value === settings.get('externalInsertPolicy')) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener('change', () => {
+    const v = select.value;
+    settings.set('externalInsertPolicy', v === 'off' || v === 'open' ? v : 'ask');
+  });
+  return select;
 }
 
 function buildRibbonTooltipModeEditor(): HTMLElement {

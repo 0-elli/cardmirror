@@ -858,7 +858,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  first-contact prompt on request, and receives fire-and-forget
    *  notes (lastSeen stamps, unidentified-caller toasts). */
   syncExternalConsent: (state: {
-    enabled: boolean;
+    policy: 'off' | 'ask' | 'open';
     apps: Record<string, 'allow' | 'deny'>;
   }): void => {
     ipcRenderer.send('host:sync-external-consent', state);

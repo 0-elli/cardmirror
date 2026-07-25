@@ -72,7 +72,7 @@ function fireRendererAck(ack: any): void {
 }
 
 /** Push a consent mirror to the gate over the real sync IPC. */
-function fireConsentSync(state: { enabled: boolean; apps: Record<string, string> }): void {
+function fireConsentSync(state: { policy: string; apps: Record<string, string> }): void {
   const listeners = ipcListeners.get('host:sync-external-consent') ?? [];
   for (const l of listeners) l(null, state);
 }
@@ -95,7 +95,7 @@ describe('fast-paste-bridge', () => {
     // own state.
     bridge.resetExternalConsentForTests();
     bridge.resetFocusTrackingForTests();
-    fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
+    fireConsentSync({ policy: 'ask', apps: { testapp: 'allow' } });
   });
 
   afterEach(async () => {
@@ -436,7 +436,7 @@ describe('external-app consent (identity gate)', () => {
     await bridge.startFastPasteBridge();
     bridge.resetExternalConsentForTests();
     bridge.resetFocusTrackingForTests();
-    fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
+    fireConsentSync({ policy: 'ask', apps: { testapp: 'allow' } });
   });
 
   afterEach(async () => {
@@ -466,6 +466,23 @@ describe('external-app consent (identity gate)', () => {
     expect(sent('external:consent-note')).toHaveLength(1);
   });
 
+  it("policy 'open': an anonymous legacy sender inserts as before the gate", async () => {
+    fireConsentSync({ policy: 'open', apps: {} });
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: null,
+      body: { text: 'legacy hello', role: 'card', newParagraph: true },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const inserts = sent('external:insert-text');
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.payload.text).toBe('legacy hello');
+    fireRendererAck({ requestId: inserts[0]!.payload.requestId, ok: true, docTitle: 'doc.cmir' });
+    const r = await inserted;
+    expect(r.json).toEqual({ ok: true, inserted: true, docTitle: 'doc.cmir' });
+    expect(sent('external:consent-note')).toHaveLength(0); // no toast, no prompt
+  });
+
   it('a malformed X-App-Id is unidentified, not a fresh identity', async () => {
     const ep = bridge.getRunningEndpoint()!;
     const r = await fetchJson({
@@ -476,7 +493,7 @@ describe('external-app consent (identity gate)', () => {
   });
 
   it('master toggle off → inserts-disabled on both routes', async () => {
-    fireConsentSync({ enabled: false, apps: { testapp: 'allow' } });
+    fireConsentSync({ policy: 'off', apps: { testapp: 'allow' } });
     const ep = bridge.getRunningEndpoint()!;
     const insert = await fetchJson({
       method: 'POST', path: '/insert', port: ep.port, token: ep.token,
@@ -492,7 +509,7 @@ describe('external-app consent (identity gate)', () => {
   });
 
   it('a denied app → not-allowed on both routes', async () => {
-    fireConsentSync({ enabled: true, apps: { testapp: 'deny' } });
+    fireConsentSync({ policy: 'ask', apps: { testapp: 'deny' } });
     const ep = bridge.getRunningEndpoint()!;
     const insert = await fetchJson({
       method: 'POST', path: '/insert', port: ep.port, token: ep.token,
@@ -611,7 +628,7 @@ describe('doc targeting (/docs + insert target)', () => {
     await bridge.startFastPasteBridge();
     bridge.resetExternalConsentForTests();
     bridge.resetFocusTrackingForTests();
-    fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
+    fireConsentSync({ policy: 'ask', apps: { testapp: 'allow' } });
   });
 
   afterEach(async () => {
