@@ -201,6 +201,31 @@ function findMarker(text: string, name: string): number {
   return m ? m.index : -1;
 }
 
+/** Meta on the cite transaction: how many tokens found a home. The
+ *  apply path toasts when it's zero so a cite whose author/date could
+ *  not be styled (and which therefore stays an ordinary, shrinkable
+ *  body paragraph) never happens silently. */
+export const CITE_TOKENS_MARKED_META = 'aiCiteTokensMarked';
+
+/** Case / typography folding for token matching, strictly 1:1 per
+ *  character so a match's offsets in the folded string ARE its offsets
+ *  in the real text. Curly quotes → straight, en/em/minus dashes →
+ *  hyphen, NBSP → space, casefold (skipped for the rare characters
+ *  whose lowercase form changes length). */
+export function foldForTokenMatch(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    let c = ch;
+    if (c === '‘' || c === '’' || c === 'ʼ') c = "'";
+    else if (c === '“' || c === '”') c = '"';
+    else if (c === '–' || c === '—' || c === '−') c = '-';
+    else if (c === '\u00a0') c = ' ';
+    const lower = c.toLowerCase();
+    out += lower.length === c.length ? lower : c;
+  }
+  return out;
+}
+
 /** Build (but don't dispatch) the transaction that replaces
  *  [from, to] with the formatted cite and marks the tokens. Also
  *  ensures the cite is its own paragraph by splitting before /
@@ -270,19 +295,45 @@ export function buildCiteTransaction(
   // redundant. The cite text should come out clean and only the
   // tokens should pick up cite_mark afterward.
   tr.removeMark(start, end);
+  // FUZZY token location. Exact `indexOf` was the original matcher, and
+  // model drift between the [[CITE]] and [[TOKENS]] sections — a case
+  // change, a curly vs straight quote, an en dash, stray edge
+  // punctuation — made it silently mark NOTHING. An unmarked cite never
+  // gets promoted to `cite_paragraph` by the classifier (by design:
+  // cite-ness IS the mark), so it stayed an ordinary body paragraph
+  // that shrink happily shrank (field report, beta.22). Both sides are
+  // folded (case / quotes / dashes, 1:1 per char so offsets carry
+  // straight back to the real text); a token that still misses retries
+  // with its edge punctuation trimmed. No fallback marking beyond that:
+  // if a token genuinely isn't in the cite, nothing is marked and the
+  // paragraph legitimately stays body text.
+  const foldedCite = foldForTokenMatch(result.cite);
+  let markedTokens = 0;
   for (const token of result.tokens) {
     if (!token) continue;
-    let searchOffset = 0;
-    while (searchOffset <= result.cite.length - token.length) {
-      const idx = result.cite.indexOf(token, searchOffset);
-      if (idx < 0) break;
-      const matchStart = start + idx;
-      const matchEnd = matchStart + token.length;
-      if (matchEnd > end) break;
-      tr.addMark(matchStart, matchEnd, citeType.create());
-      searchOffset = idx + token.length;
+    const candidates = [foldForTokenMatch(token)];
+    const trimmed = candidates[0]!.replace(/^[\s.,;:'"()]+|[\s.,;:'"()]+$/g, '');
+    if (trimmed && trimmed !== candidates[0]) candidates.push(trimmed);
+    for (const needle of candidates) {
+      let found = false;
+      let searchOffset = 0;
+      while (searchOffset <= foldedCite.length - needle.length) {
+        const idx = foldedCite.indexOf(needle, searchOffset);
+        if (idx < 0) break;
+        const matchStart = start + idx;
+        const matchEnd = matchStart + needle.length;
+        if (matchEnd > end) break;
+        tr.addMark(matchStart, matchEnd, citeType.create());
+        found = true;
+        searchOffset = idx + needle.length;
+      }
+      if (found) {
+        markedTokens++;
+        break;
+      }
     }
   }
+  tr.setMeta(CITE_TOKENS_MARKED_META, markedTokens);
 
   // When we trimmed a grabbed trailing break, the original selection still
   // reaches into the next block, so the default mapped caret would land
@@ -349,6 +400,16 @@ export function applyCiteToSelection(
   const tr = buildCiteTransaction(view.state, from, to, result);
   if (!tr) return false;
   dispatch(tr);
+  // A cite whose tokens all failed to locate carries no cite_mark, so
+  // it stays an ordinary body paragraph (correctly — cite-ness IS the
+  // mark) and shrink will treat it as body text. That must never be
+  // silent: tell the user so they can F8 the author/date themselves.
+  if (result.tokens.length > 0 && tr.getMeta(CITE_TOKENS_MARKED_META) === 0) {
+    showToast(
+      'Cite created, but the author/date couldn’t be located to style — select them and press F8.',
+      { durationMs: 4000 },
+    );
+  }
   return true;
 }
 
