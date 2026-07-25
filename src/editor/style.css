@@ -5914,6 +5914,33 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   margin: 0;
 }
 
+/* External-apps consent rows (Plugins tab, below the manager): app
+   label, Allowed/Denied select, forget button. Same row rhythm as the
+   plugin rows above. */
+.pmd-external-apps-editor {
+  margin: 0.25rem 0 0.75rem;
+}
+.pmd-external-apps-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--pmd-c-divider-faint);
+}
+.pmd-external-apps-row:last-child {
+  border-bottom: none;
+}
+.pmd-external-apps-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+.pmd-external-apps-decision {
+  flex: 0 0 auto;
+  width: auto;
+}
+
 /* Gear on an enabled plugin's row → its own settings modal. Icon
    button, muted-until-hover like .pmd-bulk-close. */
 .pmd-plugins-gear {

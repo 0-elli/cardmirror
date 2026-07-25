@@ -851,6 +851,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('external:insert-result', result);
   },
 
+  /** External-app consent (see external-consent.ts). The renderer
+   *  mirrors the master toggle + per-app decisions to main, runs the
+   *  first-contact prompt on request, and receives fire-and-forget
+   *  notes (lastSeen stamps, unidentified-caller toasts). */
+  syncExternalConsent: (state: {
+    enabled: boolean;
+    apps: Record<string, 'allow' | 'deny'>;
+  }): void => {
+    ipcRenderer.send('host:sync-external-consent', state);
+  },
+  onExternalConsentPrompt(handler: (req: {
+    requestId: string;
+    appId: string;
+    appName: string | null;
+    appVersion: string | null;
+  }) => void): () => void {
+    const listener = (
+      _evt: unknown,
+      req: { requestId: string; appId: string; appName: string | null; appVersion: string | null },
+    ): void => handler(req);
+    ipcRenderer.on('external:consent-prompt', listener);
+    return () => ipcRenderer.removeListener('external:consent-prompt', listener);
+  },
+  sendExternalConsentPromptResult: (result: { requestId: string; outcome: string }): void => {
+    ipcRenderer.send('external:consent-prompt-result', result);
+  },
+  onExternalConsentNote(handler: (note: {
+    kind: 'seen' | 'unidentified';
+    appId?: string;
+    when?: string;
+  }) => void): () => void {
+    const listener = (
+      _evt: unknown,
+      note: { kind: 'seen' | 'unidentified'; appId?: string; when?: string },
+    ): void => handler(note);
+    ipcRenderer.on('external:consent-note', listener);
+    return () => ipcRenderer.removeListener('external:consent-note', listener);
+  },
+
   /** Chrome scale — Chromium's per-frame page-zoom factor.
    *  Identical mechanism to the browser's Ctrl-+ / Ctrl-- chord:
    *  reflows the whole document including the editor surface,

@@ -315,6 +315,20 @@ export interface RibbonCustomButton {
  *  5 columns of 2). */
 export const MAX_RIBBON_CUSTOM_BUTTONS = 10;
 
+/** One external app's remembered consent for the local bridge's gated
+ *  routes. `id` is the app's self-declared `X-App-Id` (stable across
+ *  launches — pid/token rotate per session, identity doesn't). */
+export interface ExternalAppConsent {
+  id: string;
+  decision: 'allow' | 'deny';
+  /** ISO timestamps — first consent prompt, most recent served request. */
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/** Same shape the bridge enforces on `X-App-Id` (main side). */
+export const EXTERNAL_APP_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
 /** "New paragraph on Enter" choices — 'normal' means the default Enter
  *  behavior for that context; the rest name a structural style. */
 export type EnterAfterStyle =
@@ -570,6 +584,15 @@ export interface Settings {
    *  that talks to Excel is started at app launch, so the first Send to
    *  Flow is fast instead of paying the cold start. */
   flowHostOnLaunch: boolean;
+  /** Master switch for the local bridge's gated routes (`/insert`,
+   *  `/jump`): whether external apps may insert text / steer the
+   *  editor at all. Enforced in MAIN (mirrored via
+   *  `host:sync-external-consent`); per-app decisions below. */
+  externalInsertsEnabled: boolean;
+  /** Per-app consent decisions for the local bridge, keyed by the
+   *  app's self-declared `X-App-Id`. Written by the first-contact
+   *  consent prompt and the External apps settings rows. */
+  externalAppConsents: ExternalAppConsent[];
   /** Per-token UI color overrides. Keyed by CSS-variable name
    *  WITHOUT the `--` prefix (e.g. `"pmd-c-accent"`); values are
    *  CSS color strings the user picked in the accessibility
@@ -1528,6 +1551,8 @@ const DEFAULTS: Settings = {
   disableCursorBlink: false,
   accessibilityTreeEnabled: false,
   flowHostOnLaunch: false,
+  externalInsertsEnabled: true,
+  externalAppConsents: [],
   overrideHighlightColor: false,
   overrideHighlightSlots: ['#ffff00'],
   overrideShadingColor: false,
@@ -3514,6 +3539,20 @@ export const SETTING_METADATA: SettingMeta[] = [
     electronOnly: true,
   },
   {
+    // Lives on the Plugins tab below the plugin manager (re-appended by
+    // the settings-ui plugins block, like Verbatim Flow) and is NOT
+    // gated by Enable plugins — the bridge is not the plugin system.
+    key: 'externalInsertsEnabled',
+    label: 'Accept inserts from external apps',
+    description:
+      'Let local companion apps (like ebb or Fast Debate Paste) insert text and jump to sources over the local bridge. Each app asks for permission the first time; manage the decisions below. This does not affect plugins running inside CardMirror.',
+    kind: 'toggle',
+    category: 'plugins',
+    section: 'External apps',
+    electronOnly: true,
+    aliases: ['external apps', 'bridge', 'inbound inserts', 'consent'],
+  },
+  {
     // Lives on the Plugins tab (it's plugin-shaped: a bundled Verbatim
     // integration) but is NOT gated by Enable plugins — the settings-ui
     // plugins block re-appends this row below the plugin manager.
@@ -3958,6 +3997,8 @@ function sanitize(s: Settings): Settings {
     disableCursorBlink: s.disableCursorBlink === true,
     accessibilityTreeEnabled: s.accessibilityTreeEnabled === true,
     flowHostOnLaunch: s.flowHostOnLaunch === true,
+    externalInsertsEnabled: s.externalInsertsEnabled !== false,
+    externalAppConsents: sanitizeExternalAppConsents(s.externalAppConsents),
     overrideHighlightColor: !!s.overrideHighlightColor,
     overrideHighlightSlots: sanitizeColorSlots(
       s.overrideHighlightSlots,
@@ -4822,6 +4863,31 @@ function sanitizeRibbonCustomButtons(raw: unknown): RibbonCustomButton[] {
     if (typeof icon !== 'string' || !icon.trim()) continue;
     out.push({ command, icon: icon as IconName });
     if (out.length >= MAX_RIBBON_CUSTOM_BUTTONS) break;
+  }
+  return out;
+}
+
+/** Keep well-formed `{ id, decision, firstSeen, lastSeen }` external-app
+ *  consent entries: valid app id, known decision, string timestamps.
+ *  Deduped by id (first wins) and capped — the registry only ever grows
+ *  by explicit user decisions, so 50 is generous. */
+function sanitizeExternalAppConsents(raw: unknown): ExternalAppConsent[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ExternalAppConsent[] = [];
+  const seen = new Set<string>();
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') continue;
+    const c = e as Partial<ExternalAppConsent>;
+    if (typeof c.id !== 'string' || !EXTERNAL_APP_ID_RE.test(c.id) || seen.has(c.id)) continue;
+    if (c.decision !== 'allow' && c.decision !== 'deny') continue;
+    seen.add(c.id);
+    out.push({
+      id: c.id,
+      decision: c.decision,
+      firstSeen: typeof c.firstSeen === 'string' ? c.firstSeen : '',
+      lastSeen: typeof c.lastSeen === 'string' ? c.lastSeen : '',
+    });
+    if (out.length >= 50) break;
   }
   return out;
 }

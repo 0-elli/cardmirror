@@ -22,8 +22,14 @@ async function fetchJson(opts: {
   token?: string;
   body?: unknown;
   headers?: Record<string, string>;
+  /** X-App-Id for the consent gate. Defaults to the suite's pre-allowed
+   *  'testapp' so route-behavior tests aren't about consent; pass null
+   *  to send an unidentified (legacy-shaped) request. */
+  appId?: string | null;
 }): Promise<{ status: number; json: any }> {
   const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+  const appId = opts.appId === undefined ? 'testapp' : opts.appId;
+  if (appId !== null) headers['x-app-id'] = appId;
   // No keep-alive: undici's global pool can hand a later test a socket
   // the previous test's server.close() already destroyed (Node ≥19
   // closes idle connections), which surfaces as a load-sensitive
@@ -64,6 +70,17 @@ function fireRendererAck(ack: any): void {
   for (const l of listeners) l(null, ack);
 }
 
+/** Push a consent mirror to the gate over the real sync IPC. */
+function fireConsentSync(state: { enabled: boolean; apps: Record<string, string> }): void {
+  const listeners = ipcListeners.get('host:sync-external-consent') ?? [];
+  for (const l of listeners) l(null, state);
+}
+
+function fireConsentPromptResult(result: { requestId: string; outcome: string }): void {
+  const listeners = ipcListeners.get('external:consent-prompt-result') ?? [];
+  for (const l of listeners) l(null, result);
+}
+
 describe('fast-paste-bridge', () => {
   let userDataDir: string;
 
@@ -72,6 +89,11 @@ describe('fast-paste-bridge', () => {
     await fs.mkdir(userDataDir, { recursive: true });
     resetElectronStub(userDataDir);
     await bridge.startFastPasteBridge();
+    // Pre-allow the suite's default app id so route-behavior tests run
+    // with consent out of the way; the consent block below manages its
+    // own state.
+    bridge.resetExternalConsentForTests();
+    fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
   });
 
   afterEach(async () => {
@@ -360,5 +382,165 @@ describe('fast-paste-bridge', () => {
       expect(r.json).toEqual({ ok: true });
       expect(win.__restored).toBe(true);
     });
+  });
+});
+
+describe('external-app consent (identity gate)', () => {
+  const sent = (channel: string) => sentToRenderer.filter((s) => s.channel === channel);
+  let consentDataDir: string;
+
+  beforeEach(async () => {
+    consentDataDir = path.join(tmpRoot, `c-${Math.random().toString(36).slice(2, 8)}`);
+    await fs.mkdir(consentDataDir, { recursive: true });
+    resetElectronStub(consentDataDir);
+    await bridge.startFastPasteBridge();
+    bridge.resetExternalConsentForTests();
+    fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
+  });
+
+  afterEach(async () => {
+    await bridge.stopFastPasteBridge();
+    await fs.rm(consentDataDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('unidentified insert → rejected with guidance + a renderer note, rate-limited', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: null,
+      body: { text: 'X', role: 'card', newParagraph: true },
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.ok).toBe(false);
+    expect(r.json.error).toBe('unidentified');
+    expect(r.json.message).toContain('X-App-Id');
+    expect(sent('external:insert-text')).toHaveLength(0);
+    expect(sent('external:consent-note')).toEqual([
+      expect.objectContaining({ payload: { kind: 'unidentified' } }),
+    ]);
+    // Second knock inside the rate-limit window: rejected again, no new note.
+    await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: null,
+      body: { text: 'X', role: 'card', newParagraph: true },
+    });
+    expect(sent('external:consent-note')).toHaveLength(1);
+  });
+
+  it('a malformed X-App-Id is unidentified, not a fresh identity', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: 'NOT VALID!',
+      body: { text: 'X', role: 'card', newParagraph: true },
+    });
+    expect(r.json.error).toBe('unidentified');
+  });
+
+  it('master toggle off → inserts-disabled on both routes', async () => {
+    fireConsentSync({ enabled: false, apps: { testapp: 'allow' } });
+    const ep = bridge.getRunningEndpoint()!;
+    const insert = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'X', role: 'card', newParagraph: true },
+    });
+    expect(insert.json).toEqual({ ok: false, error: 'inserts-disabled' });
+    const jump = await fetchJson({
+      method: 'POST', path: '/jump', port: ep.port, token: ep.token,
+      body: { source: 'cmsrc1.abc' },
+    });
+    expect(jump.json).toEqual({ ok: false, error: 'inserts-disabled' });
+    expect(sent('external:insert-text')).toHaveLength(0);
+  });
+
+  it('a denied app → not-allowed on both routes', async () => {
+    fireConsentSync({ enabled: true, apps: { testapp: 'deny' } });
+    const ep = bridge.getRunningEndpoint()!;
+    const insert = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'X', role: 'card', newParagraph: true },
+    });
+    expect(insert.json).toEqual({ ok: false, error: 'not-allowed' });
+    const jump = await fetchJson({
+      method: 'POST', path: '/jump', port: ep.port, token: ep.token,
+      body: { source: 'cmsrc1.abc' },
+    });
+    expect(jump.json).toEqual({ ok: false, error: 'not-allowed' });
+  });
+
+  it('first contact queues, prompts, and Allow applies the held insert', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: 'newapp',
+      body: { text: 'held text', role: 'card', newParagraph: true },
+    });
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ ok: true, inserted: false, pending: 'consent' });
+    expect(sent('external:insert-text')).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const prompts = sent('external:consent-prompt');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]!.payload.appId).toBe('newapp');
+
+    fireConsentPromptResult({ requestId: prompts[0]!.payload.requestId, outcome: 'allow-always' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const inserts = sent('external:insert-text');
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.payload.text).toBe('held text');
+    fireRendererAck({ requestId: inserts[0]!.payload.requestId, ok: true });
+
+    // Remembered optimistically: the next request flows straight through.
+    const again = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: 'newapp',
+      body: { text: 'direct', role: 'card', newParagraph: true },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const direct = sent('external:insert-text');
+    expect(direct).toHaveLength(2);
+    fireRendererAck({ requestId: direct[1]!.payload.requestId, ok: true });
+    expect((await again).json.ok).toBe(true);
+  });
+
+  it('Deny while pending discards the held insert and sticks', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: 'newapp',
+      body: { text: 'held', role: 'card', newParagraph: true },
+    });
+    expect(r.json.pending).toBe('consent');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const prompt = sent('external:consent-prompt')[0]!;
+    fireConsentPromptResult({ requestId: prompt.payload.requestId, outcome: 'deny' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent('external:insert-text')).toHaveLength(0);
+    const after = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token, appId: 'newapp',
+      body: { text: 'again', role: 'card', newParagraph: true },
+    });
+    expect(after.json).toEqual({ ok: false, error: 'not-allowed' });
+  });
+
+  it('a successful allowed insert stamps lastSeen via a renderer note', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'X', role: 'card', newParagraph: true },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fireRendererAck({ requestId: sent('external:insert-text')[0]!.payload.requestId, ok: true });
+    await inserted;
+    const notes = sent('external:consent-note');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.payload).toMatchObject({ kind: 'seen', appId: 'testapp' });
+    expect(typeof notes[0]!.payload.when).toBe('string');
+  });
+
+  it('pending consent on /jump answers jumped:false', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({
+      method: 'POST', path: '/jump', port: ep.port, token: ep.token, appId: 'newapp',
+      body: { source: 'cmsrc1.abc' },
+    });
+    expect(r.json).toEqual({ ok: true, jumped: false, pending: 'consent' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const prompt = sent('external:consent-prompt')[0]!;
+    fireConsentPromptResult({ requestId: prompt.payload.requestId, outcome: 'dismissed' });
   });
 });

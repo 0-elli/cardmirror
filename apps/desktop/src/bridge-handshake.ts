@@ -155,6 +155,17 @@ async function readAppFiles(
   return { identity, session };
 }
 
+/** Friendly display identity for ANY registered app id (any kind, not
+ *  just flow apps) — used by the external-consent prompt to say
+ *  "ebb v0.7.1" instead of a bare id. Null when the app never
+ *  registered an identity file (identity is then the raw appId). */
+export async function readAppIdentity(
+  appId: string,
+): Promise<{ app: string; appVersion: string } | null> {
+  const files = await readAppFiles(appId);
+  return files ? { app: files.identity.app, appVersion: files.identity.appVersion } : null;
+}
+
 /** Best-effort liveness for the pid a session file records. kill(0)
  *  sends no signal — it only probes existence; EPERM means "exists but
  *  not ours" (alive). A DEAD pid proves the file is stale: whatever

@@ -505,20 +505,27 @@ class SettingsModal {
         const section = document.createElement('section');
         section.className = 'pmd-plugins-panel';
         panel.appendChild(section);
-        // The Verbatim Flow row sits BELOW the plugin manager: it's
-        // plugin-shaped (a bundled integration) but unconditionally
-        // available — deliberately NOT behind Enable plugins, so its row
-        // renders even while the manager shows only the gate placeholder.
-        // The generic loop above already built it (with its section
-        // heading right before it); re-appending moves both to the end.
-        const flowRow = panel.querySelector('[data-setting-key="flowHostOnLaunch"]');
-        if (flowRow) {
-          const heading = flowRow.previousElementSibling;
+        // Everything below the plugin manager is deliberately NOT behind
+        // Enable plugins (the bridge / Flow COM are not the plugin
+        // system), so these rows render even while the manager shows only
+        // the gate placeholder. The generic loop above already built each
+        // row (with its section heading right before it); re-appending
+        // moves them to the end in order: External apps, then Verbatim
+        // Flow last.
+        const moveRowToEnd = (settingKey: string): void => {
+          const row = panel.querySelector(`[data-setting-key="${settingKey}"]`);
+          if (!row) return;
+          const heading = row.previousElementSibling;
           if (heading?.classList.contains('pmd-settings-section-title')) {
             panel.appendChild(heading);
           }
-          panel.appendChild(flowRow);
+          panel.appendChild(row);
+        };
+        moveRowToEnd('externalInsertsEnabled');
+        if (panel.querySelector('[data-setting-key="externalInsertsEnabled"]')) {
+          panel.appendChild(buildExternalAppsEditor());
         }
+        moveRowToEnd('flowHostOnLaunch');
         void import('./plugins-settings-ui.js').then((m) => m.renderPluginsPanel(section));
       }
       this.dialog.appendChild(panel);
@@ -2815,6 +2822,99 @@ function buildRibbonCustomButtonsEditor(): HTMLElement {
   });
 
   render();
+  return wrap;
+}
+
+/** External-apps consent rows (Plugins tab, below the plugin manager):
+ *  one row per app that has ever been allowed/denied on the local
+ *  bridge, with a decision select and a forget button (forget →
+ *  re-prompts on next contact). Registered flow apps upgrade the raw
+ *  app id to a friendly "name vVersion" label, best-effort and async.
+ *  Empty registry renders a quiet placeholder. */
+function buildExternalAppsEditor(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pmd-external-apps-editor';
+
+  function render(): void {
+    wrap.innerHTML = '';
+    const consents = settings.get('externalAppConsents');
+    if (consents.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'pmd-pairing-empty';
+      empty.textContent = 'No external apps have asked to insert yet.';
+      wrap.appendChild(empty);
+      return;
+    }
+    const labels = new Map<string, HTMLElement>();
+    for (const consent of consents) {
+      const row = document.createElement('div');
+      row.className = 'pmd-external-apps-row';
+
+      const label = document.createElement('span');
+      label.className = 'pmd-external-apps-name';
+      label.textContent = consent.id;
+      labels.set(consent.id, label);
+
+      const decision = document.createElement('select');
+      decision.className = 'pmd-settings-text pmd-external-apps-decision';
+      decision.title = 'Permission';
+      for (const [value, text] of [
+        ['allow', 'Allowed'],
+        ['deny', 'Denied'],
+      ] as const) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        if (value === consent.decision) opt.selected = true;
+        decision.appendChild(opt);
+      }
+      decision.addEventListener('change', () => {
+        const next = decision.value === 'deny' ? 'deny' : 'allow';
+        settings.set(
+          'externalAppConsents',
+          settings
+            .get('externalAppConsents')
+            .map((c) => (c.id === consent.id ? { ...c, decision: next } : c)),
+        );
+      });
+
+      const forget = document.createElement('button');
+      forget.type = 'button';
+      forget.className = 'pmd-pairing-delete';
+      setIcon(forget, 'close');
+      forget.title = 'Forget this app (it will ask again next time)';
+      forget.addEventListener('click', () => {
+        settings.set(
+          'externalAppConsents',
+          settings.get('externalAppConsents').filter((c) => c.id !== consent.id),
+        );
+      });
+
+      row.append(label, decision, forget);
+      wrap.appendChild(row);
+    }
+    // Best-effort friendly names from the bridge's registered identity
+    // files ("ebb v0.7.1"); ids without a registration keep the raw id.
+    void getElectronHost()
+      ?.flowApps?.()
+      .then((apps) => {
+        for (const raw of apps ?? []) {
+          const a = raw as { id?: string; app?: string; appVersion?: string };
+          const label = a.id && labels.get(a.id);
+          if (label && a.app) {
+            label.textContent = a.appVersion ? `${a.app} v${a.appVersion}` : a.app;
+          }
+        }
+      })
+      .catch(() => {});
+  }
+
+  render();
+  // Re-render on any settings change: cheap (a handful of rows), and it
+  // keeps the list live when the consent prompt or a bridge lastSeen
+  // stamp lands while the dialog is open.
+  const unsubscribe = settings.subscribe(() => render());
+  registerRowCleanup(wrap, () => unsubscribe());
   return wrap;
 }
 

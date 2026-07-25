@@ -486,6 +486,26 @@ interface ElectronAPI {
     ok: boolean;
     error?: string;
   }): void;
+  /** External-app consent (apps/desktop/src/external-consent.ts):
+   *  settings-mirror sync to main, the first-contact prompt pair, and
+   *  fire-and-forget notes (lastSeen stamps, unidentified-caller
+   *  notices). Optional so an older preload tolerates their absence. */
+  syncExternalConsent?(state: {
+    enabled: boolean;
+    apps: Record<string, 'allow' | 'deny'>;
+  }): void;
+  onExternalConsentPrompt?(
+    handler: (req: {
+      requestId: string;
+      appId: string;
+      appName: string | null;
+      appVersion: string | null;
+    }) => void,
+  ): () => void;
+  sendExternalConsentPromptResult?(result: { requestId: string; outcome: string }): void;
+  onExternalConsentNote?(
+    handler: (note: { kind: 'seen' | 'unidentified'; appId?: string; when?: string }) => void,
+  ): () => void;
 }
 
 function api(): ElectronAPI {

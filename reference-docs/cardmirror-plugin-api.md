@@ -471,6 +471,54 @@ routes require the token, in `X-Bridge-Token` or in the legacy
 `X-FDP-Token` header. A request with an `Origin` or `Referer` header
 is rejected with 403; those requests come from browser pages.
 
+### Identity and consent (since 0.1.0-beta.23)
+
+Every route EXCEPT `/ping` also requires an **`X-App-Id`** header: a
+stable identifier for the sending app matching
+`^[a-z0-9][a-z0-9-]{0,63}$` (use your bridge identity-file id, e.g.
+`X-App-Id: ebb`). New routes added to this surface inherit this
+requirement by default unless explicitly classed as discovery.
+
+The first request from an app raises a consent prompt in CardMirror
+naming the app (name + version come from its registered identity file
+when present, else the raw id): **Always Allow / Allow Once / Deny**.
+Always/Deny are remembered and manageable under Settings → Plugins →
+External apps; dismissing records nothing and asks again next time.
+One decision covers the whole gated surface — a denied app can
+neither insert nor jump. This is consent UX for cooperating local
+apps, not a security boundary: identity is self-declared, and any
+same-user process is inside the trust line regardless.
+
+While the prompt is open, requests are **queued** (up to 10 per app,
+arrival order) and answered with:
+
+```json
+{ "ok": true, "inserted": false, "pending": "consent" }
+```
+
+(`jumped` instead of `inserted` on `/jump`.) Do not retry — if the
+user allows, the queued actions apply immediately, so their click is
+the redo; if they deny or dismiss, the queue is discarded. Show
+something neutral like "waiting for approval in CardMirror".
+
+Consent-layer errors, all HTTP 200 with `ok: false`:
+
+| Error | Meaning | Client behavior |
+| --- | --- | --- |
+| `unidentified` | No/invalid `X-App-Id`. CardMirror also tells its own user the sending app needs an update. | Terminal. Ship the header. |
+| `inserts-disabled` | The user turned off "Accept inserts from external apps". | Terminal; surface it, don't retry. |
+| `not-allowed` | The user denied this app (or its consent queue overflowed). | Terminal; surface it, don't retry. |
+
+Never fall back to alternative delivery (keystroke synthesis etc.) on
+these errors — that would bypass a decision the user made on purpose.
+Reserve fallbacks for transport-level failures (connection refused,
+timeout).
+
+`/ping` stays identity-free — discovery has to work before identity
+exists — and deliberately content-free: it must never grow doc
+titles, paths, or previews. Anything content-bearing belongs behind
+an identified, consented route.
+
 ### GET /ping
 
 Liveness and capability probe. Response, schema 2:
@@ -490,15 +538,20 @@ Liveness and capability probe. Response, schema 2:
 ### POST /insert
 
 Insert text into the focused document. This route predates the plugin
-API and is unchanged. The full wire contract is in
-`cardmirror-integration-spec.md` in this folder. In short: the body is
+API; since 0.1.0-beta.23 it also requires `X-App-Id` and consent (see
+above). The full wire contract is in `cardmirror-integration-spec.md`
+in this folder. In short: the body is
 `{ "text": "...", "role": "card" | "cite" | "inline", "newParagraph": true, "omitted": false }`,
 and the response is `{ "ok": true, "inserted": true, "docTitle": "..." }`
-or `{ "ok": false, "error": "no-target-doc" | "doc-readonly" | "bad-request" }`.
+or `{ "ok": false, "error": "no-target-doc" | "doc-readonly" | "bad-request" }`
+— plus the consent-layer responses above. Targeting is the focused
+window only: activate the CardMirror window before calling.
 
 ### POST /jump
 
-Inverse search: jump to the source of an extracted item. Send the
+Inverse search: jump to the source of an extracted item. Requires
+`X-App-Id` and consent (see above) — jump steers the user's editor
+and steals focus, so a denied app can't do it either. Send the
 stored source token, verbatim:
 
 ```json

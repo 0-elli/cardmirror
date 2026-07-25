@@ -56,6 +56,7 @@ import { DropzoneController } from './dropzone-ui.js';
 import { mountPairingPills, initPairingWiring } from './pairing/pairing-wiring.js';
 import { insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
+import { installExternalConsent } from './external-consent-ui.js';
 import { installExternalInsertHost } from './external-insert-host.js';
 import { installPluginRegistry } from './plugin-registry.js';
 import { createPluginApi } from './plugin-api.js';
@@ -8140,6 +8141,11 @@ installExternalInsertHost({
 installPluginJumpHost({
   findViewForDocId: (docId) => findViewForDocId(docId),
 });
+// External-app consent: mirror the toggle + per-app decisions to main
+// (which enforces them on /insert and /jump), run the first-contact
+// consent prompt, and explain rejected unidentified callers. Not gated
+// by `pluginsEnabled` — the bridge is not the plugin system.
+installExternalConsent();
 // Plugin system boot: install the window registry, then load the
 // user-enabled plugins. Gated on the `pluginsEnabled` setting and on
 // a plugin-capable desktop host (no-op on web / old shells).

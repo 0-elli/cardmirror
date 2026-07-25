@@ -17,14 +17,25 @@
  *
  * Routes:
  *   - `GET  /ping`   → `{ok, app, appVersion, schema, hasActiveDoc}`.
+ *     Identity-free (discovery must bootstrap before identity exists)
+ *     and deliberately content-free — it must never grow doc titles,
+ *     paths, or previews; anything content-bearing belongs behind an
+ *     identified, consented route.
  *   - `POST /insert` → forwards to the focused window's renderer via
  *     `external:insert-text` IPC and awaits the renderer's
  *     `external:insert-result` reply (with a hard timeout so the
  *     client never hangs and can fall back to its keystroke path).
+ *   - `POST /jump`   → broadcast to doc windows; the token-holding
+ *     window scrolls/selects and is focused.
  *
- * Routing is just the focused window (or any window if none is
- * focused) — the client activates the target CardMirror window
- * before calling, so there's no per-doc / per-window addressing.
+ * Identity & consent: every route EXCEPT /ping requires an
+ * `X-App-Id` header and is governed by the user's per-app consent
+ * decision (see external-consent.ts) — new routes inherit this
+ * default unless explicitly classed as discovery.
+ *
+ * Insert routing is the focused window ONLY — the client activates
+ * the target CardMirror window before calling, so a fallback to
+ * "any window" could only ever mistarget.
  */
 
 import { app, BrowserWindow, ipcMain } from 'electron';
@@ -32,6 +43,8 @@ import { promises as fs } from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { readAppIdentity } from './bridge-handshake.js';
+import { ConsentGate, parseAppId, type ConsentMirror, type PromptOutcome } from './external-consent.js';
 
 const PREFERRED_PORT = 17699;
 const SCHEMA_VERSION = 2;
@@ -155,17 +168,26 @@ function normalizeRole(value: unknown): 'card' | 'cite' | 'inline' {
 function focusedRenderTarget(): BrowserWindow | null {
   const focused = BrowserWindow.getFocusedWindow();
   if (focused && !focused.isDestroyed()) return focused;
-  // The client activates the target window before calling, so
-  // we should almost always have a focused window. Fall back to
-  // the first available window so a non-focused-but-running app
-  // can still serve `/ping` and not look broken.
+  // Fall back to the first available window so a non-focused-but-
+  // running app can still serve `/ping` (and consent prompts/toasts
+  // still land somewhere) and not look broken. Inserts do NOT use
+  // this fallback — see strictFocusedTarget.
   const all = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
   return all.length > 0 ? all[0]! : null;
 }
 
+/** Insert targeting: the focused window or nothing. The client
+ *  activates the target CardMirror window before calling, so when no
+ *  window is focused the right answer is `no-target-doc` — an
+ *  any-window fallback could only ever land text in the wrong doc. */
+function strictFocusedTarget(): BrowserWindow | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  return focused && !focused.isDestroyed() ? focused : null;
+}
+
 function dispatchToRenderer(payload: InsertPayload): Promise<RendererAck> {
   return new Promise((resolve) => {
-    const win = focusedRenderTarget();
+    const win = strictFocusedTarget();
     if (!win) {
       resolve({ requestId: '', ok: false, error: 'no-target-doc' });
       return;
@@ -208,6 +230,123 @@ function onJumpAck(_evt: unknown, ack: JumpAck): void {
 // keep in sync with SOURCE_TOKEN_PREFIX in src/editor/plugin-source-token.ts
 // (this literal adds the dot separator; the source constant is the bare prefix)
 const SOURCE_TOKEN_PREFIX = 'cmsrc1.';
+
+// ---------------------------------------------------------------------------
+// External-app consent (see external-consent.ts for the model). The gate
+// lives main-side; prompts run in the focused renderer over their own
+// request/result IPC pair, mirroring the insert/jump ack plumbing.
+
+/** Generous — a human is reading a dialog. The renderer resolves
+ *  'dismissed' on Esc; this timeout only covers a closed/hung window. */
+const CONSENT_PROMPT_TIMEOUT_MS = 180_000;
+const UNIDENTIFIED_TOAST_MIN_INTERVAL_MS = 60_000;
+
+interface ConsentPromptAck {
+  requestId: string;
+  outcome?: unknown;
+}
+
+const pendingConsentAcks = new Map<
+  string,
+  { resolve: (outcome: PromptOutcome) => void; timer: NodeJS.Timeout }
+>();
+
+function onConsentPromptAck(_evt: unknown, ack: ConsentPromptAck): void {
+  if (!ack || typeof ack.requestId !== 'string') return;
+  const pending = pendingConsentAcks.get(ack.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingConsentAcks.delete(ack.requestId);
+  const o = ack.outcome;
+  pending.resolve(
+    o === 'allow-always' || o === 'allow-once' || o === 'deny' ? o : 'dismissed',
+  );
+}
+
+/** Coerce a renderer-supplied mirror to a safe shape (the renderer is
+ *  trusted code, but the IPC payload shape is still validated). */
+function sanitizeMirror(raw: unknown): ConsentMirror {
+  const r = (raw ?? {}) as { enabled?: unknown; apps?: unknown };
+  const apps: Record<string, 'allow' | 'deny'> = {};
+  if (r.apps && typeof r.apps === 'object') {
+    for (const [id, decision] of Object.entries(r.apps as Record<string, unknown>)) {
+      if ((decision === 'allow' || decision === 'deny') && parseAppId(id) !== null) {
+        apps[id] = decision;
+      }
+    }
+  }
+  return { enabled: r.enabled !== false, apps };
+}
+
+function onConsentSync(_evt: unknown, raw: unknown): void {
+  consentGate.setState(sanitizeMirror(raw));
+}
+
+async function promptRendererForConsent(appId: string): Promise<PromptOutcome> {
+  const win = focusedRenderTarget();
+  if (!win) return 'dismissed';
+  const identity = await readAppIdentity(appId).catch(() => null);
+  return new Promise((resolve) => {
+    const requestId = crypto.randomBytes(8).toString('hex');
+    const timer = setTimeout(() => {
+      pendingConsentAcks.delete(requestId);
+      resolve('dismissed');
+    }, CONSENT_PROMPT_TIMEOUT_MS);
+    pendingConsentAcks.set(requestId, { resolve, timer });
+    win.webContents.send('external:consent-prompt', {
+      requestId,
+      appId,
+      appName: identity?.app ?? null,
+      appVersion: identity?.appVersion ?? null,
+    });
+  });
+}
+
+let lastUnidentifiedToastAt = 0;
+
+/** Stamp the app's lastSeen in the renderer-held settings registry. */
+function noteSeen(appId: string): void {
+  focusedRenderTarget()?.webContents.send('external:consent-note', {
+    kind: 'seen',
+    appId,
+    when: new Date().toISOString(),
+  });
+}
+
+const consentGate = new ConsentGate({
+  prompt: promptRendererForConsent,
+  recordSeen: noteSeen,
+});
+
+export function consentGateForTests(): ConsentGate {
+  return consentGate;
+}
+
+export function resetExternalConsentForTests(): void {
+  consentGate.resetForTests();
+  lastUnidentifiedToastAt = 0;
+}
+
+/** Identity for a gated request: the declared `X-App-Id` or nothing.
+ *  Deliberately NO inference from other request features — ebb is the
+ *  only legacy client we know of, but anyone may have built against
+ *  the pre-identity spec, and guessing wrong would put one app's name
+ *  on another app's traffic. Unidentified callers are rejected with a
+ *  generic explanation instead (notifyUnidentifiedCaller). */
+function requestAppId(req: http.IncomingMessage): string | null {
+  return parseAppId(req.headers['x-app-id']);
+}
+
+/** Tell the user (in the focused window) that an unidentified app
+ *  knocked and was turned away — where the consent prompt would have
+ *  appeared. The renderer shows a full dialog the first time and a
+ *  toast after; this side just rate-limits the stream. */
+function notifyUnidentifiedCaller(): void {
+  const now = Date.now();
+  if (now - lastUnidentifiedToastAt < UNIDENTIFIED_TOAST_MIN_INTERVAL_MS) return;
+  lastUnidentifiedToastAt = now;
+  focusedRenderTarget()?.webContents.send('external:consent-note', { kind: 'unidentified' });
+}
 
 function dispatchJumpTo(win: BrowserWindow, source: string): Promise<JumpAck> {
   return new Promise((resolve) => {
@@ -346,9 +485,45 @@ async function handleRequest(
       jsonResponse(res, 400, { ok: false, error: 'bad-request' });
       return;
     }
+    const appId = requestAppId(req);
+    const disposition = consentGate.check(appId);
+    if (disposition === 'unidentified') {
+      notifyUnidentifiedCaller();
+      jsonResponse(res, 200, {
+        ok: false,
+        error: 'unidentified',
+        message:
+          'This CardMirror requires apps to identify themselves with an X-App-Id header. Update the sending app.',
+      });
+      return;
+    }
+    if (disposition === 'off') {
+      jsonResponse(res, 200, { ok: false, error: 'inserts-disabled' });
+      return;
+    }
+    if (disposition === 'deny') {
+      jsonResponse(res, 200, { ok: false, error: 'not-allowed' });
+      return;
+    }
+    if (disposition === 'ask') {
+      // Queue behind the consent prompt; Allow applies the queued insert
+      // so the user's click IS the redo. `ok:true` — the request was
+      // accepted for delivery; `pending` tells a new client what state
+      // it's in. Deny/dismiss discards it silently (the user's call).
+      const queued = consentGate.enqueue(appId!, () => {
+        void dispatchToRenderer(payload);
+      });
+      if (queued) {
+        jsonResponse(res, 200, { ok: true, inserted: false, pending: 'consent' });
+      } else {
+        jsonResponse(res, 200, { ok: false, error: 'not-allowed' });
+      }
+      return;
+    }
     const ack = await dispatchToRenderer(payload);
     // Map error → status code per §4.5.
     if (ack.ok) {
+      if (appId) noteSeen(appId);
       jsonResponse(res, 200, { ok: true, inserted: true, docTitle: ack.docTitle });
       return;
     }
@@ -376,6 +551,41 @@ async function handleRequest(
       jsonResponse(res, 400, { ok: false, error: 'bad-request' });
       return;
     }
+    // Jump is gated by the same per-app decision as insert: a denied app
+    // shouldn't be able to seize focus and steer the editor either. One
+    // consent covers the app, not the route.
+    const appId = requestAppId(req);
+    const disposition = consentGate.check(appId);
+    if (disposition === 'unidentified') {
+      notifyUnidentifiedCaller();
+      jsonResponse(res, 200, {
+        ok: false,
+        error: 'unidentified',
+        message:
+          'This CardMirror requires apps to identify themselves with an X-App-Id header. Update the sending app.',
+      });
+      return;
+    }
+    if (disposition === 'off') {
+      jsonResponse(res, 200, { ok: false, error: 'inserts-disabled' });
+      return;
+    }
+    if (disposition === 'deny') {
+      jsonResponse(res, 200, { ok: false, error: 'not-allowed' });
+      return;
+    }
+    if (disposition === 'ask') {
+      const source = payload.source;
+      const queued = consentGate.enqueue(appId!, () => {
+        void broadcastJump(source);
+      });
+      if (queued) {
+        jsonResponse(res, 200, { ok: true, jumped: false, pending: 'consent' });
+      } else {
+        jsonResponse(res, 200, { ok: false, error: 'not-allowed' });
+      }
+      return;
+    }
     let result: { ok: boolean; error?: string; docTitle?: string };
     try {
       result = await broadcastJump(payload.source);
@@ -385,6 +595,7 @@ async function handleRequest(
       return;
     }
     if (result.ok) {
+      if (appId) noteSeen(appId);
       jsonResponse(res, 200, { ok: true });
       return;
     }
@@ -426,6 +637,8 @@ export async function startFastPasteBridge(): Promise<void> {
   if (!ipcSubscribed) {
     ipcMain.on('external:insert-result', onRendererAck);
     ipcMain.on('external:jump-result', onJumpAck);
+    ipcMain.on('external:consent-prompt-result', onConsentPromptAck);
+    ipcMain.on('host:sync-external-consent', onConsentSync);
     ipcSubscribed = true;
   }
 
@@ -492,6 +705,8 @@ export async function stopFastPasteBridge(): Promise<void> {
     };
     im.removeListener?.('external:insert-result', onRendererAck);
     im.removeListener?.('external:jump-result', onJumpAck);
+    im.removeListener?.('external:consent-prompt-result', onConsentPromptAck);
+    im.removeListener?.('host:sync-external-consent', onConsentSync);
     ipcSubscribed = false;
   }
   await deleteDiscoveryFile();
