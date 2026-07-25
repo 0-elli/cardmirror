@@ -32,12 +32,15 @@ interface InsertRequest {
   role: ExternalInsertRole;
   newParagraph: boolean;
   omitted: boolean;
+  /** Doc-targeted insert: the pane uid to land in (from GET /docs).
+   *  Absent = the legacy path — this window's focused view. */
+  target?: string;
 }
 
 interface InsertResult {
   requestId: string;
   ok: boolean;
-  error?: 'no-target-doc' | 'doc-readonly' | 'bad-request' | 'internal';
+  error?: 'no-target-doc' | 'doc-readonly' | 'bad-request' | 'internal' | 'target-not-found';
   docTitle?: string;
 }
 
@@ -54,6 +57,11 @@ export interface ExternalInsertHostOpts {
    *  the focused surface isn't an editable doc (home screen,
    *  settings dialog, recovery sidebar, …). */
   getFocusedView: () => EditorView | null;
+  /** Resolve a pane uid (from a doc-targeted insert) to its live view
+   *  in THIS window — three-pane aware, focused or not. Absent on
+   *  hosts without pane registries; targeted requests then fail with
+   *  `target-not-found`. */
+  resolveViewForUid?: (uid: string) => EditorView | null;
   /** The doc's user-facing label for the ack — filename if the
    *  doc has been saved, otherwise the synthesized title. May
    *  return null when no doc is open. */
@@ -83,7 +91,17 @@ function handle(req: InsertRequest, opts: ExternalInsertHostOpts): InsertResult 
     ) {
       return { requestId, ok: false, error: 'bad-request' };
     }
-    const view = opts.getFocusedView();
+    let view: EditorView | null;
+    if (typeof req.target === 'string' && req.target) {
+      // Doc-targeted: land in the addressed pane, focused or not.
+      // A miss is target-not-found (doc closed since /docs listed it,
+      // or main mis-routed) — never a silent fallback to a doc the
+      // caller didn't name.
+      view = opts.resolveViewForUid?.(req.target) ?? null;
+      if (!view) return { requestId, ok: false, error: 'target-not-found' };
+    } else {
+      view = opts.getFocusedView();
+    }
     if (!view || !view.editable) {
       // §4.5 splits these: no live editor view → no-target-doc;
       // view present but read mode has flipped `editable` false
@@ -101,9 +119,14 @@ function handle(req: InsertRequest, opts: ExternalInsertHostOpts): InsertResult 
       return { requestId, ok: false, error: 'internal' };
     }
     view.dispatch(tr.scrollIntoView());
-    const docTitle = opts.getFocusedDocTitle();
     const result: InsertResult = { requestId, ok: true };
-    if (docTitle) result.docTitle = docTitle;
+    if (typeof req.target === 'string' && req.target) {
+      // Targeted acks skip the focused-doc title (wrong doc); main
+      // fills the addressed doc's name from its directory.
+    } else {
+      const docTitle = opts.getFocusedDocTitle();
+      if (docTitle) result.docTitle = docTitle;
+    }
     return result;
   } catch {
     return { requestId, ok: false, error: 'internal' };

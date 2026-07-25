@@ -828,6 +828,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     role: 'card' | 'cite' | 'inline';
     newParagraph: boolean;
     omitted: boolean;
+    target?: string;
   }) => void): () => void {
     const listener = (
       _evt: unknown,
@@ -837,6 +838,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         role: 'card' | 'cite' | 'inline';
         newParagraph: boolean;
         omitted: boolean;
+        target?: string;
       },
     ): void => handler(req);
     ipcRenderer.on('external:insert-text', listener);

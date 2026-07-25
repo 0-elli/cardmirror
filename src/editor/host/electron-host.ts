@@ -463,6 +463,7 @@ interface ElectronAPI {
       role: 'card' | 'cite' | 'inline';
       newParagraph: boolean;
       omitted: boolean;
+      target?: string;
     }) => void,
   ): () => void;
   sendExternalInsertResult(result: {

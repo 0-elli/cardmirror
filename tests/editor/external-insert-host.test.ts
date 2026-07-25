@@ -214,3 +214,65 @@ describe('installExternalInsertHost', () => {
     expect(bridge.results[0]).not.toHaveProperty('docTitle');
   });
 });
+
+describe('doc-targeted inserts', () => {
+  let cleanup: (() => void) | null = null;
+
+  afterEach(() => {
+    cleanup?.(); cleanup = null;
+    delete (window as any).electronAPI;
+  });
+
+  it('inserts into the addressed pane view, not the focused one', () => {
+    const bridge = installFakeBridge();
+    const focused = buildViewInBody('FOCUSED', 3);
+    const target = buildViewInBody('TARGETPANE', 4);
+    cleanup = () => { focused.cleanup(); target.cleanup(); bridge.uninstall(); };
+    installExternalInsertHost({
+      getFocusedView: () => focused.view,
+      getFocusedDocTitle: () => 'focused.cmir',
+      resolveViewForUid: (uid) => (uid === 'pane-2' ? target.view : null),
+    });
+    bridge.fire({
+      requestId: 'r1', text: 'aimed', role: 'card', newParagraph: false, omitted: false,
+      target: 'pane-2',
+    });
+    expect(bridge.results).toHaveLength(1);
+    expect(bridge.results[0]).toEqual({ requestId: 'r1', ok: true });
+    // The text landed in the TARGET view; the focused view is untouched.
+    expect(target.view.state.doc.textContent).toContain('aimed');
+    expect(focused.view.state.doc.textContent).not.toContain('aimed');
+  });
+
+  it('unknown target → target-not-found, focused doc untouched', () => {
+    const bridge = installFakeBridge();
+    const focused = buildViewInBody('FOCUSED', 3);
+    cleanup = () => { focused.cleanup(); bridge.uninstall(); };
+    installExternalInsertHost({
+      getFocusedView: () => focused.view,
+      getFocusedDocTitle: () => 'focused.cmir',
+      resolveViewForUid: () => null,
+    });
+    bridge.fire({
+      requestId: 'r1', text: 'aimed', role: 'card', newParagraph: false, omitted: false,
+      target: 'pane-gone',
+    });
+    expect(bridge.results[0]).toEqual({ requestId: 'r1', ok: false, error: 'target-not-found' });
+    expect(focused.view.state.doc.textContent).not.toContain('aimed');
+  });
+
+  it('a host without a pane registry rejects targeted requests cleanly', () => {
+    const bridge = installFakeBridge();
+    const focused = buildViewInBody('FOCUSED', 3);
+    cleanup = () => { focused.cleanup(); bridge.uninstall(); };
+    installExternalInsertHost({
+      getFocusedView: () => focused.view,
+      getFocusedDocTitle: () => 'focused.cmir',
+    });
+    bridge.fire({
+      requestId: 'r1', text: 'aimed', role: 'card', newParagraph: false, omitted: false,
+      target: 'pane-2',
+    });
+    expect(bridge.results[0]).toEqual({ requestId: 'r1', ok: false, error: 'target-not-found' });
+  });
+});

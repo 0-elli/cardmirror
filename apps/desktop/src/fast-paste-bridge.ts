@@ -68,6 +68,9 @@ interface InsertPayload {
   role?: unknown;
   newParagraph?: unknown;
   omitted?: unknown;
+  /** Session-scoped doc target (a uid from GET /docs). Absent = the
+   *  legacy path: focused/last-focused window, active pane. */
+  target?: unknown;
 }
 
 interface RendererAck {
@@ -213,9 +216,36 @@ function insertTarget(): BrowserWindow | null {
   return null;
 }
 
-function dispatchToRenderer(payload: InsertPayload): Promise<RendererAck> {
+/** Cross-window doc directory, injected by main (which already tracks
+ *  every open doc's uid → filename + owning window for the
+ *  Select-Speech-Doc picker). Powers GET /docs and targeted inserts. */
+export interface DocDirectory {
+  listDocs(): Array<{ uid: string; filename: string | null; windowId: number }>;
+  ownerWindow(uid: string): BrowserWindow | null;
+}
+let docDirectory: DocDirectory | null = null;
+export function setDocDirectory(dir: DocDirectory | null): void {
+  docDirectory = dir;
+}
+
+/** The target uid of an insert payload, or null for the legacy
+ *  focused-window path. Opaque session-scoped token from /docs. */
+function targetUidOf(payload: InsertPayload): string | null {
+  return typeof payload.target === 'string' && payload.target.length > 0 && payload.target.length <= 128
+    ? payload.target
+    : null;
+}
+
+/** Resolve the window an insert should go to — the target's owner
+ *  when addressed, else the legacy focused/last-focused window. */
+function windowForInsert(payload: InsertPayload): BrowserWindow | null {
+  const uid = targetUidOf(payload);
+  if (uid) return docDirectory?.ownerWindow(uid) ?? null;
+  return insertTarget();
+}
+
+function dispatchToRenderer(payload: InsertPayload, win: BrowserWindow | null): Promise<RendererAck> {
   return new Promise((resolve) => {
-    const win = insertTarget();
     if (!win) {
       resolve({ requestId: '', ok: false, error: 'no-target-doc' });
       return;
@@ -233,6 +263,7 @@ function dispatchToRenderer(payload: InsertPayload): Promise<RendererAck> {
       newParagraph:
         typeof payload.newParagraph === 'boolean' ? payload.newParagraph : true,
       omitted: payload.omitted === true,
+      ...(targetUidOf(payload) ? { target: targetUidOf(payload) } : {}),
     });
   });
 }
@@ -494,6 +525,47 @@ async function handleRequest(
     return;
   }
 
+  if (req.method === 'GET' && url === '/docs') {
+    // Content-bearing (doc titles) → identified + consented, per the
+    // §5 default posture. One per-app decision covers docs/insert/jump.
+    const appId = requestAppId(req);
+    const disposition = consentGate.check(appId);
+    if (disposition === 'unidentified') {
+      notifyUnidentifiedCaller();
+      jsonResponse(res, 200, {
+        ok: false,
+        error: 'unidentified',
+        message:
+          'This CardMirror requires apps to identify themselves with an X-App-Id header. Update the sending app.',
+      });
+      return;
+    }
+    if (disposition === 'off') {
+      jsonResponse(res, 200, { ok: false, error: 'inserts-disabled' });
+      return;
+    }
+    if (disposition === 'deny') {
+      jsonResponse(res, 200, { ok: false, error: 'not-allowed' });
+      return;
+    }
+    if (disposition === 'ask') {
+      // Nothing sensible to queue for a listing — raise the prompt and
+      // tell the caller to re-query after the user decides.
+      consentGate.enqueue(appId!, () => {});
+      jsonResponse(res, 200, { ok: true, docs: null, pending: 'consent' });
+      return;
+    }
+    const focusedId = insertTarget()?.id;
+    const docs = (docDirectory?.listDocs() ?? []).map((d) => ({
+      target: d.uid,
+      title: d.filename,
+      focusedWindow: d.windowId === focusedId,
+    }));
+    noteSeen(appId!);
+    jsonResponse(res, 200, { ok: true, docs });
+    return;
+  }
+
   if (req.method === 'POST' && url === '/insert') {
     let bodyText: string;
     try {
@@ -539,7 +611,7 @@ async function handleRequest(
       // accepted for delivery; `pending` tells a new client what state
       // it's in. Deny/dismiss discards it silently (the user's call).
       const queued = consentGate.enqueue(appId!, () => {
-        void dispatchToRenderer(payload);
+        void dispatchToRenderer(payload, windowForInsert(payload));
       });
       if (queued) {
         jsonResponse(res, 200, { ok: true, inserted: false, pending: 'consent' });
@@ -548,11 +620,26 @@ async function handleRequest(
       }
       return;
     }
-    const ack = await dispatchToRenderer(payload);
+    const targetUid = targetUidOf(payload);
+    if (targetUid && !(docDirectory?.ownerWindow(targetUid))) {
+      // Addressed doc is gone (closed since /docs) or targeting isn't
+      // wired on this host. Clean error, never a fallback to a doc the
+      // caller didn't name.
+      jsonResponse(res, 200, { ok: false, error: 'target-not-found' });
+      return;
+    }
+    const ack = await dispatchToRenderer(payload, windowForInsert(payload));
     // Map error → status code per §4.5.
     if (ack.ok) {
       if (appId) noteSeen(appId);
-      jsonResponse(res, 200, { ok: true, inserted: true, docTitle: ack.docTitle });
+      // Targeted acks skip the renderer's focused-doc title; the
+      // directory knows the addressed doc's name.
+      const docTitle =
+        ack.docTitle ??
+        (targetUid
+          ? docDirectory?.listDocs().find((d) => d.uid === targetUid)?.filename ?? undefined
+          : undefined);
+      jsonResponse(res, 200, { ok: true, inserted: true, docTitle });
       return;
     }
     if (ack.error === 'no-target-doc' || ack.error === 'doc-readonly') {

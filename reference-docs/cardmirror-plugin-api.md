@@ -535,21 +535,51 @@ Liveness and capability probe. Response, schema 2:
 
 `schema: 2` signals that `/jump` is available.
 
+### GET /docs (since 0.1.0-beta.23)
+
+Every open document across every CardMirror window and pane — the
+address book for doc-targeted inserts. Identified + consented (doc
+titles are content; one per-app decision covers docs/insert/jump).
+
+```json
+{ "ok": true, "docs": [
+  { "target": "u-3f9c…", "title": "1AC — Ports.cmir", "focusedWindow": true },
+  { "target": "u-88a1…", "title": null, "focusedWindow": false }
+] }
+```
+
+`target` is an opaque, SESSION-SCOPED token (it does not survive a
+CardMirror restart — re-list rather than persisting it). `title` is
+null for never-saved docs. While consent is pending the response is
+`{ "ok": true, "docs": null, "pending": "consent" }` — re-query after
+the user decides.
+
 ### POST /insert
 
-Insert text into the focused document. This route predates the plugin
-API; since 0.1.0-beta.23 it also requires `X-App-Id` and consent (see
+Insert text into a document. This route predates the plugin API;
+since 0.1.0-beta.23 it also requires `X-App-Id` and consent (see
 above). The full wire contract is in `cardmirror-integration-spec.md`
 in this folder. In short: the body is
 `{ "text": "...", "role": "card" | "cite" | "inline", "newParagraph": true, "omitted": false }`,
 and the response is `{ "ok": true, "inserted": true, "docTitle": "..." }`
 or `{ "ok": false, "error": "no-target-doc" | "doc-readonly" | "bad-request" }`
-— plus the consent-layer responses above. Targeting: the focused
-CardMirror window, else the most recently focused one (so a flow app
-can send while it holds focus itself, without stealing focus per
-send). An app whose target is one SPECIFIC window (a target picker)
-should activate that window before calling — focus is the only
-window-addressing the wire has. Never an arbitrary window.
+— plus the consent-layer responses above.
+
+**Targeting.** Two modes, the caller's choice per request:
+
+- **Doc-targeted** (since 0.1.0-beta.23): include
+  `"target": "<token from GET /docs>"` in the body. The text lands in
+  that exact document — the right pane of a three-pane window, a
+  background window, anywhere — without CardMirror needing or taking
+  focus. A closed-since-listed doc answers
+  `{ "ok": false, "error": "target-not-found" }`; never a fallback to
+  a doc the caller didn't name.
+- **Legacy / focus-follow** (no `target`): the focused CardMirror
+  window's active pane, else the most recently focused window's (so a
+  flow app can send while it holds focus itself). An app steering by
+  window (an OS-window target picker) should activate that window
+  before calling — focus is the only window-addressing this mode has.
+  Never an arbitrary window.
 
 ### POST /jump
 

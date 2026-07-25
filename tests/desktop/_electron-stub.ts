@@ -13,6 +13,7 @@ interface MockWinOpts {
 }
 
 export interface MockWin {
+  id: number;
   webContents: { send: (channel: string, payload: any) => void; getURL: () => string };
   isDestroyed: () => boolean;
   isMinimized: () => boolean;
@@ -24,8 +25,11 @@ export interface MockWin {
   __focused: boolean;
 }
 
+let nextWinId = 1;
+
 export function makeMockWindow(opts: MockWinOpts = {}): MockWin {
   const win: MockWin = {
+    id: nextWinId++,
     webContents: {
       send: (channel: string, payload: any) => {
         if (opts.sendThrows) throw new Error('render process gone');

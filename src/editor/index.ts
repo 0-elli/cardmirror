@@ -8133,6 +8133,10 @@ if (!BOOT_MOBILE) {
 installExternalInsertHost({
   getFocusedView: () => getActiveView(),
   getFocusedDocTitle: () => activeFile().filename,
+  // Doc-targeted inserts (GET /docs → insert with target): the pane
+  // registry resolves a uid to its live view in this window, three-
+  // pane aware, focused or not.
+  resolveViewForUid: (uid) => getSpeechDocResolver().viewForUid(uid),
 });
 // Inbound /jump handler — core-owned surface (spec 6): the fast-paste
 // bridge advertises schema 2 unconditionally, so a window must always

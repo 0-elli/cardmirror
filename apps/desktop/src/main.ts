@@ -68,6 +68,7 @@ import * as path from 'node:path';
 import { gzip as zlibGzip, gunzip as zlibGunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
+  setDocDirectory,
   startFastPasteBridge,
   stopFastPasteBridge,
   broadcastJump,
@@ -3155,6 +3156,22 @@ void app.whenReady().then(() => {
   // keystroke path (the integration is never a hard dependency).
   // Once up, mirror the endpoint into the shared cardmirror-bridge
   // handshake directory so flow apps can discover us (plugin API v1).
+  // The doc directory (already maintained for the Select-Speech-Doc
+  // picker) powers the bridge's GET /docs and doc-targeted inserts.
+  setDocDirectory({
+    listDocs: () =>
+      [...docOwners.entries()].map(([uid, windowId]) => ({
+        uid,
+        filename: docInfo.get(uid)?.filename ?? null,
+        windowId,
+      })),
+    ownerWindow: (uid) => {
+      const id = docOwners.get(uid);
+      if (id === undefined) return null;
+      const win = BrowserWindow.fromId(id);
+      return win && !win.isDestroyed() ? win : null;
+    },
+  });
   void startFastPasteBridge().then(async () => {
     const ep = getRunningEndpoint();
     if (ep) {

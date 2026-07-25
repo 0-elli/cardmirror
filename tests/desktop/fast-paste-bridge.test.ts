@@ -570,3 +570,111 @@ describe('external-app consent (identity gate)', () => {
     fireConsentPromptResult({ requestId: prompt.payload.requestId, outcome: 'dismissed' });
   });
 });
+
+describe('doc targeting (/docs + insert target)', () => {
+  const sent = (channel: string) => sentToRenderer.filter((s) => s.channel === channel);
+  let dataDir: string;
+  let winA: ReturnType<typeof makeMockWindow>;
+  let winB: ReturnType<typeof makeMockWindow>;
+
+  beforeEach(async () => {
+    dataDir = path.join(tmpRoot, `d-${Math.random().toString(36).slice(2, 8)}`);
+    await fs.mkdir(dataDir, { recursive: true });
+    resetElectronStub(dataDir);
+    winA = makeMockWindow();
+    winB = makeMockWindow();
+    setMockFocusedWindow(winA);
+    setMockAllWindows([winA, winB]);
+    bridge.setDocDirectory({
+      listDocs: () => [
+        { uid: 'doc-a', filename: 'alpha.cmir', windowId: winA.id },
+        { uid: 'doc-b', filename: null, windowId: winB.id },
+      ],
+      ownerWindow: (uid) => (uid === 'doc-a' ? (winA as any) : uid === 'doc-b' ? (winB as any) : null),
+    });
+    await bridge.startFastPasteBridge();
+    bridge.resetExternalConsentForTests();
+    bridge.resetFocusTrackingForTests();
+    fireConsentSync({ enabled: true, apps: { testapp: 'allow' } });
+  });
+
+  afterEach(async () => {
+    bridge.setDocDirectory(null);
+    await bridge.stopFastPasteBridge();
+    await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('GET /docs lists every open doc with session targets + focus flag', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({ method: 'GET', path: '/docs', port: ep.port, token: ep.token });
+    expect(r.status).toBe(200);
+    expect(r.json.ok).toBe(true);
+    expect(r.json.docs).toEqual([
+      { target: 'doc-a', title: 'alpha.cmir', focusedWindow: true },
+      { target: 'doc-b', title: null, focusedWindow: false },
+    ]);
+  });
+
+  it('GET /docs is consent-gated like the mutating routes', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const anon = await fetchJson({ method: 'GET', path: '/docs', port: ep.port, token: ep.token, appId: null });
+    expect(anon.json.error).toBe('unidentified');
+    const unknown = await fetchJson({ method: 'GET', path: '/docs', port: ep.port, token: ep.token, appId: 'newapp' });
+    expect(unknown.json).toEqual({ ok: true, docs: null, pending: 'consent' });
+    await new Promise((r) => setTimeout(r, 20));
+    const prompt = sent('external:consent-prompt')[0]!;
+    fireConsentPromptResult({ requestId: prompt.payload.requestId, outcome: 'dismissed' });
+  });
+
+  it('a targeted insert routes to the owning window with the target attached', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'aimed', role: 'card', newParagraph: true, target: 'doc-b' },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const inserts = sent('external:insert-text');
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.payload.target).toBe('doc-b');
+    // Renderer ack without docTitle → main fills it from the directory
+    // (null filename here, so it stays absent rather than lying).
+    fireRendererAck({ requestId: inserts[0]!.payload.requestId, ok: true });
+    const r = await inserted;
+    expect(r.json).toEqual({ ok: true, inserted: true });
+  });
+
+  it('a targeted insert to a vanished doc → target-not-found, no dispatch', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const r = await fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'aimed', role: 'card', newParagraph: true, target: 'doc-gone' },
+    });
+    expect(r.json).toEqual({ ok: false, error: 'target-not-found' });
+    expect(sent('external:insert-text')).toHaveLength(0);
+  });
+
+  it('main fills docTitle for targeted inserts from the directory', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'aimed', role: 'card', newParagraph: true, target: 'doc-a' },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    fireRendererAck({ requestId: sent('external:insert-text')[0]!.payload.requestId, ok: true });
+    expect((await inserted).json).toEqual({ ok: true, inserted: true, docTitle: 'alpha.cmir' });
+  });
+
+  it('an untargeted insert still follows focus — legacy path untouched', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST', path: '/insert', port: ep.port, token: ep.token,
+      body: { text: 'legacy', role: 'card', newParagraph: true },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const inserts = sent('external:insert-text');
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.payload.target).toBeUndefined();
+    fireRendererAck({ requestId: inserts[0]!.payload.requestId, ok: true, docTitle: 'alpha.cmir' });
+    expect((await inserted).json.ok).toBe(true);
+  });
+});
