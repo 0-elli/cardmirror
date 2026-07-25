@@ -564,10 +564,26 @@ Insert text into a document. This route predates the plugin API;
 since 0.1.0-beta.23 it also requires `X-App-Id` and consent (see
 above). The full wire contract is in `cardmirror-integration-spec.md`
 in this folder. In short: the body is
-`{ "text": "...", "role": "card" | "cite" | "inline", "newParagraph": true, "omitted": false }`,
+`{ "text": "...", "role": "...", "newParagraph": true, "omitted": false }`,
 and the response is `{ "ok": true, "inserted": true, "docTitle": "..." }`
 or `{ "ok": false, "error": "no-target-doc" | "doc-readonly" | "bad-request" }`
 — plus the consent-layer responses above.
+
+**Roles** (since 0.1.0-beta.23; older CardMirrors degrade unknown
+roles to `card` silently, so the failure mode against an old build is
+wrong FORMAT, not an error):
+
+| `role` | Result |
+| --- | --- |
+| `card` (default), `body`, `cite` | Body paragraphs at the cursor (the pre-role behavior). |
+| `inline` | Bare characters at the cursor (`newParagraph: false` semantics). |
+| `pocket` / `hat` / `block` | One doc-level heading per line of `text`, each with a fresh heading id. |
+| `tag` | One new card per line, headed by that tag. |
+| `analytic` | One new analytic_unit per line, headed by that analytic. |
+
+Heading roles never insert at a raw caret — they snap to the nearest
+outline slot a drag-and-drop would use (so a mid-card cursor can't
+split the card) — and a heading role outranks `newParagraph`.
 
 **Targeting.** Two modes, the caller's choice per request:
 
