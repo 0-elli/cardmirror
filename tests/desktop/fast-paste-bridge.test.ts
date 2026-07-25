@@ -591,6 +591,7 @@ describe('doc targeting (/docs + insert target)', () => {
         { uid: 'doc-b', filename: null, windowId: winB.id },
       ],
       ownerWindow: (uid) => (uid === 'doc-a' ? (winA as any) : uid === 'doc-b' ? (winB as any) : null),
+      speechUid: () => 'doc-b',
     });
     await bridge.startFastPasteBridge();
     bridge.resetExternalConsentForTests();
@@ -610,8 +611,8 @@ describe('doc targeting (/docs + insert target)', () => {
     expect(r.status).toBe(200);
     expect(r.json.ok).toBe(true);
     expect(r.json.docs).toEqual([
-      { target: 'doc-a', title: 'alpha.cmir', focusedWindow: true },
-      { target: 'doc-b', title: null, focusedWindow: false },
+      { target: 'doc-a', title: 'alpha.cmir', focusedWindow: true, isSpeech: false },
+      { target: 'doc-b', title: null, focusedWindow: false, isSpeech: true },
     ]);
   });
 

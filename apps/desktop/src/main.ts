@@ -3171,6 +3171,7 @@ void app.whenReady().then(() => {
       const win = BrowserWindow.fromId(id);
       return win && !win.isDestroyed() ? win : null;
     },
+    speechUid: () => speechRegistration?.uid ?? null,
   });
   void startFastPasteBridge().then(async () => {
     const ep = getRunningEndpoint();

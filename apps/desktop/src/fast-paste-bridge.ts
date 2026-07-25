@@ -222,6 +222,9 @@ function insertTarget(): BrowserWindow | null {
 export interface DocDirectory {
   listDocs(): Array<{ uid: string; filename: string | null; windowId: number }>;
   ownerWindow(uid: string): BrowserWindow | null;
+  /** The uid currently designated as the speech doc, or null. Lets a
+   *  client offer "send to the speech doc" without tracking focus. */
+  speechUid(): string | null;
 }
 let docDirectory: DocDirectory | null = null;
 export function setDocDirectory(dir: DocDirectory | null): void {
@@ -556,10 +559,12 @@ async function handleRequest(
       return;
     }
     const focusedId = insertTarget()?.id;
+    const speechUid = docDirectory?.speechUid() ?? null;
     const docs = (docDirectory?.listDocs() ?? []).map((d) => ({
       target: d.uid,
       title: d.filename,
       focusedWindow: d.windowId === focusedId,
+      isSpeech: d.uid === speechUid,
     }));
     noteSeen(appId!);
     jsonResponse(res, 200, { ok: true, docs });

@@ -543,14 +543,18 @@ titles are content; one per-app decision covers docs/insert/jump).
 
 ```json
 { "ok": true, "docs": [
-  { "target": "u-3f9c…", "title": "1AC — Ports.cmir", "focusedWindow": true },
-  { "target": "u-88a1…", "title": null, "focusedWindow": false }
+  { "target": "u-3f9c…", "title": "1AC — Ports.cmir", "focusedWindow": true, "isSpeech": false },
+  { "target": "u-88a1…", "title": null, "focusedWindow": false, "isSpeech": true }
 ] }
 ```
 
 `target` is an opaque, SESSION-SCOPED token (it does not survive a
 CardMirror restart — re-list rather than persisting it). `title` is
-null for never-saved docs. While consent is pending the response is
+null for never-saved docs. `isSpeech` marks the doc currently
+designated as the speech doc (at most one, across all windows) — a
+client offering a "send to the speech doc" mode should re-list and
+target it at send time rather than caching, since the designation
+moves. While consent is pending the response is
 `{ "ok": true, "docs": null, "pending": "consent" }` — re-query after
 the user decides.
 
