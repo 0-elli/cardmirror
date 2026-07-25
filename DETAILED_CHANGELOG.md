@@ -5,6 +5,53 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.22 — 2026-07-24
+
+- **Plugin-declared settings** (`plugin-registry.ts`,
+  `plugin-settings.ts`, `plugin-settings-modal.ts`). A definition's
+  optional `settings` array declares typed settings
+  (boolean/text/number/select) validated at registration with the same
+  read-once snapshot discipline as commands — one off-shape entry
+  rejects the whole registration, so the modal renders only shapes it
+  can trust. Values live inside the existing `plugin:<id>` storage bag
+  under a reserved `__settings` key, which makes uninstall purge and
+  boot reconciliation cover them with zero new bookkeeping; plugins
+  read via `api.settings.get` (a type-corrupted stored value degrades
+  to the declared default) and can subscribe with
+  `api.settings.onChanged`. The gear renders only for
+  enabled-and-registered plugins — a disabled plugin's bundle never
+  ran, so its declared settings are unknowable. The modal rides the
+  shared overlay stack, so Escape closes it alone rather than
+  collapsing the settings dialog under it. Additive and optional:
+  still `apiVersion: 1`.
+
+- **Custom ribbon buttons: cap 10, 54 icons, plugin commands,
+  reorder.** The panel already filled column-major with two fixed
+  rows, so columns 4–5 are implicit grid tracks — the cap change is
+  data-level (`MAX_RIBBON_CUSTOM_BUTTONS`). Thirty new Untitled UI
+  glyphs join the curated picker via `scripts/gen-icons.mjs`, each
+  with a classic-mode fallback. Plugin commands are offered in the
+  command picker and resolve labels through `commandLabelFor`;
+  `primaryKeyFor` now falls back to `pluginDefaultKey` so their
+  tooltips show live shortcuts; and the plugin registration hook
+  re-renders the panel, so a button bound to a plugin command
+  materializes when its plugin loads (async after boot) and vanishes
+  at uninstall. Uninstall and boot reconciliation unconfigure buttons
+  by the same dot-prefix rule as key overrides, keyed strictly on
+  install-directory absence — a plugin that merely failed to load
+  keeps its buttons configured, hidden until it registers again.
+  Row reordering reuses the pairing rows' arrow pair (now the shared
+  `makeReorderButtons`); row order is what the ribbon renders.
+
+- **Verbatim Flow keep-warm relocated to the Plugins tab, ungated**
+  (`settings.ts`, `settings-ui.ts`). The toggle is plugin-shaped — a
+  bundled Verbatim integration — so it now sits under its own heading
+  at the bottom of Settings → Plugins, below the plugin manager.
+  Deliberately not behind Enable plugins: it renders as a plain
+  settings row even while the manager shows only the gate placeholder.
+  Still windowsOnly, which already implies the desktop host, so
+  nothing reachable moved out of reach.
+
 ## 0.1.0-beta.21 — 2026-07-24
 
 - **Plugin API v1 + cardmirror-bridge** (PR #25 by Shreeram Modi,

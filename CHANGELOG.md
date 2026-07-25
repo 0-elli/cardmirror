@@ -5,6 +5,31 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.22 — 2026-07-24
+
+### Added
+
+- **Plugins can offer their own settings.** When an enabled plugin
+  declares settings, a gear appears on its row in Settings → Plugins;
+  clicking it opens a dialog with the plugin's options (switches, text
+  and number fields, dropdowns). Changes apply immediately, and a
+  plugin's stored settings are removed when it's uninstalled.
+  Experimental, like the rest of the plugin system.
+
+- **Custom ribbon buttons, upgraded.** The limit rises from 6 to 10
+  buttons (the section grows up to five columns of two), the icon
+  picker more than doubles to 54 icons, and each row in the editor has
+  up/down arrows to reorder — row order is ribbon order. Plugin
+  commands can now be bound to custom buttons too; uninstalling a
+  plugin unconfigures any buttons bound to its commands.
+
+### Changed
+
+- **"Keep a Verbatim Flow connection warm" moved** *(Windows)*. It now
+  sits at the bottom of Settings → Plugins instead of General →
+  Integrations — it's an integration in spirit, but it doesn't require
+  the Enable plugins switch.
+
 ## 0.1.0-beta.21 — 2026-07-24
 
 ### Added

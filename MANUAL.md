@@ -1569,7 +1569,8 @@ open, so every send and pull after that is near-instant instead of pausing
 a second or more to reconnect. If you'd rather not wait on that first send
 mid-round, warm the connection ahead of time with the **Start Flow
 Connection** command, or turn on **"Keep a Verbatim Flow connection warm"**
-under Settings to open it automatically the moment CardMirror launches. The
+at the bottom of Settings → **Plugins** to open it automatically the moment
+CardMirror launches (it works regardless of the Enable plugins switch). The
 connection closes when you quit.
 
 These commands aren't on the ribbon and have no default shortcuts — find
@@ -1911,13 +1912,6 @@ headers shown inside each tab.
   duration field appears above). Expanded layout only — compact drops
   all presets. Off by default.
 
-**Integrations**
-
-- **Keep a Verbatim Flow connection warm** *(Windows)* — start the
-  background Excel connection when CardMirror launches so your first
-  Send to Flow is fast; leave off to start it on demand
-  (see [Send to Verbatim Flow](#14-send-to-verbatim-flow)).
-
 ### Files
 
 Where new documents go, how the save presets name their files, and what
@@ -2009,6 +2003,17 @@ How things look. None of these change the file — only your view (see
   undo/redo always work by keyboard either way.
 - **Ribbon tooltips** — what a hovered ribbon button shows: both, label
   only, shortcut only, or none.
+
+**Custom ribbon buttons**
+
+- **Custom ribbon buttons** — up to 10 buttons of your own to the right
+  of the comments buttons, each running a command of your choice with an
+  icon picked from a 54-icon set. Bindable commands are any ribbon
+  command, the generated Toggle/Cycle setting commands, and any enabled
+  plugin's commands. Rows reorder with up/down arrows, and row order is
+  ribbon order (the section fills two per column). With none configured
+  the section is hidden; it's the third thing to disappear when the
+  ribbon runs out of room.
 
 **Document typography**
 
@@ -2455,12 +2460,25 @@ self-hosted relay, its operator curates the list; see the relay
 README.)
 
 **Using.** A plugin's commands appear in the command palette and the
-printed shortcut reference, and can be rebound in Settings → Keyboard
-like any built-in command.
+printed shortcut reference, can be rebound in Settings → Keyboard like
+any built-in command, and can be bound to
+[custom ribbon buttons](#17-settings-reference).
+
+**Plugin settings.** A plugin that offers its own options shows a
+gear on its row while it's enabled. Clicking it opens a small dialog
+of the plugin's settings; changes apply immediately, and Done just
+closes.
 
 **Uninstalling.** The Uninstall button removes the plugin, its
-settings, and its shortcuts immediately; any background code it was
-running stops on the next launch.
+settings, its shortcuts, and any custom ribbon buttons bound to its
+commands immediately; any background code it was running stops on the
+next launch.
+
+**Verbatim Flow.** On Windows, the **"Keep a Verbatim Flow connection
+warm"** toggle sits at the bottom of this tab. It's a bundled
+integration rather than an installable plugin, so it works regardless
+of the Enable plugins switch
+(see [Send to Verbatim Flow](#14-send-to-verbatim-flow)).
 
 **For developers.** The plugin API and the local bridge protocol are
 documented in the repository README and reference docs.
