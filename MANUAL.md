@@ -2472,7 +2472,24 @@ closes.
 **Uninstalling.** The Uninstall button removes the plugin, its
 settings, its shortcuts, and any custom ribbon buttons bound to its
 commands immediately; any background code it was running stops on the
-next launch.
+next launch. Note that a companion *app* (like ebb itself) connects
+to CardMirror separately from its plugin — uninstalling the plugin
+doesn't cut that connection. That's what **External apps** below is
+for.
+
+**External apps.** Companion apps on your computer can insert text
+into your documents (and jump you to sources) over a local
+connection. The External apps section of this tab controls who may:
+the first time an app sends, CardMirror asks — **Always Allow / Allow
+Once / Deny** — naming the app, and remembers your answer in a list
+here where you can flip a decision or forget an app (it will ask
+again next time). The policy dropdown above the list sets the overall
+stance: **Ask for each app** (default), **Allow all** — every sender
+accepted, including older apps that don't identify themselves — or
+**Block all**. Under the default policy, an app too old to identify
+itself is turned away and CardMirror tells you to update it. Like
+Verbatim Flow, this section works regardless of the Enable plugins
+switch.
 
 **Verbatim Flow.** On Windows, the **"Keep a Verbatim Flow connection
 warm"** toggle sits at the bottom of this tab. It's a bundled

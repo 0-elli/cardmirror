@@ -5,6 +5,87 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.23 — 2026-07-25
+
+- **External-app consent gate** (`apps/desktop/src/external-consent.ts`
+  + `src/editor/external-consent-ui.ts`). Every bridge route except
+  `/ping` now requires an `X-App-Id` header and is governed by a
+  per-app consent decision; first contact raises a route-style prompt
+  (Always Allow / Allow Once / Deny, Esc asks again later) naming the
+  app from its bridge identity file, while requests queue behind the
+  prompt (cap 10) answering `pending: "consent"` — Allow applies the
+  queue, so the user's click is the redo. Enforcement lives in MAIN
+  (one authority, multi-window-consistent); settings own persistence
+  (the renderer mirrors the policy + decisions over
+  `host:sync-external-consent`). The policy is three-state: `ask`
+  (default), `open` (identification optional — keeps pre-identity
+  senders working for users who opt in), `off`. Unidentified callers
+  under `ask` are rejected with guidance in the response AND explained
+  by CardMirror itself — a dialog where the consent prompt would have
+  appeared, rate-limited toasts after — with no fingerprinting of
+  which legacy app knocked (guessing would put one app's name on
+  another's traffic). Jump is gated by the same decision as insert —
+  a denied app can't seize focus either. This is consent/legibility
+  UX for cooperating local apps, not a security boundary: identity is
+  self-declared, and any same-user process is inside the trust line
+  regardless. Full wire contract in the plugin-API spec §5.
+
+- **Doc-targeted inserts** (`GET /docs` + `target` on `/insert`).
+  Three-pane mode puts several docs in one window, so window-level
+  focus addressing can't name a specific doc. `/docs` lists every
+  open doc across windows/panes (session-scoped target token, title,
+  `focusedWindow`, `isSpeech`) straight from the directory main
+  already maintains for the Select-Speech-Doc picker; a targeted
+  insert routes to the owning window and lands in the addressed pane
+  via the speech-doc registry — three-pane aware, focused or not,
+  never stealing focus. A vanished doc answers `target-not-found`,
+  never a fallback to a doc the caller didn't name. The legacy
+  no-target path is unchanged: focused window's active pane, else the
+  most recently focused window — the else-branch is new and matters,
+  because a flow app sends while IT holds focus (the old any-window
+  fallback could mistarget with several windows open).
+
+- **Styled inserts** (PR #28 by Shreeram Modi). `/insert`'s `role`
+  now carries the five outline levels plus body/cite/inline: one
+  heading per line, each with a fresh minted id, wrapped in its
+  schema container (tag → card, analytic → analytic_unit), placed at
+  the nearest outline slot a drag would use (`nearestValidInsertPos`)
+  so a mid-card cursor can never split the card. Older CardMirrors
+  degrade unknown roles to `card` silently.
+
+- **Heal hollow analytic_units at load** (`schema/migrate.ts`). Files
+  written by some older builds carry an `analytic_unit` with no
+  children (a delete/drag path hollowed the unit without removing the
+  shell); `nodeFromJSON` accepted these silently for years until
+  beta.21's reject-invalid check refused the whole file ("Invalid
+  content for node analytic_unit: <>", field report beta.17 →
+  beta.22). Now a known-legacy shape, healed losslessly by one
+  normalize loop: empty unit dropped, headless children floated to
+  the parent level, a mid-tail analytic re-headed into its own unit
+  (same absorb rule as the card-split migration). Unknown invalid
+  shapes still fail cleanly.
+
+- **Gap-caret Backspace/Delete** (`boundary-cursor-keymap.ts`). A
+  click in the blank spacing between paragraphs parks the caret at a
+  non-textblock GAP position, visually indistinguishable from the
+  start of the next line. The gap handler (built for clicks past the
+  LAST card) either deleted the previous block's last character or
+  dispatched a caret-move-only first press. A between-blocks gap now
+  joins the two sides when the schema allows — `canJoin` refusing
+  preserves the card/tag structural protections — and normalizes the
+  caret otherwise; the edge-of-doc behavior is kept.
+
+- **Cite-creator token matching** (`ai/cite-creator.ts`). `cite_mark`
+  was applied to the model's [[TOKENS]] by exact substring search in
+  its own [[CITE]] text; drift between the two sections (case, curly
+  quotes, dashes, edge punctuation) silently marked nothing — so the
+  classifier never promoted the paragraph to `cite_paragraph` and
+  shrink treated the cite as body text. Matching now folds both sides
+  1:1 per character with an edge-punctuation-trim retry. Deliberately
+  NO fallback: a paragraph must never be a cite while it contains no
+  cite mark, so a genuinely absent token leaves body text — loudly,
+  via a toast telling the user to F8 the author/date.
+
 ## 0.1.0-beta.22 — 2026-07-24
 
 - **Plugin-declared settings** (`plugin-registry.ts`,

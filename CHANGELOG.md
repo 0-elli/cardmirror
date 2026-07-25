@@ -5,6 +5,58 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.23 — 2026-07-25
+
+### Added
+
+- **Permissions for external apps.** Local companion apps (like ebb)
+  insert text into CardMirror over a local connection — and until now,
+  anything on your machine could do that silently, even after
+  uninstalling the related plugin. Now the first time an app sends,
+  CardMirror asks — Always Allow / Allow Once / Deny — names the exact
+  app, and remembers your answer. A new External apps section at the
+  bottom of Settings → Plugins lists every app that has asked, lets
+  you flip or forget decisions, and holds the overall policy: ask for
+  each app (default), allow all (for older apps that don't identify
+  themselves), or block everything. Apps must identify themselves to
+  send; older versions that predate this get a clear "update the app
+  you were sending from" message instead of a mystery failure.
+
+- **Companion apps can target a specific document.** Senders can now
+  list your open documents and aim an insert at one of them — the
+  right pane of a three-pane window, a background window — without
+  CardMirror taking focus, and can tell which doc is your speech doc.
+  Sends can also carry a style now: tags, analytics, pockets, hats,
+  and blocks arrive as real structure with proper outline placement
+  instead of only body text. Thanks to Shreeram Modi for the styled
+  sends. Sending to whatever is focused still works exactly as
+  before.
+
+### Fixed
+
+- **"This CardMirror file is damaged" on files that opened fine in
+  older versions.** Some older builds could leave an invisible, empty
+  structural shell in a document; the file-safety check added in
+  beta.21 then refused the whole file. Those shells are now repaired
+  on open — losslessly, since they were empty — and the file loads.
+
+- **Backspace and Delete at clicks in blank space.** Clicking in the
+  empty spacing between paragraphs could park the cursor in a spot
+  that looked like the start of the next line but wasn't — Backspace
+  would then eat the last character of the paragraph above (or do
+  nothing but move the cursor) instead of removing the line break.
+  Both keys now remove the break, first press, like you expected.
+
+- **Shrink no longer shrinks AI-created cites.** The AI cite creator
+  could fail to style the author and date (making the cite an
+  ordinary paragraph that shrink treats as body text). The styling
+  is far more robust now, and if the author/date genuinely can't be
+  located, CardMirror says so at creation instead of leaving a
+  silently unprotected cite.
+
+- Tightened the spacing above the Verbatim Flow section on the
+  Plugins tab.
+
 ## 0.1.0-beta.22 — 2026-07-24
 
 ### Added
