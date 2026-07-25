@@ -37,6 +37,7 @@ import { Selection, TextSelection } from 'prosemirror-state';
 import type { Command, EditorState, Transaction } from 'prosemirror-state';
 import type { Node as PMNode, ResolvedPos } from 'prosemirror-model';
 import { joinBackward, joinForward } from 'prosemirror-commands';
+import { canJoin } from 'prosemirror-transform';
 
 /** True when the selection's end grabs a trailing paragraph break: it sits
  *  at offset 0 of a textblock that the selection started before. */
@@ -141,7 +142,37 @@ function editAdjacentBodyFromGap(
   dispatch: ((tr: Transaction) => void) | undefined,
   dir: -1 | 1,
 ): boolean {
-  const near = Selection.near(state.doc.resolve(state.selection.$head.pos), dir);
+  const $head = state.selection.$head;
+  // A gap BETWEEN two blocks first (field report, beta.22): a click in
+  // the blank spacing between paragraphs (or below a block's last line)
+  // parks the caret here, visually indistinguishable from the start of
+  // the next line — so the user's Backspace/Delete means "remove the
+  // return". The old delete-a-char-in-the-adjacent-body behavior ate
+  // the previous block's last character instead (or, when that block
+  // was empty, just moved the caret — a dead-feeling first press). Join
+  // the two sides when the schema allows it; `canJoin` refusing (card
+  // against card, tag boundaries) falls through to caret normalization
+  // into the following block, where the ordinary boundary rules apply
+  // on the next press.
+  if ($head.nodeBefore && $head.nodeAfter) {
+    if (!dispatch) return true;
+    if (canJoin(state.doc, $head.pos)) {
+      const tr = state.tr.join($head.pos);
+      tr.setSelection(
+        Selection.near(tr.doc.resolve(tr.mapping.map($head.pos, -1)), -1),
+      );
+      dispatch(tr.scrollIntoView());
+    } else {
+      const into = Selection.near(state.doc.resolve($head.pos), dir === -1 ? 1 : -1);
+      dispatch(state.tr.setSelection(into).scrollIntoView());
+    }
+    return true;
+  }
+  // Edge gap (nothing on one side — e.g. a click just past the LAST
+  // card): jump into the adjacent body and delete there, so the key
+  // edits it immediately — what the user expected from where they
+  // clicked.
+  const near = Selection.near(state.doc.resolve($head.pos), dir);
   if (!(near instanceof TextSelection)) return false;
   if (!dispatch) return true;
   const at = near.$head.pos;
