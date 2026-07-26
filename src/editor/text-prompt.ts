@@ -10,7 +10,17 @@
  * input on open; Enter submits, Esc cancels. Visual shape mirrors
  * the existing `pmd-route-dialog` overlays so it reads as part of
  * the same modal vocabulary.
+ *
+ * Every dialog here registers on the shared overlay stack for its
+ * whole lifetime: background key handlers (the home screen's 1-9
+ * shortcuts, its Escape) check `isAnyOverlayOpen()` to stand down, so
+ * a dialog that skips registration leaks its number keys through to
+ * whatever is underneath — pressing '2' in a route dialog over the
+ * home screen would ALSO fire home action 2. Key handling is guarded
+ * with `isTopOverlay` so stacked dialogs don't collapse together.
  */
+
+import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 
 /** Capture the focused element at dialog open; returns a restorer to call on
  *  close. In-DOM overlays don't steal OS-level focus, but removing them
@@ -57,6 +67,7 @@ export interface TextPromptOptions {
 export function promptForText(opts: TextPromptOptions): Promise<string | null> {
   return new Promise((resolve) => {
     const restoreFocus = captureFocusForDialog();
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -89,6 +100,7 @@ export function promptForText(opts: TextPromptOptions): Promise<string | null> {
     buttons.className = 'pmd-text-prompt-buttons';
 
     const cleanup = (): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
       restoreFocus();
@@ -125,6 +137,7 @@ export function promptForText(opts: TextPromptOptions): Promise<string | null> {
     });
 
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         cleanup();
@@ -176,6 +189,7 @@ export function promptForChoice<T extends string>(
 ): Promise<T | null> {
   return new Promise((resolve) => {
     const restoreFocus = captureFocusForDialog();
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -197,6 +211,7 @@ export function promptForChoice<T extends string>(
     buttons.className = 'pmd-text-prompt-buttons';
 
     const cleanup = (): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
       restoreFocus();
@@ -236,6 +251,7 @@ export function promptForChoice<T extends string>(
     });
 
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         cleanup();
@@ -283,6 +299,7 @@ export function promptForRouteChoice<T extends string>(
 ): Promise<T | null> {
   return new Promise((resolve) => {
     const restoreFocus = captureFocusForDialog();
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -297,6 +314,7 @@ export function promptForRouteChoice<T extends string>(
     buttons.className = 'pmd-route-buttons';
 
     const cleanup = (): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
       restoreFocus();
@@ -344,6 +362,7 @@ export function promptForRouteChoice<T extends string>(
     });
 
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         cleanup();
@@ -377,6 +396,7 @@ export function promptForRouteChoice<T extends string>(
 export function alertDialog(message: string, opts?: { title?: string }): Promise<void> {
   return new Promise((resolve) => {
     const restoreFocus = captureFocusForDialog();
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -403,6 +423,7 @@ export function alertDialog(message: string, opts?: { title?: string }): Promise
     okBtn.className = 'pmd-text-prompt-ok';
     okBtn.textContent = 'OK';
     const done = (): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
       restoreFocus();
@@ -417,6 +438,7 @@ export function alertDialog(message: string, opts?: { title?: string }): Promise
       if (e.target === overlay) done();
     });
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape' || e.key === 'Enter') {
         e.preventDefault();
         done();
@@ -436,6 +458,7 @@ export function confirmDialog(
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const restoreFocus = captureFocusForDialog();
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -455,6 +478,7 @@ export function confirmDialog(
     const buttons = document.createElement('div');
     buttons.className = 'pmd-text-prompt-buttons';
     const finish = (value: boolean): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
       restoreFocus();
@@ -479,6 +503,7 @@ export function confirmDialog(
       if (e.target === overlay) finish(false);
     });
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         finish(false);

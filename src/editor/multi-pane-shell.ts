@@ -112,6 +112,7 @@ import {
 } from './collab/collab-hooks.js';
 import { icon, setIcon } from './icons';
 import { formatSpeechFilename } from './speech-filename.js';
+import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 
 type SlotId = 'slot1' | 'slot2' | 'slot3';
 const SLOT_IDS: SlotId[] = ['slot1', 'slot2', 'slot3'];
@@ -2456,6 +2457,11 @@ class MultiPaneShell {
    *  chosen slot, or null if the user cancels. */
   private promptForSlot(filename: string): Promise<SlotId | null> {
     return new Promise((resolve) => {
+      // Register on the shared overlay stack so background number-key
+      // handlers stand down — without this, picking a slot with '1'/'2'/
+      // '3' over the home screen ALSO fired the matching home action
+      // (isAnyOverlayOpen() saw no overlay).
+      const overlayToken = pushOverlay();
       const overlay = document.createElement('div');
       overlay.className = 'pmd-route-overlay';
       // Single resolution path for all four ways out (slot click,
@@ -2463,6 +2469,7 @@ class MultiPaneShell {
       // listener always detaches — a mouse-completed pick must not
       // leave a stale handler that eats the next typed '1'/'2'/'3'.
       const finish = (choice: SlotId | null): void => {
+        popOverlay(overlayToken);
         document.removeEventListener('keydown', onKey);
         overlay.remove();
         resolve(choice);
@@ -2501,6 +2508,7 @@ class MultiPaneShell {
       // chords with modifiers so e.g. Ctrl+1 keeps its slot-focus
       // meaning even if a picker is open.
       const onKey = (e: KeyboardEvent) => {
+        if (!isTopOverlay(overlayToken)) return;
         if (e.key === 'Escape') {
           finish(null);
           return;
