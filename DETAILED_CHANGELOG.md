@@ -5,6 +5,85 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.24 — Unreleased
+
+- **Modal dialogs join the shared overlay stack**
+  (`src/editor/text-prompt.ts`, the multi-pane slot picker, and the
+  remaining one-off modals). Background key handlers — the home
+  screen's 1-9 shortcuts and its Escape — stand down while a modal is
+  up by checking `isAnyOverlayOpen()`, but the shared dialog
+  primitives (`promptForText`/`Choice`/`RouteChoice`, `alertDialog`,
+  `confirmDialog`) and several hand-rolled modals never registered on
+  the stack. Any number-key dialog over the home screen double-fired:
+  the three-pane "Open into…" picker's 1/2/3 chose a slot AND ran the
+  matching home action; the close-unsaved dialog's 1/2/3 had the same
+  leak. Every modal now pushes a token for its lifetime and guards its
+  key handler with `isTopOverlay`, which also fixes two adjacent
+  defects: stacked dialogs collapsing together on one Escape, and
+  capture-phase modals swallowing a stacked dialog's keys before it
+  saw them. Non-modal floating panels deliberately stay OFF the stack
+  — editing continues while they're open, so parking them there would
+  wrongly disable background shortcuts.
+
+- **Nav pane: Cut heading and contents** (`src/editor/nav-panel.ts`).
+  Sits between Select and Copy (standard cut/copy order). Cut is
+  copy-then-delete with the delete gated twice: it runs only after
+  the async clipboard write succeeds (a busy clipboard must never
+  destroy content), and only if no transaction landed during the
+  write — a collab peer's edit or typing during a clipboard retry
+  would shift the captured range, so a stale doc aborts the delete
+  with a toast instead of removing the wrong span. That second gate
+  also covers the nav reattaching to a different pane's view
+  mid-write. Serialization is shared with Copy via a
+  `rangeClipboardPayload` helper.
+
+- **Live enclosing-container read time**
+  (`src/editor/live-read-time.ts`; setting `liveContainerReadTime`,
+  default on, General → Word counts). One shared module drives both
+  the single-pane status bar and the three-pane pane footers. The
+  container ladder: nearest wrapping `card` or `analytic_unit` wins;
+  otherwise the block SECTION is resolved positionally (block heading
+  through the next equal-or-shallower heading via
+  `sectionEndFromHeading` — blocks aren't containers in the schema).
+  Pocket/hat headings and loose doc-level content stay silent by
+  design. With a selection the segment shows the selection's time
+  instead, and is dropped when `liveSelectionWordCount` already makes
+  the selection the primary readout. The whole-doc side reads "Doc:"
+  while the feature is on, so the two sides are symmetric; off
+  restores the exact pre-feature bare-number readout. Cursor moves
+  now refresh the readout when enabled; cost is held down by caching
+  the container count on (doc identity, range) — within-container
+  moves are an ancestor walk — and the pane footers gained the
+  whole-doc count cache the single-pane bar already had. Upgraded
+  installs get the feature via the default-on sanitize pattern.
+
+- **Paint mode: Alt/Option strip-pen override**
+  (`src/editor/color-panel.ts`). While a colored paintbrush is armed,
+  a stroke released with Alt held paints "no color" — the same strip
+  the null pen does, run through `applyAndCollapseSelection` so it
+  keeps the single-undo-step and brush-lift collapse. The apply
+  decision reads `e.altKey` off the mouseup event itself; the
+  keydown/keyup listeners only keep the cursor truthful (red-slash
+  none glyph, matching the pickers' none swatch, while Alt is down),
+  so a missed keyup can never make the wrong pen fire. Window blur
+  clears the override — Cmd-Tabbing away with Alt down eats the keyup
+  and would otherwise leave a stuck strip-pen. A pen already set to
+  "none" ignores Alt. Persisted pen colors are never touched.
+
+- **Paint-mode visuals follow pane focus** (`src/editor/color-panel.ts`
+  + `setActiveView`). The brush already followed focus — the mouseup
+  handler resolves the view at stroke time — but the armed
+  cursor/class are DOM state on a specific editor element, synced only
+  on arm/disarm/settings/Alt transitions and cleared only from the
+  CURRENTLY focused view. In multi-pane that left the old pane showing
+  a live-looking brush while the pane the brush actually applied to
+  showed none, and disarming from another pane left the armed pane's
+  brush cursor stuck permanently. `syncPaintbrushUI` now remembers
+  which element carries the visuals and always clears THAT element
+  before re-applying to the current view; `setActiveView` triggers a
+  resync on real focus changes (no-op when nothing is armed). Apply
+  behavior is untouched.
+
 ## 0.1.0-beta.23 — 2026-07-25
 
 - **External-app consent gate** (`apps/desktop/src/external-consent.ts`

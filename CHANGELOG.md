@@ -5,6 +5,50 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.24 — Unreleased
+
+### Added
+
+- **Cut from the navigation pane.** Right-clicking a heading in the
+  nav pane now offers **Cut heading and contents** alongside Select,
+  Copy, and Delete — copy the heading and everything under it to the
+  clipboard and remove it in one step, ready to paste elsewhere.
+  Ctrl-Z restores it. The removal only happens after the copy has
+  safely landed on the clipboard, so a busy clipboard can never cost
+  you content.
+
+- **Live read time for the card you're in.** The status-bar word
+  count gains a second readout showing the smallest thing enclosing
+  your cursor — the card, the analytic, or the block section:
+  "Doc: 1,234 · Amy: 8:12 | Card: 42 · Amy: 0:31". Select text and it
+  shows the selection's time instead. In the three-pane workspace each
+  pane's footer tracks its own cursor. Controlled by a new toggle in
+  **Settings → General → Word counts** (on by default; turning it off
+  restores the exact previous readout).
+
+- **Hold Alt/Option to erase while painting.** With a colored
+  highlight, background, or font-color paintbrush armed, holding
+  **Alt** (**Option** on macOS) temporarily turns it into the
+  "no color" pen — the cursor's swatch flips to the red-slash glyph,
+  and each drag strips the mark instead of painting. Release the key
+  and your color is back. Your saved pen color is never changed.
+
+### Fixed
+
+- **Dialog keys no longer fall through to the home screen.** Pressing
+  a number key (or Esc) in a dialog shown over the home screen — the
+  three-pane "Open into…" pane picker, the save-before-closing
+  prompt, and others — also triggered the home-screen action on the
+  same key, so picking pane 1 could simultaneously create a new
+  document underneath. Dialogs now block the keys beneath them, and
+  when two dialogs stack, Esc closes one at a time instead of both.
+
+- **Paint mode's cursor now follows you between panes.** In the
+  three-pane workspace the brush itself always applied to the pane
+  you clicked into, but the paint cursor stayed drawn on the pane you
+  left — and could get stuck there permanently if you left paint mode
+  from a different pane. The visuals now move with your focus.
+
 ## 0.1.0-beta.23 — 2026-07-25
 
 ### Added

@@ -267,6 +267,13 @@ mirrors Word's Navigation Pane, but does more:
   carries the whole heading and its contents and drops it wherever the
   structure allows. Hold **Ctrl** (or **Alt** on macOS) while dragging to
   **copy** instead of move.
+- **Right-click menu** — right-click an entry for **Select / Cut /
+  Copy / Delete**, each acting on the heading *and everything under
+  it*, plus quick access to the level filter. **Cut** copies the
+  section to the clipboard and removes it in one step, ready to paste
+  elsewhere (Ctrl-Z restores; the removal only happens once the copy
+  has safely landed on the clipboard). Delete and Cut are both
+  undoable like any edit.
 
 ### Card numbering
 
@@ -528,7 +535,11 @@ paint, until you pick a color again.
 **Paintbrush mode** (the way Word's highlighter works): click a main
 color button with *nothing* selected to arm it. The cursor changes, and
 every drag-select you make applies that color until you press **Esc** or
-click the button again.
+click the button again. While a colored brush is armed, hold **Alt**
+(**Option** on macOS) to temporarily flip it to the **no-color** pen —
+the cursor's swatch shows the red-slash glyph, and each drag *strips*
+the mark instead of painting. Release the key and your color is back;
+the saved pen color never changes.
 
 The **acronym variants** mark just the first letter of each word in the
 selection: **Alt-F10** (emphasis) and **Alt-F11** (highlight) — for
@@ -970,13 +981,29 @@ breakdown — that dialog shows the read time for **every** reader on your
 list, not just the two in the bar, and the word count and read time for
 the current selection.
 
-By default the status bar always reflects the **whole document**. Turn on
-**Settings → General → "Live selection word count"** to have the bar
-switch to the **selection's** word count and read time the moment you
+The bar also shows a second, **enclosing-container** readout — the read
+time of the smallest structure your cursor is inside: the **card**, the
+**analytic**, or the **block section** (a block heading through the next
+equal-or-higher heading): `Doc: 1,234 · Amy: 8:12 | Card: 42 ·
+Amy: 0:31`. Select text and the second readout shows the **selection's**
+time instead. On pocket or hat headings (and content outside any card
+or block) it stays quiet — the whole-doc number covers those scales. In
+the three-pane workspace, each pane's footer tracks its own cursor.
+Controlled by **Settings → General → "Live read time for the enclosing
+card / block"** — on by default, and cheap even on large files (the
+count is cached per container, so moving the cursor doesn't re-count
+anything). Turning it off restores the plain whole-doc readout exactly
+as it was.
+
+By default the primary readout always reflects the **whole document**.
+Turn on **Settings → General → "Live selection word count"** to have the
+bar switch to the **selection's** word count and read time the moment you
 select text — handy for checking how long a block will take before you
 send it. It's off by default because re-counting on every selection
 change can lag on very large files; with it off, use the **Σ** button to
-get a selection's read time on demand.
+get a selection's read time on demand. (With the enclosing-container
+readout on, a selection's time already appears in the second readout
+either way.)
 
 ### The speech and prep timer
 
