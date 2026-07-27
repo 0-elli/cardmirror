@@ -44,6 +44,7 @@ import {
   installIncomingSpeechSliceHandler,
 } from './speech-doc-send.js';
 import { promptForText, promptForRouteChoice, alertDialog, confirmDialog } from './text-prompt.js';
+import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 import { openDocMenu } from './doc-menu-ui.js';
 import { createReference } from './create-reference.js';
 import { showToast } from './toast.js';
@@ -1986,6 +1987,7 @@ async function replaceWithSessionDoc(): Promise<boolean> {
  *  the explicit Cancel button. */
 function confirmNewDocOverwrite(): Promise<'save' | 'discard' | 'cancel'> {
   return new Promise((resolve) => {
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -2000,6 +2002,7 @@ function confirmNewDocOverwrite(): Promise<'save' | 'discard' | 'cancel'> {
     buttons.className = 'pmd-route-buttons';
 
     const cleanup = (): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
     };
@@ -2033,6 +2036,7 @@ function confirmNewDocOverwrite(): Promise<'save' | 'discard' | 'cancel'> {
       if (e.target === overlay) { cleanup(); resolve('cancel'); }
     });
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape') { cleanup(); resolve('cancel'); }
     };
     document.addEventListener('keydown', onKey);
@@ -7818,6 +7822,7 @@ async function handleUserCloseRequestInner(
  *  multi-pane's per-pane close handler. */
 export function confirmCloseUnsaved(): Promise<'save' | 'saveAs' | 'discard' | 'cancel'> {
   return new Promise((resolve) => {
+    const overlayToken = pushOverlay();
     const overlay = document.createElement('div');
     overlay.className = 'pmd-route-overlay';
     const dialog = document.createElement('div');
@@ -7832,6 +7837,7 @@ export function confirmCloseUnsaved(): Promise<'save' | 'saveAs' | 'discard' | '
     buttons.className = 'pmd-route-buttons';
 
     const cleanup = (): void => {
+      popOverlay(overlayToken);
       overlay.remove();
       document.removeEventListener('keydown', onKey);
     };
@@ -7889,6 +7895,7 @@ export function confirmCloseUnsaved(): Promise<'save' | 'saveAs' | 'discard' | '
       }
     });
     const onKey = (e: KeyboardEvent): void => {
+      if (!isTopOverlay(overlayToken)) return;
       if (e.key === 'Escape') {
         cleanup();
         resolve('cancel');

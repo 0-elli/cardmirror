@@ -31,6 +31,7 @@ import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { collectHeadings, type HeadingEntry } from './headings.js';
 import { captureFocusForDialog } from './text-prompt.js';
+import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 
 interface PickerRow {
   entry: HeadingEntry;
@@ -171,7 +172,9 @@ export function openSelfRefPicker(
   }
 
   let picked = false;
+  const overlayToken = pushOverlay();
   const close = (): void => {
+    popOverlay(overlayToken);
     document.removeEventListener('keydown', onKey, true);
     overlay.remove();
     restoreFocus();
@@ -269,6 +272,7 @@ export function openSelfRefPicker(
     return out;
   };
   const onKey = (e: KeyboardEvent): void => {
+    if (!isTopOverlay(overlayToken)) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       close();

@@ -17,8 +17,10 @@ import { getElectronHost } from './host/index.js';
 import { captureFocusForDialog } from './text-prompt.js';
 import { showToast } from './toast.js';
 import { setIcon } from './icons';
+import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 
 let openOverlay: HTMLDivElement | null = null;
+let overlayToken: symbol | null = null;
 
 interface DocRow {
   uid: string;
@@ -37,6 +39,8 @@ let restoreFocusOnClose: (() => void) | null = null;
 
 function closeModal(): void {
   if (!openOverlay) return;
+  if (overlayToken) popOverlay(overlayToken);
+  overlayToken = null;
   openOverlay.remove();
   openOverlay = null;
   document.removeEventListener('keydown', onEscape);
@@ -45,6 +49,10 @@ function closeModal(): void {
 }
 
 function onEscape(e: KeyboardEvent): void {
+  // Only react as the topmost overlay — background handlers (the home
+  // screen) key off the shared stack, and a stacked dialog above us
+  // owns the keyboard until it closes.
+  if (overlayToken && !isTopOverlay(overlayToken)) return;
   if (e.key === 'Escape') closeModal();
 }
 
@@ -190,5 +198,6 @@ export async function openSelectSpeechDocModal(): Promise<void> {
 
   document.body.appendChild(overlay);
   openOverlay = overlay;
+  overlayToken = pushOverlay();
   document.addEventListener('keydown', onEscape);
 }

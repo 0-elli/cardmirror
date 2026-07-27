@@ -13,6 +13,7 @@
 import type { EditorView } from 'prosemirror-view';
 import { settings } from './settings.js';
 import { showToast } from './toast.js';
+import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 import {
   cutFocusedCard,
   focusedCardStatus,
@@ -68,11 +69,17 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   header.textContent = highlightOnly ? 'Highlight card' : 'Cut card';
   dialog.appendChild(header);
 
+  const overlayToken = pushOverlay();
   const close = (): void => {
+    popOverlay(overlayToken);
     overlay.remove();
     document.removeEventListener('keydown', onKey, true);
   };
   const onKey = (e: KeyboardEvent): void => {
+    // Only the topmost overlay owns the keyboard — this handler is
+    // capture-phase, so acting while stacked under another dialog
+    // would swallow that dialog's keys before it ever saw them.
+    if (!isTopOverlay(overlayToken)) return;
     if (e.key === 'Escape') {
       close();
       return;
@@ -326,14 +333,18 @@ function openHighlightDownSheet(view: EditorView): void {
   header.textContent = 'Refine highlighting';
   dialog.appendChild(header);
 
+  const overlayToken = pushOverlay();
   const close = (): void => {
+    popOverlay(overlayToken);
     overlay.remove();
     document.removeEventListener('keydown', onKey, true);
   };
   // Modal: swallow every keystroke that isn't aimed at the dialog's own
   // controls, so the underlying doc never sees it (capture phase, before
-  // ProseMirror's keydown handler on the editor).
+  // ProseMirror's keydown handler on the editor). Guarded to the topmost
+  // overlay so a dialog stacked above keeps its own keys.
   const onKey = (e: KeyboardEvent): void => {
+    if (!isTopOverlay(overlayToken)) return;
     if (e.key === 'Escape') {
       close();
       return;
