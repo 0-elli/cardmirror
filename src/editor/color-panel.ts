@@ -54,6 +54,13 @@ export interface ColorPanelHandle {
    *  picker-open commands. Anchors at the arrow-button DOM element
    *  so the dropdown lands in the same place as a ribbon click. */
   openPicker(mode: PaintbrushMode): void;
+  /** Re-apply the paint-mode visuals to the CURRENT view. Called on
+   *  pane-focus changes (setActiveView): the brush itself already
+   *  follows focus — the mouseup handler resolves the view at stroke
+   *  time — but the armed cursor/class are DOM state on a specific
+   *  editor element, so without this the pane you left keeps showing
+   *  the brush and the pane you're in doesn't. */
+  syncPaintbrushView(): void;
 }
 
 interface ColorControlSetup {
@@ -101,23 +108,31 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
     btn.setAttribute('title', key ? `${label} (${key})` : label);
   }
 
+  // The editor element currently carrying the paint-mode visuals.
+  // Cleanup must target THIS element, not whichever view is focused at
+  // sync time — in multi-pane, disarming from a different pane used to
+  // leave the armed pane's brush cursor stuck forever.
+  let paintedEl: HTMLElement | null = null;
+
   function syncPaintbrushUI(): void {
-    const view = viewRef.view;
-    const editorEl = view?.dom as HTMLElement | undefined;
-    if (editorEl) {
-      editorEl.classList.remove(
+    if (paintedEl) {
+      paintedEl.classList.remove(
         'pmd-paintbrush-highlight',
         'pmd-paintbrush-shading',
         'pmd-paintbrush-fontcolor',
       );
       // Reset any custom cursor from a previous mode. The CSS
       // fallback (cursor: text) takes over until we re-arm.
-      editorEl.style.cursor = '';
+      paintedEl.style.cursor = '';
+      paintedEl = null;
     }
+    const view = viewRef.view;
+    const editorEl = view?.dom as HTMLElement | undefined;
     for (const id of ['highlight-btn', 'shading-btn', 'fontcolor-btn']) {
       document.getElementById(id)?.classList.remove('pmd-paintbrush-active');
     }
     if (activePaintbrush) {
+      if (editorEl) paintedEl = editorEl;
       editorEl?.classList.add(`pmd-paintbrush-${activePaintbrush}`);
       document.getElementById(`${activePaintbrush}-btn`)?.classList.add('pmd-paintbrush-active');
       // Custom SVG cursor: a precision pointer (I-beam) so the user
@@ -245,6 +260,11 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
       const anchor = document.getElementById(setup.arrowBtnId) as HTMLButtonElement | null;
       if (!anchor) return;
       openPicker(anchor, setup, viewRef);
+    },
+    syncPaintbrushView: () => {
+      // Cheap no-op path when nothing is armed AND nothing is painted:
+      // this runs on every pane-focus change.
+      if (activePaintbrush || paintedEl) syncPaintbrushUI();
     },
   };
 }

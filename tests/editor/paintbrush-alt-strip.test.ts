@@ -127,6 +127,46 @@ describe('paintbrush Alt strip-pen', () => {
     expect(highlighted('marked')).toBe(false);
   });
 
+  it('pane switch moves the visuals; disarming from another pane cleans the armed one', () => {
+    // Two views behind a mutable ref — the three-pane shape.
+    const mkView = (): EditorView => {
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      return new EditorView(el, {
+        state: EditorState.create({ doc: cardWith([schema.text('words')]) }),
+      });
+    };
+    const a = mkView();
+    const b = mkView();
+    const ref = { view: a as EditorView | null };
+    const h = wireColorPanel({
+      get view() {
+        return ref.view;
+      },
+    });
+
+    h.togglePaintbrush('highlight');
+    expect(a.dom.style.cursor).not.toBe('');
+    expect(a.dom.classList.contains('pmd-paintbrush-highlight')).toBe(true);
+
+    // Focus pane B (setActiveView path calls syncPaintbrushView).
+    ref.view = b;
+    h.syncPaintbrushView();
+    expect(a.dom.style.cursor).toBe(''); // visuals left pane A…
+    expect(a.dom.classList.contains('pmd-paintbrush-highlight')).toBe(false);
+    expect(b.dom.style.cursor).not.toBe(''); // …and follow to pane B
+    expect(b.dom.classList.contains('pmd-paintbrush-highlight')).toBe(true);
+
+    // Disarm while B is focused: nothing anywhere keeps brush chrome.
+    h.togglePaintbrush('highlight');
+    expect(a.dom.style.cursor).toBe('');
+    expect(b.dom.style.cursor).toBe('');
+    expect(b.dom.classList.contains('pmd-paintbrush-highlight')).toBe(false);
+
+    a.destroy();
+    b.destroy();
+  });
+
   it('cursor swatch flips to the slash glyph while Alt is held, reverts on keyup and blur', () => {
     mount(cardWith([schema.text('words')]));
     handle.togglePaintbrush('highlight');

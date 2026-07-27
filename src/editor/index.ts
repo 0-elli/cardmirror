@@ -1104,7 +1104,8 @@ function flushSelectionChrome(): void {
 /** Used by the multi-pane shell: route the shared ribbon /
  *  chrome through the currently-focused pane's view. */
 export function setActiveView(v: EditorView | null): void {
-  if (v !== view) {
+  const focusChanged = v !== view;
+  if (focusChanged) {
     // A real focus change — pane switch, stack switch, home screen — not
     // the per-transaction re-run (same view). An open find bar belongs to
     // the outgoing pane: close it now, while it can still clear that
@@ -1115,6 +1116,12 @@ export function setActiveView(v: EditorView | null): void {
     findReplaceBar?.close({ refocusEditor: false });
   }
   view = v;
+  // Paint-mode visuals live on a specific editor element; the brush
+  // itself follows focus (the mouseup handler resolves the view at
+  // stroke time), so move the armed cursor/class to the pane it now
+  // applies to. Must run AFTER `view` is reassigned — the color
+  // panel's viewRef reads it. No-op when nothing is armed or painted.
+  if (focusChanged) colorPanel?.syncPaintbrushView();
   if (v) {
     currentDoc = v.state.doc;
   }
