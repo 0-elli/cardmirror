@@ -6333,6 +6333,10 @@ async function pickAndLoadInPlace(): Promise<boolean> {
     return true;
   } catch (err) {
     if (err instanceof OpenCancelledError) return false; // user dismissed the password box
+    if (err instanceof NativeDamagedError) {
+      await offerDamagedSalvage(src.name, src.bytes);
+      return false; // the ORIGINAL open failed; salvage mounts its own copy
+    }
     void alertDialog(
       err instanceof UnsupportedEncryptionError
         ? err.message
@@ -6650,6 +6654,10 @@ async function openRecentInPlace(recent: RecentFile): Promise<void> {
     });
   } catch (err) {
     if (err instanceof OpenCancelledError) return; // user dismissed the password box
+    if (err instanceof NativeDamagedError) {
+      await offerDamagedSalvage(file.name, file.bytes);
+      return;
+    }
     void alertDialog(
       err instanceof UnsupportedEncryptionError
         ? err.message
@@ -8844,6 +8852,15 @@ async function mountFromSpawnPayload(
     updateWindowTitle();
     console.log(`Spawned with ${payload.filename}: ${countSummary(docNode)}`);
   } catch (err) {
+    if (err instanceof NativeDamagedError) {
+      // Mount the starter FIRST so the window isn't broken if the
+      // user declines; a confirmed salvage then replaces it. This
+      // path covers spawned windows AND file-association opens
+      // (double-clicking a .cmir), so the offer must live here too.
+      mountView(currentDoc);
+      await offerDamagedSalvage(payload.filename, openBytes);
+      return;
+    }
     console.error('Failed to mount spawned doc:', err);
     void alertDialog(`Failed to load: ${err instanceof Error ? err.message : err}`);
     // Fall back to the starter so the window isn't broken.
