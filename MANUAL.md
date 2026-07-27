@@ -298,6 +298,12 @@ separated by blocks number consecutively straight through (press again to
 restore the per-block restarts). A selection of tags flags those cards to
 restart the count instead.
 
+While numbering is on, a block whose count **continues** from the block
+above shows a small grey **↓** at the right edge of its heading. No glyph
+means the default: the count restarts at that block. It's a display-only
+hint (it never exports) so you can read a long file's numbering scheme at
+a glance.
+
 Tune how they look in **Settings → Appearance → Card numbering**: independent
 formats for the number and its substructure, the separator between them (period,
 dash, colon, and more), whether the substructure is capitalized and whether it's
