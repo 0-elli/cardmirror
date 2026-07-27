@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.24 — Unreleased
+## 0.1.0-beta.24 — 2026-07-26
 
 - **Modal dialogs join the shared overlay stack**
   (`src/editor/text-prompt.ts`, the multi-pane slot picker, and the
