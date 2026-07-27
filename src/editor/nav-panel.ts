@@ -1957,6 +1957,11 @@ export class NavigationPanel {
       },
       {
         kind: 'item',
+        label: 'Cut heading and contents',
+        action: () => { void this.cutHeadingAndContents(entry); },
+      },
+      {
+        kind: 'item',
         label: 'Copy heading and contents',
         action: () => { void this.copyHeadingAndContents(entry); },
       },
@@ -2052,6 +2057,21 @@ export class NavigationPanel {
     this.view.dispatch(tr);
   }
 
+  /** HTML + plain-text clipboard payload for a heading range. */
+  private rangeClipboardPayload(range: { from: number; to: number }): {
+    html: string;
+    text: string;
+  } {
+    const slice = this.view!.state.doc.slice(range.from, range.to);
+    const serializer = DOMSerializer.fromSchema(this.view!.state.schema);
+    const tmp = document.createElement('div');
+    tmp.appendChild(serializer.serializeFragment(slice.content));
+    return {
+      html: tmp.innerHTML,
+      text: slice.content.textBetween(0, slice.content.size, '\n', '\n'),
+    };
+  }
+
   /**
    * Copy the heading + subtree to the clipboard as both HTML and plain
    * text. Doesn't move focus or change the selection.
@@ -2060,19 +2080,40 @@ export class NavigationPanel {
     if (!this.view) return;
     const range = this.computeHeadingRange(entry);
     if (!range) return;
-    const slice = this.view.state.doc.slice(range.from, range.to);
-
-    const serializer = DOMSerializer.fromSchema(this.view.state.schema);
-    const tmp = document.createElement('div');
-    tmp.appendChild(serializer.serializeFragment(slice.content));
-    const html = tmp.innerHTML;
-    const text = slice.content.textBetween(0, slice.content.size, '\n', '\n');
+    const { html, text } = this.rangeClipboardPayload(range);
 
     // Shared host-first / retrying path; every outcome surfaces —
     // the silent version of this taught a user that copy buttons
     // "need five clicks" (see clipboard-write.ts).
     if (await writeClipboardHtml(html, text)) showToast('Copied!');
     else showToast(CLIPBOARD_BUSY_MESSAGE);
+  }
+
+  /**
+   * Cut = copy, then delete — and the delete happens only after the
+   * clipboard write SUCCEEDS, so a busy clipboard can never destroy
+   * content. The write is async (host-first, retrying): if any
+   * transaction lands meanwhile (a collab peer's edit, typing during a
+   * retry cycle), the captured range is stale — the delete is aborted
+   * rather than removing a shifted span. Undo via Cmd+Z as with Delete.
+   */
+  private async cutHeadingAndContents(entry: HeadingEntry): Promise<void> {
+    if (!this.view) return;
+    const range = this.computeHeadingRange(entry);
+    if (!range) return;
+    const docAtCopy = this.view.state.doc;
+    const { html, text } = this.rangeClipboardPayload(range);
+
+    if (!(await writeClipboardHtml(html, text))) {
+      showToast(CLIPBOARD_BUSY_MESSAGE);
+      return;
+    }
+    if (!this.view || this.view.state.doc !== docAtCopy) {
+      showToast('Document changed while cutting — copied, but nothing was deleted.');
+      return;
+    }
+    this.view.dispatch(this.view.state.tr.delete(range.from, range.to));
+    showToast('Cut!');
   }
 
   /**
