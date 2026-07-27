@@ -66,6 +66,17 @@ see `DETAILED_CHANGELOG.md`.
   repair on open too (the table is dropped; the cell is refilled with
   an empty line so the table's columns stay aligned).
 
+- **Typing in the search bar is much faster with a large file
+  library.** With thousands of files under the search folders, the
+  first few characters typed into the everything-search bar could
+  visibly freeze. Four fixes: the file list now loads the moment the
+  bar opens instead of on the first keystroke; background preparation
+  of pinned files for search-inside now waits until you actually stop
+  typing (it used to be forced into the middle of a typing burst —
+  the biggest freeze); each keystroke now does far less per-file
+  matching work; and results render 50 at a time instead of 100, with
+  "show more" unchanged.
+
 - **Pressing Enter to confirm a dialog no longer also types into the
   document.** Confirming certain dialogs with the keyboard — most
   visibly Enter on the three-pane mode-switch confirmation — also sent

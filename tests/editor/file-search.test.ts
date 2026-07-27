@@ -10,6 +10,7 @@ import {
   dirName,
   fileFormat,
   stripFileExt,
+  makeFileEntry,
   searchFiles,
   searchFileObjects,
   extractFile,
@@ -43,8 +44,29 @@ describe('path helpers', () => {
 });
 
 function file(name: string, relPath = name, mtimeMs = 0): FileEntry {
-  return { path: `/root/${relPath}`, relPath, name, mtimeMs };
+  const entry = makeFileEntry(`/root/${relPath}`, relPath, mtimeMs);
+  // Some cases name the entry differently from its relPath basename;
+  // keep that freedom while the lowered match field stays in sync.
+  return { ...entry, name, nameLower: name.toLowerCase() };
 }
+
+describe('makeFileEntry', () => {
+  it('derives the display name and precomputed lowercase match fields', () => {
+    const e = makeFileEntry('/r/Neg/Warming DA.cmir', 'Neg/Warming DA.cmir', 5);
+    expect(e.name).toBe('Warming DA');
+    expect(e.nameLower).toBe('warming da');
+    expect(e.dirLower).toBe('neg');
+    expect(e.mtimeMs).toBe(5);
+  });
+
+  it('matching runs on the precomputed fields — mixed-case query and name still meet', () => {
+    // Regression for the pre-lowered refactor: if a caller ever builds
+    // entries without lowering, this stops matching.
+    const files = [file('Warming Impacts.cmir', 'NEG/Warming Impacts.cmir')];
+    expect(searchFiles(files, 'WARMING').length).toBe(1);
+    expect(searchFiles(files, 'neg warming').length).toBe(1); // cross-field tokens
+  });
+});
 
 describe('searchFiles', () => {
   const files = [file('Warming Impacts.cmir'), file('Heg Good.cmir'), file('warming good.cmir')];

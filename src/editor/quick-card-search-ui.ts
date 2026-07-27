@@ -74,10 +74,9 @@ import {
   extractFile,
   searchFiles,
   searchFileObjects,
-  baseName,
+  makeFileEntry,
   dirName,
   fileFormat,
-  stripFileExt,
   FILE_OBJECT_KIND_BADGES,
   type FileEntry,
   type FileObject,
@@ -151,11 +150,37 @@ function pruneWarm(pins: Set<string>): void {
   }
 }
 
-/** Resolve on the next idle slot (setTimeout fallback). The renderer
- *  defers idle callbacks until the user pauses, so waiting on one before
- *  each file parse keeps the work off active keystrokes. */
-function idleYield(timeout = 500): Promise<void> {
-  return new Promise((resolve) => scheduleIdle(() => resolve(), timeout));
+/** Last document-level keydown, tracked so the warm pass can tell "the
+ *  renderer has an idle frame" apart from "the user is actually done
+ *  typing" — a 200ms gap between words presents idle frames, and a
+ *  parse started there still lands on the next keystroke. */
+let lastKeydownAt = 0;
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'keydown',
+    () => {
+      lastKeydownAt = Date.now();
+    },
+    { capture: true, passive: true },
+  );
+}
+
+/** Keyboard-quiet threshold before a warm parse may start. */
+const PARSE_QUIET_MS = 600;
+
+/** Resolve once the renderer is genuinely idle AND the keyboard has
+ *  been quiet for PARSE_QUIET_MS. Each warm parse is a monolithic
+ *  main-thread block (parseNative / fromDocx — up to hundreds of ms),
+ *  so it must never be forced into a typing burst: no idle-timeout cap
+ *  (starving while the user types is the point — the cold-dive path
+ *  covers a file that never gets warmed). */
+async function waitForParseWindow(): Promise<void> {
+  for (;;) {
+    await new Promise<void>((resolve) => scheduleIdle(() => resolve(), Infinity));
+    const sinceKey = Date.now() - lastKeydownAt;
+    if (sinceKey >= PARSE_QUIET_MS) return;
+    await new Promise((resolve) => setTimeout(resolve, PARSE_QUIET_MS - sinceKey));
+  }
 }
 
 /** Parse a listed file's bytes into a schema doc — `.docx` through the
@@ -172,8 +197,9 @@ async function parseFileDoc(
 }
 
 /** Parse the pinned/recent files that aren't warm yet (or are stale by
- *  mtime), one at a time, yielding to idle before each parse so it never
- *  blocks a keystroke. Prunes rotated-out pins first.
+ *  mtime), one at a time, waiting for an idle frame AND a pause in
+ *  typing before each parse so it never blocks a keystroke. Prunes
+ *  rotated-out pins first.
  *  Cheap on repeat passes — already-fresh files are skipped. `keepGoing`
  *  lets a caller bail early (e.g. the palette closed). */
 async function runWarmPass(
@@ -196,7 +222,7 @@ async function runWarmPass(
       try {
         const file = await electron.readFileAtPath(path);
         if (!file) continue;
-        await idleYield();
+        await waitForParseWindow();
         if (!keepGoing()) break;
         const doc = await parseFileDoc(file.bytes, file.format);
         const { objects, outline } = extractFile(doc, enabledSet());
@@ -210,16 +236,12 @@ async function runWarmPass(
   }
 }
 
-/** Map a main-process file listing to FileEntry rows. */
+/** Map a main-process file listing to FileEntry rows (display name +
+ *  precomputed lowercase match fields derived in `makeFileEntry`). */
 function toFileEntries(
   list: ReadonlyArray<{ path: string; relPath: string; mtimeMs: number }>,
 ): FileEntry[] {
-  return list.map((it) => ({
-    path: it.path,
-    relPath: it.relPath,
-    name: stripFileExt(baseName(it.relPath)),
-    mtimeMs: it.mtimeMs,
-  }));
+  return list.map((it) => makeFileEntry(it.path, it.relPath, it.mtimeMs));
 }
 
 /** Merge per-folder listings into one, de-duplicated by absolute path — so a
@@ -704,8 +726,10 @@ function fileObjectResult(o: FileObject): PaletteResult {
 
 /** Results rendered per page: the initial window, and how many more each
  *  "show more" click (or arrowing past the end) adds. Searches rank the
- *  FULL list; this only bounds how much DOM is built at once. */
-const RESULT_PAGE_SIZE = 100;
+ *  FULL list; this only bounds how much DOM is built at once. 50 (down
+ *  from 100): the rebuild runs on every keystroke, and nobody scans
+ *  past ~50 rows without narrowing the query instead. */
+const RESULT_PAGE_SIZE = 50;
 
 /** Short left-aligned badge for a result row. */
 function badgeText(r: PaletteResult): string {
@@ -781,10 +805,26 @@ class QuickCardSearchUI {
   private rePickTarget: { pos: number; identity: string } | null = null;
 
   private results: PaletteResult[] = [];
-  /** Full ranked list for the current query; `results` holds the rendered
-   *  window (its first `visibleCount` entries). Kept so "show more" can
-   *  extend the window without re-running the search. */
+  /** Materialized head of the current query's ranked results (every
+   *  non-file source; in in-file mode, everything). File matches live
+   *  in `fileTail` and are NOT part of this array. `results` holds the
+   *  rendered window. Kept so "show more" can extend the window
+   *  without re-running the search. */
   private fullResults: PaletteResult[] = [];
+  /** Ranked file matches for the current query, kept as lightweight
+   *  entries and materialized into PaletteResults lazily, only for the
+   *  rendered window — a 1–2 char query matches most of the corpus,
+   *  and building a result object per match every keystroke was pure
+   *  GC churn. Always ordered AFTER `fullResults`; both search paths
+   *  that surface files put them last (file mode: everything is a
+   *  file, the head is empty). */
+  private fileTail: FileEntry[] = [];
+  /** Memoized materialized prefix of `fileTail`, grown on demand by
+   *  `windowResults` (keeps row identity stable across "show more"). */
+  private materializedTail: PaletteResult[] = [];
+  /** Manual-pin set snapshotted when `fileTail` was ranked — drives the
+   *  ★ on rows materialized later. */
+  private tailPins: ReadonlySet<string> = new Set();
   private visibleCount = RESULT_PAGE_SIZE;
   private selected = 0;
   /** Row elements as last built by `renderResults`, index-aligned with
@@ -839,6 +879,9 @@ class QuickCardSearchUI {
     this.rootLists = new Map();
     this.fileListLoading = false;
     this.inFile = null;
+    this.pinsCache = null;
+    this.fileTail = [];
+    this.materializedTail = [];
 
     const root = document.createElement('div');
     root.className = 'pmd-qcs';
@@ -878,6 +921,11 @@ class QuickCardSearchUI {
       : null;
 
     this.runSearch();
+    // Kick the file-list load NOW (main serves it from its disk-backed
+    // index, so it's ready in ms) instead of on the first keystroke —
+    // previously the list arrived mid-typing and re-ran the search
+    // between the user's first characters.
+    this.ensureFileList();
   }
 
   /** Center over the target pane and clamp the width to fit it, so the
@@ -1020,8 +1068,10 @@ class QuickCardSearchUI {
         // overview isn't doubled; they surface once you type a query.
         this.results = this.buildOutlineResults();
         // Outline browse stays deliberately un-paginated; keep the full
-        // list in sync so no "show more" row appears.
+        // list in sync (and no file tail) so no "show more" row appears.
         this.fullResults = this.results;
+        this.fileTail = [];
+        this.materializedTail = [];
         this.emptyText = 'No headings in this file.';
         this.selected = 0;
         this.renderResults();
@@ -1089,7 +1139,6 @@ class QuickCardSearchUI {
       // finishes (loadFileList re-runs the search on completion). The
       // dropzone is included only when it's on.
       this.ensureFileList();
-      const filePins = this.fileList ? this.manualPinPaths() : null;
       this.results = [
         ...searchQuickCardSource(query),
         ...(dropzoneOn() ? searchDropzoneSource(query) : []),
@@ -1097,27 +1146,58 @@ class QuickCardSearchUI {
         ...searchSettingToggleSource(query),
         ...searchSettingCycleSource(query),
         ...searchSettingsSource(query),
-        ...(this.fileList && filePins
+      ];
+      this.emptyText = 'No matches.';
+      // Files join as the lazy tail — ranked in full, materialized only
+      // for the rendered window.
+      this.finishSearch(
+        this.fileList
           ? searchFiles(
               filterFilesByFormatSetting(this.fileList),
               query,
               settings.get('fileSearchTiebreak'),
-            ).map((f) => fileResult(f, filePins.has(f.path)))
-          : []),
-      ];
-      this.emptyText = 'No matches.';
+            )
+          : [],
+      );
+      return;
     }
     this.finishSearch();
   }
 
   /** Clamp to the first page, reset selection, render — the shared tail
-   *  of every search. */
-  private finishSearch(): void {
+   *  of every search. `fileTail` is the ranked file matches (lazy;
+   *  rendered after every materialized result). */
+  private finishSearch(fileTail: FileEntry[] = []): void {
     this.fullResults = this.results;
+    this.fileTail = fileTail;
+    this.materializedTail = [];
+    this.tailPins = fileTail.length ? this.manualPinPaths() : this.tailPins;
     this.visibleCount = RESULT_PAGE_SIZE;
-    this.results = this.fullResults.slice(0, this.visibleCount);
+    this.results = this.windowResults();
     this.selected = 0;
     this.renderResults();
+  }
+
+  /** Total result count across the materialized head and the lazy file
+   *  tail — what "Showing N of M" and the paging boundary report. */
+  private totalCount(): number {
+    return this.fullResults.length + this.fileTail.length;
+  }
+
+  /** The first `visibleCount` results: the materialized head, then file
+   *  rows materialized on demand (and memoized, so paging deeper never
+   *  rebuilds earlier rows). */
+  private windowResults(): PaletteResult[] {
+    const head = this.fullResults.slice(0, this.visibleCount);
+    const needTail = Math.min(
+      this.visibleCount - head.length,
+      this.fileTail.length,
+    );
+    while (this.materializedTail.length < needTail) {
+      const f = this.fileTail[this.materializedTail.length]!;
+      this.materializedTail.push(fileResult(f, this.tailPins.has(f.path)));
+    }
+    return needTail > 0 ? head.concat(this.materializedTail.slice(0, needTail)) : head;
   }
 
   /** Extend the rendered window by one page (the "show more" row, or
@@ -1125,7 +1205,7 @@ class QuickCardSearchUI {
    *  the rebuilt rows re-read `this.selected`. */
   private showMore(): void {
     this.visibleCount += RESULT_PAGE_SIZE;
-    this.results = this.fullResults.slice(0, this.visibleCount);
+    this.results = this.windowResults();
     this.renderResults();
   }
 
@@ -1165,17 +1245,22 @@ class QuickCardSearchUI {
       ...matched.filter((f) => pins.has(f.path)),
       ...matched.filter((f) => !pins.has(f.path)),
     ];
-    this.results = ordered.map((f) => fileResult(f, pins.has(f.path)));
+    this.results = [];
     this.emptyText = this.fileList.length
       ? 'No matching files.'
       : 'No files in the search folder.';
-    this.finishSearch();
+    // Everything here is a file — the whole result set is the lazy tail.
+    this.finishSearch(ordered);
   }
 
   /** Manually-pinned paths (★ + top-sort). `autoEnabled: false` makes
-   *  `effectivePins` return just the manual set. */
+   *  `effectivePins` return just the manual set. Memoized for the
+   *  palette session — the store read is a localStorage JSON parse,
+   *  which has no place on the per-keystroke path. Invalidated by
+   *  `togglePinPath` (pins can't otherwise change while we're open). */
+  private pinsCache: Set<string> | null = null;
   private manualPinPaths(): Set<string> {
-    return effectivePins([], false);
+    return (this.pinsCache ??= effectivePins([], false));
   }
 
   /** Background pass while the palette is open: delegate to the shared
@@ -1190,6 +1275,7 @@ class QuickCardSearchUI {
   /** Toggle a file's manual pin, keeping it selected and re-warming. */
   private togglePinPath(path: string): void {
     toggleManualPin(path);
+    this.pinsCache = null; // re-read the store on the next search
     this.runSearch(); // re-sort + refresh ★
     const at = this.results.findIndex((r) => r.filePath === path);
     if (at >= 0) this.setSelected(at);
@@ -1427,7 +1513,7 @@ class QuickCardSearchUI {
     const next = this.selected + delta;
     // Arrowing past the last rendered row reveals the next page instead
     // of wrapping, when there is one — the keyboard path to "show more".
-    if (next >= this.results.length && this.fullResults.length > this.results.length) {
+    if (next >= this.results.length && this.totalCount() > this.results.length) {
       this.showMore();
       this.setSelected(Math.min(next, this.results.length - 1));
       return;
@@ -1584,11 +1670,11 @@ class QuickCardSearchUI {
     });
     // Overflow indicator + expander. A div (not a button) so clicking it
     // can't steal focus from the search input, which owns the keyboard.
-    if (this.fullResults.length > this.results.length) {
+    if (this.totalCount() > this.results.length) {
       const more = document.createElement('div');
       more.className = 'pmd-qcs-more';
       more.setAttribute('role', 'button');
-      more.textContent = `Showing ${this.results.length} of ${this.fullResults.length} — show more`;
+      more.textContent = `Showing ${this.results.length} of ${this.totalCount()} — show more`;
       more.addEventListener('click', () => this.showMore());
       this.resultsEl.appendChild(more);
     }

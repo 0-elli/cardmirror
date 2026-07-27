@@ -61,6 +61,27 @@ export interface FileEntry {
   name: string;
   /** Last-modified time — the version key for the warm cache. */
   mtimeMs: number;
+  /** `name` lowercased once at list-build time. Matching runs over the
+   *  whole corpus on every keystroke; lowercasing there allocated two
+   *  strings per file per keystroke. Build via `makeFileEntry`. */
+  nameLower: string;
+  /** Lowercased directory portion of `relPath` (the secondary match
+   *  field), precomputed for the same reason. */
+  dirLower: string;
+}
+
+/** Build a FileEntry from a listing row, deriving the display name and
+ *  the precomputed lowercase match fields in one place. */
+export function makeFileEntry(path: string, relPath: string, mtimeMs: number): FileEntry {
+  const name = stripFileExt(baseName(relPath));
+  return {
+    path,
+    relPath,
+    name,
+    mtimeMs,
+    nameLower: name.toLowerCase(),
+    dirLower: dirName(relPath).toLowerCase(),
+  };
 }
 
 /** A structural object inside a parsed file — a search hit (flat). */
@@ -132,17 +153,22 @@ function startsAtWordBoundary(text: string, tok: string): boolean {
  *  Lower is better. Tiers key off the PRIMARY field (a heading's label, a
  *  file's name); a match that only lands in the SECONDARY field (a card's cite,
  *  a file's folder) is the weakest tier, so a primary hit always outranks it.
- *    0 exact · 1 prefix · 2 word-start · 3 substring · 4 secondary-only */
+ *    0 exact · 1 prefix · 2 word-start · 3 substring · 4 secondary-only
+ *  `p` and `s` must already be lowercase — this runs per item per
+ *  keystroke over the whole corpus, so callers precompute (files) or
+ *  lower in their getter (in-file objects). Tokens contain no
+ *  whitespace, so per-field `includes` is equivalent to the joined
+ *  haystack it replaces (a token can never span the field boundary). */
 function matchTier(
-  primary: string,
-  secondary: string,
+  p: string,
+  s: string,
   tokens: readonly string[],
   q: string,
   t0: string,
 ): number | null {
-  const p = primary.toLowerCase();
-  const hay = secondary ? `${p} ${secondary.toLowerCase()}` : p;
-  if (!tokens.every((tok) => hay.includes(tok))) return null;
+  for (const tok of tokens) {
+    if (!p.includes(tok) && !(s !== '' && s.includes(tok))) return null;
+  }
   if (p === q) return 0;
   if (p.startsWith(q)) return 1;
   if (tokens.every((tok) => p.includes(tok))) return startsAtWordBoundary(p, t0) ? 2 : 3;
@@ -152,7 +178,9 @@ function matchTier(
 /** Order-independent multi-token AND-match, ranked by relevance tier
  *  (exact → prefix → word-start → substring → secondary-only), ties broken by
  *  `tiebreak`. A stable no-op tiebreak (`() => 0`) preserves input order. An
- *  empty query returns everything, ordered only by the tiebreak. */
+ *  empty query returns everything, ordered only by the tiebreak.
+ *  `primary`/`secondary` getters must return LOWERCASE text (see
+ *  `matchTier`). */
 function rank<T>(
   items: readonly T[],
   query: string,
@@ -164,9 +192,12 @@ function rank<T>(
   if (tokens.length === 0) return [...items].sort(tiebreak);
   const q = tokens.join(' ');
   const t0 = tokens[0]!;
-  return items
-    .map((item) => ({ item, tier: matchTier(primary(item), secondary(item), tokens, q, t0) }))
-    .filter((r): r is { item: T; tier: number } => r.tier !== null)
+  const matched: Array<{ item: T; tier: number }> = [];
+  for (const item of items) {
+    const tier = matchTier(primary(item), secondary(item), tokens, q, t0);
+    if (tier !== null) matched.push({ item, tier });
+  }
+  return matched
     .sort((a, b) => a.tier - b.tier || tiebreak(a.item, b.item))
     .map((r) => r.item);
 }
@@ -188,8 +219,8 @@ export function searchFiles(
   return rank(
     files,
     query,
-    (f) => f.name,
-    (f) => dirName(f.relPath),
+    (f) => f.nameLower,
+    (f) => f.dirLower,
     cmp,
   );
 }
@@ -201,8 +232,8 @@ export function searchFileObjects(objects: readonly FileObject[], query: string)
   return rank(
     objects,
     query,
-    (o) => o.label,
-    (o) => o.cite ?? '',
+    (o) => o.label.toLowerCase(),
+    (o) => o.cite?.toLowerCase() ?? '',
     () => 0,
   );
 }

@@ -23,14 +23,26 @@ export function scheduleIdle(
   timeout = 200,
 ): IdleHandle {
   if (typeof requestIdleCallback === 'function') {
+    // `timeout: Infinity` means NO cap: run only on a genuinely idle
+    // frame, however long that takes. Callers whose work is a
+    // monolithic main-thread block (the palette's file parses) use it
+    // so the work can never be forced into an active typing burst.
     return {
       kind: 'idle',
       // The IdleDeadline arg is unused — our heavy callbacks run to
       // completion regardless of how much budget the browser advertised.
-      id: requestIdleCallback(() => callback(), { timeout }),
+      id: Number.isFinite(timeout)
+        ? requestIdleCallback(() => callback(), { timeout })
+        : requestIdleCallback(() => callback()),
     };
   }
-  return { kind: 'timeout', id: setTimeout(callback, timeout) };
+  // The fallback can't observe idleness; a capped run-anyway delay is
+  // the only option (1s approximates "probably between bursts" for the
+  // no-cap case).
+  return {
+    kind: 'timeout',
+    id: setTimeout(callback, Number.isFinite(timeout) ? timeout : 1000),
+  };
 }
 
 export function cancelIdle(handle: IdleHandle): void {

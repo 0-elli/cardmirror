@@ -50,3 +50,13 @@ if (typeof Range !== 'undefined') {
     };
   }
 }
+
+// Same layout-free gap: jsdom has no `Element.scrollIntoView`. UI code
+// calls it after list re-renders (e.g. the palette keeping the active
+// row visible); a no-op is the honest jsdom behavior.
+if (typeof Element !== 'undefined') {
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (typeof proto['scrollIntoView'] !== 'function') {
+    proto['scrollIntoView'] = function scrollIntoView(): void {};
+  }
+}

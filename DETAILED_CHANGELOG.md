@@ -137,6 +137,44 @@ in each release, see `CHANGELOG.md`.
   root-caused) — the heal recovers the files, but the producer is
   still at large.
 
+- **Search-bar first-keystroke latency batch** (`quick-card-search-ui.ts`,
+  `file-search.ts`, `idle-scheduler.ts`). Root-caused the "first few
+  characters freeze with a large corpus" report to four stacked costs,
+  each fixed:
+  (1) The warm pass parses pinned/recent files with a synchronous
+  `parseNative`/`fromDocx` on the renderer main thread, "yielding to
+  idle" via `requestIdleCallback({timeout: 500})` — but during a typing
+  burst there are no idle frames, so the 500ms cap FORCED each parse
+  into the burst (this also explains the user's "wait a bit and it
+  gets faster": the queue drains). Now `waitForParseWindow()`: rIC
+  with NO timeout cap (`scheduleIdle(…, Infinity)`) AND ≥600ms since
+  the last document-level keydown, so a monolithic parse can never be
+  scheduled into active typing (a 200ms inter-word gap presents idle
+  frames; the keydown clock is the difference).
+  (2) The file list was requested on the first everything-search
+  keystroke, so its arrival re-ran search+render mid-typing; `open()`
+  now kicks `ensureFileList()` immediately (main serves it from the
+  disk-backed index in ms).
+  (3) Per-keystroke ranking lowercased every file's name + folder (2
+  allocs × corpus × keystroke) and materialized a PaletteResult per
+  match. `FileEntry` now carries `nameLower`/`dirLower` built once in
+  `makeFileEntry`; `matchTier` takes pre-lowered fields (per-field
+  `includes` replaces the joined-haystack alloc — equivalent since
+  tokens are whitespace-free); file matches stay as a lazy `fileTail`
+  and materialize only for the rendered window (memoized across "show
+  more"). The manual-pins localStorage read is also memoized per
+  palette session.
+  (4) `RESULT_PAGE_SIZE` 100 → 50.
+  Deliberately NOT done: skip-identical-render signature (stale-row
+  risk for pin stars/snippets outweighed the rare redundant render) and
+  the parse worker (parked — both parse paths are DOM-free so it's
+  viable; becomes the foundation for full-corpus content search if the
+  batch proves insufficient). Tests: paging/laziness over a 120-file
+  corpus driving the real singleton with a mocked Electron host
+  (`quick-card-search-paging.test.ts`), `makeFileEntry` + mixed-case
+  matching regressions; jsdom setup gains an `Element.scrollIntoView`
+  no-op (same layout-free class as the getClientRects stubs).
+
 - **Modal keys stop leaking into the editor** (`installModalKeys` +
   `armDialogFocus` in `src/editor/text-prompt.ts`). Field bug: Enter
   confirming the three-pane mode-switch dialog ALSO split-blocked at
