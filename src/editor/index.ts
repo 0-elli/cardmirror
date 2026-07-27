@@ -286,6 +286,7 @@ import {
 import { openWordCount } from './word-count-ui.js';
 import { wireColorPanel } from './color-panel.js';
 import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
+import { liveContainerSegment } from './live-read-time.js';
 import { getHost, getElectronHost, isWindowsHost, isSameOpenHandle, type OpenedFile, type JournalEntry } from './host/index.js';
 import {
   installGlobalErrorSurface,
@@ -4544,7 +4545,10 @@ function refreshWordCount(opts?: { selectionOnly?: boolean }): void {
   for (const r of readers) {
     parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);
   }
-  wordCountText.textContent = parts.join(' · ');
+  const container = liveContainerSegment(view.state);
+  wordCountText.textContent = container
+    ? `${parts.join(' · ')} | ${container}`
+    : parts.join(' · ');
 }
 
 /**
@@ -5221,17 +5225,18 @@ function mountView(doc: PMNode, threads: Thread[] = []): void {
       }
       // Selection-only changes refresh just the word-count readout so
       // the read time reflects the selection immediately instead of
-      // waiting for the next edit. Opt-in (`liveSelectionWordCount`):
-      // when off, a selection never changes the whole-doc readout, so
-      // there's nothing to do. Cheap when on: a non-empty selection
-      // counts only its range; a collapse reuses the cached whole-doc
-      // count (no doc walk). Gated on the selection actually changing
-      // AND involving a range on either side, so plain cursor moves
-      // (empty → empty) — the common case — do no work at all.
+      // waiting for the next edit. `liveSelectionWordCount` only needs
+      // it when a range is involved on either side (plain cursor moves
+      // can't change a selection count); `liveContainerReadTime` needs
+      // every selection change, cursor moves included — the enclosing
+      // container follows the caret. Both reuse the cached whole-doc
+      // count (no doc walk), and the container count is itself cached
+      // per container, so an empty→empty move costs an ancestor walk.
       else if (
-        settings.get('liveSelectionWordCount') &&
         !prevState.selection.eq(next.selection) &&
-        (!prevState.selection.empty || !next.selection.empty)
+        ((settings.get('liveSelectionWordCount') &&
+          (!prevState.selection.empty || !next.selection.empty)) ||
+          settings.get('liveContainerReadTime'))
       ) {
         refreshWordCount({ selectionOnly: true });
       }

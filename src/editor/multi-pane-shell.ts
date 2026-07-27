@@ -59,6 +59,7 @@ import { EditorDragSurface } from './drag-editor-surface.js';
 import { dragController, rewriteHeadingIds } from './drag-controller.js';
 import { isBenchmarkActive } from './benchmark-state.js';
 import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
+import { liveContainerSegment } from './live-read-time.js';
 import { openWordCount } from './word-count-ui.js';
 import { isAutosaveOnForPath, setAutosaveForPath } from './autosave-prefs-store.js';
 import {
@@ -1132,6 +1133,12 @@ class Slot {
     this.copresenceEl.replaceChildren(labelEl, dots);
   }
 
+  /** Whole-doc word count keyed on doc identity, so the cursor-move
+   *  refreshes `liveContainerReadTime` triggers don't re-walk the doc
+   *  (single-pane's `lastWholeDocWords` equivalent — one slot per pane
+   *  suffices; the doc reference distinguishes stacked docs too). */
+  private wcDocCache: { doc: PMNode; words: number } | null = null;
+
   /** Recompute and display the visible doc's word count + read times
    *  for the first two configured readers. */
   refreshWordCount(): void {
@@ -1146,9 +1153,15 @@ class Slot {
     // regardless of any selection (the Σ button covers selection counts
     // on demand).
     const hasSel = settings.get('liveSelectionWordCount') && !sel.empty;
-    const words = hasSel
-      ? countReadAloudWords(rec.view.state.doc, sel.from, sel.to)
-      : countReadAloudWords(rec.view.state.doc);
+    let words: number;
+    if (hasSel) {
+      words = countReadAloudWords(rec.view.state.doc, sel.from, sel.to);
+    } else if (this.wcDocCache && this.wcDocCache.doc === rec.view.state.doc) {
+      words = this.wcDocCache.words;
+    } else {
+      words = countReadAloudWords(rec.view.state.doc);
+      this.wcDocCache = { doc: rec.view.state.doc, words };
+    }
     const readers = settings.get('readers').slice(0, 2);
     const head = hasSel
       ? `Sel: ${formatNumber(words)}`
@@ -1157,7 +1170,10 @@ class Slot {
     for (const r of readers) {
       parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);
     }
-    this.wcEl.textContent = parts.join(' · ');
+    const container = liveContainerSegment(rec.view.state);
+    this.wcEl.textContent = container
+      ? `${parts.join(' · ')} | ${container}`
+      : parts.join(' · ');
   }
 
   /** Open a small dropdown over the chip listing every doc in this
@@ -3021,14 +3037,17 @@ function buildDocRecord(
       }
       // Selection-only changes refresh just this pane's word-count
       // readout so the read time reflects the selection immediately,
-      // mirroring single-pane. Opt-in (`liveSelectionWordCount`): when
-      // off there's nothing to update. Gated on the selection actually
-      // changing AND a range on either side, so plain cursor moves
-      // (empty → empty) do no work.
+      // mirroring single-pane. `liveSelectionWordCount` needs it only
+      // when a range is involved on either side; `liveContainerReadTime`
+      // needs every selection change, cursor moves included — the
+      // enclosing container follows the caret. Cheap either way: the
+      // whole-doc count is cached per doc, the container count per
+      // container.
       else if (
-        settings.get('liveSelectionWordCount') &&
         !prevState.selection.eq(next.selection) &&
-        (!prevState.selection.empty || !next.selection.empty)
+        ((settings.get('liveSelectionWordCount') &&
+          (!prevState.selection.empty || !next.selection.empty)) ||
+          settings.get('liveContainerReadTime'))
       ) {
         record.owner.refreshWordCount();
       }

@@ -883,6 +883,14 @@ export interface Settings {
    */
   liveSelectionWordCount: boolean;
   /**
+   * Append the smallest enclosing container's read time (card /
+   * analytic unit / block section) to the live word-count readout —
+   * or the selection's when one exists. Cursor moves within a
+   * container reuse a cached count, so the per-keypress cost is an
+   * ancestor walk; crossing containers costs one O(container) count.
+   */
+  liveContainerReadTime: boolean;
+  /**
    * Per-style font sizes (in points). See DisplaySizes for details.
    * Each field becomes a CSS custom property on `#editor`.
    */
@@ -1635,6 +1643,7 @@ const DEFAULTS: Settings = {
     { name: 'Reader 2', wpm: 250 },
   ],
   liveSelectionWordCount: false,
+  liveContainerReadTime: true,
   displaySizes: { ...DEFAULT_DISPLAY_SIZES },
   displayParagraphSpacing: { ...DEFAULT_PARAGRAPH_SPACING },
   displayTypography: { ...DEFAULT_DISPLAY_TYPOGRAPHY },
@@ -2031,6 +2040,16 @@ export const SETTING_METADATA: SettingMeta[] = [
     kind: 'toggle',
     category: 'general',
     section: 'Word counts',
+  },
+  {
+    key: 'liveContainerReadTime',
+    label: 'Live read time for the enclosing card / block',
+    description:
+      "On by default. Appends a second segment to the bottom bar's word count: with the cursor parked, the read time of the smallest enclosing card, analytic unit, or block section; with a selection, the selection's read time instead. Off shows the read-time estimate exactly as before. Cheap — the count is cached per container, so plain cursor moves don't re-count anything.",
+    kind: 'toggle',
+    category: 'general',
+    section: 'Word counts',
+    aliases: ['container read time', 'card read time', 'block read time', 'enclosing read time'],
   },
   {
     key: 'findRememberLastQuery',
@@ -4133,6 +4152,9 @@ function sanitize(s: Settings): Settings {
     gestureZoom: !!s.gestureZoom,
     readers: sanitizeReaders(s.readers),
     liveSelectionWordCount: s.liveSelectionWordCount === true,
+    // Default-on: preserve `false` only when explicitly set, so
+    // installs upgrading from before this setting existed get it on.
+    liveContainerReadTime: s.liveContainerReadTime === false ? false : true,
     displaySizes: sanitizeDisplaySizes(s.displaySizes),
     displayParagraphSpacing: sanitizeParagraphSpacing(s.displayParagraphSpacing),
     displayTypography: sanitizeDisplayTypography(s.displayTypography),
