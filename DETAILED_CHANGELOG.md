@@ -7,6 +7,36 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.25 — Unreleased
 
+- **CRDT merge heal: hollow containers materialize repaired instead of
+  vanishing** (loro-prosemirror patch + `src/doc-repair.ts` +
+  `src/editor/collab/collab-repair.ts`). Element-wise CRDT merges can
+  hollow a container's children list (a card that lost its tag element
+  but kept bodies) — a schema-invalid state no peer ever saw. The
+  bridge's materializer builds nodes with the checked constructor; its
+  catch used to drop the whole node (`console.error` → null → parent
+  filter), silently deleting surviving content on every peer, forever
+  (the invalid container stayed in the CRDT, re-dropping on every
+  join). Two-layer fix mirroring the §4.3 leader pattern:
+  (1) *display layer, all peers* — the patched materializer heals a
+  headless card/analytic_unit by synthesizing a head whose id derives
+  from the stable Loro container id (`crdt-heal-<cid>`), so every peer
+  heals byte-identically with no cross-peer writes (empty shells stay
+  dropped: the union of deletes reads as "gone"; hollow table cells
+  refill with an empty paragraph);
+  (2) *write-back, leader only* — `buildDocRepairTr` canonicalizes
+  sentinel-prefixed head ids (deterministic rewrite to `ch-<cid>`),
+  giving the repair transaction a step on the healed node so the sync
+  diff writes the head into the CRDT as an ordinary edit; followers
+  and fresh joiners then materialize cleanly with no heal at all.
+  Never all-peer write-back: concurrent compensating inserts would
+  merge into duplicate heads and ping-pong. A rate-limited toast
+  surfaces the repair (the silent version is how the data loss went
+  unnoticed). Locked by `tests/collab/hollow-merge.test.ts` — written
+  red-first against the old drop behavior: headless-with-content
+  heals + converges, fully-empty converges to gone, and a fresh
+  joiner from the leader's state gets a canonical (non-sentinel)
+  head, proving the CRDT itself was repaired.
+
 - **healCards + healTables** (`src/schema/migrate.ts`, wired into the
   `parseNative` heal chain after `healAnalyticUnits`). Field report: a
   working doc saved mid-session carried an EMPTY `card` (`<>`), which

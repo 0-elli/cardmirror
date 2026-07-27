@@ -1,8 +1,64 @@
 diff --git a/node_modules/loro-prosemirror/dist/index.cjs b/node_modules/loro-prosemirror/dist/index.cjs
-index 74c4b30..0f5a727 100644
+index 74c4b30..3bac5e3 100644
 --- a/node_modules/loro-prosemirror/dist/index.cjs
 +++ b/node_modules/loro-prosemirror/dist/index.cjs
-@@ -83,19 +83,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
+@@ -28,6 +28,44 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
+ 	if (isInit) doc.commit({ origin: "sys:init" });
+ 	else doc.commit({ origin: "loroSyncPlugin" });
+ }
++/**
++ * CardMirror patch: heal schema-invalid containers at materialization
++ * instead of silently dropping them. Concurrent CRDT merges can hollow
++ * a container's children list (e.g. a card that lost its tag element
++ * but kept its bodies) — the upstream catch dropped the ENTIRE node,
++ * silently deleting surviving content on every reconstructing peer.
++ * Deterministic by construction: the synthesized head derives its id
++ * from the stable container id, so every peer heals identically; the
++ * session's leader-gated repair pass then canonicalizes the sentinel
++ * id, and that ordinary synced transaction writes the head back into
++ * the CRDT. Empty required-content containers stay dropped — the
++ * union of concurrent deletes reads as "gone", and there is nothing
++ * inside to lose. Anything the narrow heal can't fix falls back to
++ * the upstream drop.
++ */
++const CARDMIRROR_HEAL_ID_PREFIX = "crdt-heal-";
++function cardmirrorHealInvalidNode(schema, nodeName, attrs, children, containerId) {
++	const HEAD_OF = { card: "tag", analytic_unit: "analytic" };
++	const head = HEAD_OF[nodeName];
++	if (head) {
++		if (children.length === 0) return null;
++		if (children[0].type.name === head) return null;
++		try {
++			const headNode = schema.node(head, { id: CARDMIRROR_HEAL_ID_PREFIX + String(containerId) });
++			return schema.node(nodeName, attrs, [headNode, ...children]);
++		} catch {
++			return null;
++		}
++	}
++	if (nodeName === "table_cell" || nodeName === "table_header") {
++		try {
++			return schema.node(nodeName, attrs, [schema.node("paragraph")]);
++		} catch {
++			return null;
++		}
++	}
++	return null;
++}
+ function createNodeFromLoroObj(schema, obj, mapping) {
+ 	let retval = mapping.get(obj.id) ?? null;
+ 	if (retval != null) return retval;
+@@ -41,7 +79,9 @@ function createNodeFromLoroObj(schema, obj, mapping) {
+ 			retval = schema.node(nodeName, attributes.toJSON(), mappedChildren);
+ 			WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(retval, obj.id);
+ 		} catch (e) {
+-			console.error(e);
++			retval = cardmirrorHealInvalidNode(schema, nodeName, attributes.toJSON(), mappedChildren, obj.id);
++			if (retval != null) WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(retval, obj.id);
++			else console.error(e);
+ 		}
+ 	} else if (obj instanceof loro_crdt.LoroText) {
+ 		retval = [];
+@@ -83,19 +123,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
  function updateLoroText(obj, nodes, mapping) {
  	mapping.set(obj.id, nodes);
  	let str = obj.toString();
@@ -81,7 +137,7 @@ index 74c4b30..0f5a727 100644
  }
  function nodeMarksToAttributes(marks) {
  	const pattrs = {};
-@@ -156,6 +207,11 @@ function eqMappedNode(mapped, node) {
+@@ -156,6 +247,11 @@ function eqMappedNode(mapped, node) {
  	return false;
  }
  function normalizeNodeContent(node) {
@@ -93,7 +149,7 @@ index 74c4b30..0f5a727 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -226,10 +282,12 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -226,10 +322,12 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!(0, lib0_function.equalityDeep)(attrs.get(key), value)) attrs.set(key, value);
@@ -108,7 +164,7 @@ index 74c4b30..0f5a727 100644
  }
  function getLoroMapChildren(obj) {
  	return obj.getOrCreateContainer(CHILDREN_KEY, new loro_crdt.LoroList());
-@@ -425,24 +483,13 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -425,24 +523,13 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  		const [focus, focusCursorUpdate] = cursorToAbsolutePosition(cursor.focus, doc, loroState.mapping);
  		d.push(prosemirror_view.Decoration.widget(focus, createCursor(peer)));
  		if (!cursorEq(cursor.anchor, cursor.focus)) {
@@ -138,7 +194,7 @@ index 74c4b30..0f5a727 100644
  	}
  	return prosemirror_view.DecorationSet.create(state.doc, d);
  }
-@@ -587,6 +634,23 @@ const LoroSyncPlugin = (props) => {
+@@ -587,6 +674,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -162,7 +218,7 @@ index 74c4b30..0f5a727 100644
  				return state;
  			}
  		},
-@@ -650,14 +714,63 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -650,14 +754,63 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
@@ -233,10 +289,66 @@ index 74c4b30..0f5a727 100644
  /**
  * Update ProseMirror selection based on the given Loro cursors.
 diff --git a/node_modules/loro-prosemirror/dist/index.js b/node_modules/loro-prosemirror/dist/index.js
-index e41095d..bf0e9fc 100644
+index e41095d..aaab10c 100644
 --- a/node_modules/loro-prosemirror/dist/index.js
 +++ b/node_modules/loro-prosemirror/dist/index.js
-@@ -82,19 +82,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
+@@ -27,6 +27,44 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
+ 	if (isInit) doc.commit({ origin: "sys:init" });
+ 	else doc.commit({ origin: "loroSyncPlugin" });
+ }
++/**
++ * CardMirror patch: heal schema-invalid containers at materialization
++ * instead of silently dropping them. Concurrent CRDT merges can hollow
++ * a container's children list (e.g. a card that lost its tag element
++ * but kept its bodies) — the upstream catch dropped the ENTIRE node,
++ * silently deleting surviving content on every reconstructing peer.
++ * Deterministic by construction: the synthesized head derives its id
++ * from the stable container id, so every peer heals identically; the
++ * session's leader-gated repair pass then canonicalizes the sentinel
++ * id, and that ordinary synced transaction writes the head back into
++ * the CRDT. Empty required-content containers stay dropped — the
++ * union of concurrent deletes reads as "gone", and there is nothing
++ * inside to lose. Anything the narrow heal can't fix falls back to
++ * the upstream drop.
++ */
++const CARDMIRROR_HEAL_ID_PREFIX = "crdt-heal-";
++function cardmirrorHealInvalidNode(schema, nodeName, attrs, children, containerId) {
++	const HEAD_OF = { card: "tag", analytic_unit: "analytic" };
++	const head = HEAD_OF[nodeName];
++	if (head) {
++		if (children.length === 0) return null;
++		if (children[0].type.name === head) return null;
++		try {
++			const headNode = schema.node(head, { id: CARDMIRROR_HEAL_ID_PREFIX + String(containerId) });
++			return schema.node(nodeName, attrs, [headNode, ...children]);
++		} catch {
++			return null;
++		}
++	}
++	if (nodeName === "table_cell" || nodeName === "table_header") {
++		try {
++			return schema.node(nodeName, attrs, [schema.node("paragraph")]);
++		} catch {
++			return null;
++		}
++	}
++	return null;
++}
+ function createNodeFromLoroObj(schema, obj, mapping) {
+ 	let retval = mapping.get(obj.id) ?? null;
+ 	if (retval != null) return retval;
+@@ -40,7 +78,9 @@ function createNodeFromLoroObj(schema, obj, mapping) {
+ 			retval = schema.node(nodeName, attributes.toJSON(), mappedChildren);
+ 			WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(retval, obj.id);
+ 		} catch (e) {
+-			console.error(e);
++			retval = cardmirrorHealInvalidNode(schema, nodeName, attributes.toJSON(), mappedChildren, obj.id);
++			if (retval != null) WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(retval, obj.id);
++			else console.error(e);
+ 		}
+ 	} else if (obj instanceof LoroText) {
+ 		retval = [];
+@@ -82,19 +122,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
  function updateLoroText(obj, nodes, mapping) {
  	mapping.set(obj.id, nodes);
  	let str = obj.toString();
@@ -314,7 +426,7 @@ index e41095d..bf0e9fc 100644
  }
  function nodeMarksToAttributes(marks) {
  	const pattrs = {};
-@@ -155,6 +206,11 @@ function eqMappedNode(mapped, node) {
+@@ -155,6 +246,11 @@ function eqMappedNode(mapped, node) {
  	return false;
  }
  function normalizeNodeContent(node) {
@@ -326,7 +438,7 @@ index e41095d..bf0e9fc 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -225,10 +281,12 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -225,10 +321,12 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!equalityDeep(attrs.get(key), value)) attrs.set(key, value);
@@ -341,7 +453,7 @@ index e41095d..bf0e9fc 100644
  }
  function getLoroMapChildren(obj) {
  	return obj.getOrCreateContainer(CHILDREN_KEY, new LoroList());
-@@ -424,24 +482,13 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -424,24 +522,13 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  		const [focus, focusCursorUpdate] = cursorToAbsolutePosition(cursor.focus, doc, loroState.mapping);
  		d.push(Decoration.widget(focus, createCursor(peer)));
  		if (!cursorEq(cursor.anchor, cursor.focus)) {
@@ -371,7 +483,7 @@ index e41095d..bf0e9fc 100644
  	}
  	return DecorationSet.create(state.doc, d);
  }
-@@ -586,6 +633,23 @@ const LoroSyncPlugin = (props) => {
+@@ -586,6 +673,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -395,7 +507,7 @@ index e41095d..bf0e9fc 100644
  				return state;
  			}
  		},
-@@ -649,14 +713,72 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -649,14 +753,72 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);

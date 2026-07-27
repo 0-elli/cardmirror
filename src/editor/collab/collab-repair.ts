@@ -29,15 +29,42 @@ import type { Transaction } from 'prosemirror-state';
 import { loroSyncPluginKey, loroUndoPluginKey } from 'loro-prosemirror';
 import { buildDocRepairTr, buildMarkRepairTr } from '../../doc-repair.js';
 import { guardNormalizerTr } from '../normalizer-guard.js';
+import { showToast } from '../toast.js';
 
 function isBindingTransaction(tr: Transaction): boolean {
   return tr.getMeta(loroSyncPluginKey) !== undefined || tr.getMeta(loroUndoPluginKey) !== undefined;
+}
+
+/** Rate-limited notice that a merge hollowed a container and the heal
+ *  restored it (the loro-prosemirror patch's display-layer heal marks
+ *  the synthesized head with a 'crdt-heal-' id). Without this the
+ *  repair is invisible — the old behavior silently DELETED the card,
+ *  and users deserve to know a conflict was patched over. */
+let lastHealToastAt = 0;
+function noteHealedMerge(): void {
+  const now = Date.now();
+  if (now - lastHealToastAt < 60_000) return;
+  lastHealToastAt = now;
+  showToast(
+    'A co-editing merge conflict left a card without its heading — it was kept, with a blank heading. '
+      + 'Delete the blank heading if the card itself was meant to go.',
+  );
 }
 
 export function collabRepairPlugin(isLeader: () => boolean): Plugin {
   return new Plugin({
     appendTransaction(trs, _oldState, newState) {
       if (!trs.some((tr) => tr.docChanged && isBindingTransaction(tr))) return null;
+      // Surface display-layer merge heals (every peer sees its own).
+      // Scan is O(headings) over the post-merge doc — same order as
+      // the repair scans below, and only after binding transactions.
+      newState.doc.descendants((node) => {
+        if (node.type.name === 'tag' || node.type.name === 'analytic') {
+          if (String(node.attrs['id'] ?? '').startsWith('crdt-heal-')) noteHealedMerge();
+          return false;
+        }
+        return true;
+      });
       // The exclusive-marks resolution runs on EVERY peer: it's
       // mark-level and deterministic (every peer picks the same winner
       // via the schema-derived total order), so double-application

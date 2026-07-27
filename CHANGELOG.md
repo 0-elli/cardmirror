@@ -9,6 +9,18 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Fixed
 
+- **Co-editing no longer silently deletes a card caught in a merge
+  conflict.** When two people's offline edits merged such that a card
+  lost its heading (one deleted the body while the other's edit
+  removed the tag), CardMirror used to drop the entire card — including
+  the content that survived — on every screen, with no warning. Now the
+  card is restored with an empty heading, everyone sees the same
+  repaired result, a notice explains that a merge conflict was
+  repaired, and the fix is written back to the shared session so the
+  card stays whole for anyone who joins later. A card whose contents
+  were *entirely* deleted by both sides still reads as deleted — there
+  is nothing left to restore.
+
 - **More "This CardMirror file is damaged" repairs.** beta.23 repaired
   files carrying an invisible, empty analytic shell; the same problem
   has now shown up with an empty **card** shell, and the same repair

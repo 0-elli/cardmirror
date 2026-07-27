@@ -104,6 +104,25 @@ export function buildDocRepairTr(state: EditorState): Transaction | null {
     tr.insert(ins.pos, schema.nodes[ins.type]!.create());
   }
 
+  // Canonicalize display-heal sentinels (see the loro-prosemirror
+  // patch's cardmirrorHealInvalidNode): a head whose id carries the
+  // 'crdt-heal-' prefix was synthesized at CRDT materialization and
+  // exists ONLY in this peer's PM doc — the CRDT children list still
+  // lacks the head. Rewriting the id (deterministically — this pass
+  // must stay a pure function of the doc) gives the transaction a
+  // step on that node, and the sync layer's diff then writes the
+  // whole head into the CRDT as an ordinary edit. The rewritten
+  // prefix no longer matches, so the pass cannot re-fire on its own
+  // output. setNodeMarkup shifts no positions, so one scan suffices.
+  tr.doc.descendants((node, pos) => {
+    if (node.type.name !== 'tag' && node.type.name !== 'analytic') return true;
+    const id = String(node.attrs['id'] ?? '');
+    if (id.startsWith('crdt-heal-')) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, id: 'ch-' + id.slice('crdt-heal-'.length) });
+    }
+    return false;
+  });
+
   return tr.steps.length ? tr : null;
 }
 
