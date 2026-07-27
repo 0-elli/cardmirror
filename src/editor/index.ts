@@ -137,6 +137,7 @@ import {
   ZOOM_MAX_PCT,
   CHROME_SCALE_MIN_PCT,
   CHROME_SCALE_MAX_PCT,
+  migrateAutoUpdateOptOut,
 } from './settings.js';
 import { openSaveAs } from './save-as-ui.js';
 import { highlightColorLabel, shadingColorLabel } from './color-palette.js';
@@ -8718,6 +8719,17 @@ async function initSingleDocBoot(): Promise<void> {
   }
   if (isFirst) {
     const electron = getElectronHost();
+    // Update checks became opt-OUT (2026-07-27): flip an older
+    // install's stored `false` default exactly once, with a one-time
+    // notice pointing at the toggle. Runs before the launch check so
+    // the flipped setting takes effect this very boot.
+    if (electron) {
+      migrateAutoUpdateOptOut(() => {
+        showToast(
+          'CardMirror now checks for updates automatically. You can turn this off — or pause it for a tournament — in Settings → General → About this install.',
+        );
+      });
+    }
     // At-launch update check, gated on the same first-window rule
     // as the recovery UI — we don't want every spawned window in
     // a session to re-check or to re-pop "Update available" if the

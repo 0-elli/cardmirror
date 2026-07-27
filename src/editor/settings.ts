@@ -504,16 +504,18 @@ export interface Settings {
    *  the left, left of the file buttons). Off by default — undo/redo
    *  always work by keyboard; this is a mouse-first affordance. */
   showUndoRedoButtons: boolean;
-  /** Whether to check for updates on app launch (desktop only).
-   *  Off by default to keep boot conservative — opt in via
-   *  Settings → General → "About this install." When enabled,
-   *  the first window of an app session
-   *  triggers a silent update check at boot; if a new version is
-   *  available, a modal pops with a link to the release page.
-   *  Subsequent windows in the same session skip the check.
-   *  Manual checks via Help → Check for Updates… or the button
-   *  in the About this install panel always work regardless. No
-   *  effect on the web edition (no update mechanism). */
+  /** Whether to check for updates automatically (desktop only).
+   *  ON by default since 2026-07-27 (opt-OUT — was opt-in; the fleet
+   *  wasn't converging and old builds dominated relay traffic). The
+   *  first window of an app session triggers a silent check at boot
+   *  plus a silent daily recheck; anything found surfaces the update
+   *  chip. Turn off here or pause for a week via the tournament
+   *  button (`updateChecksPausedUntil`). Because `persist()` snapshots
+   *  EVERY key, older installs have the old `false` default baked
+   *  into their stored blob — `migrateAutoUpdateOptOut` flips those
+   *  once at boot (marker-keyed, so a post-migration opt-out sticks).
+   *  Manual checks via the About-this-install button always work
+   *  regardless. No effect on the web edition (no update mechanism). */
   checkForUpdatesOnLaunch: boolean;
   /** Tournament mode: epoch ms until which the AUTOMATIC update checks
    *  (launch + daily) are paused; 0 = not paused. Set by the "Pause
@@ -1554,7 +1556,7 @@ const DEFAULTS: Settings = {
   iconSet: 'modern',
   showDocNameChip: false,
   showUndoRedoButtons: false,
-  checkForUpdatesOnLaunch: false,
+  checkForUpdatesOnLaunch: true,
   updateChecksPausedUntil: 0,
   commentsColumnWidth: 320,
   reduceMotion: 'auto',
@@ -5195,3 +5197,30 @@ function sanitizePairingStarred(
 
 /** Singleton store. */
 export const settings = new SettingsStore();
+
+/** One-shot migration for the 2026-07-27 default flip: automatic update
+ *  checks became opt-OUT. `persist()` snapshots EVERY settings key, so
+ *  any install that ever changed any setting has the old `false`
+ *  default baked into its stored blob — flipping `DEFAULTS` alone
+ *  would reach only fresh installs, defeating the point (fleet
+ *  convergence). This flips a stored `false` to `true` exactly once
+ *  per install, keyed by a marker OUTSIDE the settings blob, and fires
+ *  `onMigrated` so the caller can show a one-time notice. Full-snapshot
+ *  storage can't distinguish "deliberately off" from "inherited
+ *  default", so deliberate opt-outs get flipped once too — the notice
+ *  tells them where the toggle is, and their re-toggle then sticks
+ *  forever (marker present). Desktop boot path only — the web edition
+ *  has no updater. */
+export function migrateAutoUpdateOptOut(onMigrated: () => void): void {
+  const MARKER = 'cm-update-check-optout-migrated';
+  try {
+    if (localStorage.getItem(MARKER) !== null) return;
+    localStorage.setItem(MARKER, '1');
+  } catch {
+    return; // storage unavailable — leave the setting alone
+  }
+  if (!settings.get('checkForUpdatesOnLaunch')) {
+    settings.set('checkForUpdatesOnLaunch', true);
+    onMigrated();
+  }
+}

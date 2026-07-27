@@ -7,6 +7,27 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.26 — Unreleased
 
+- **Automatic update checks flip to opt-OUT** (`settings.ts` default +
+  `migrateAutoUpdateOptOut`, boot call in `index.ts`, PRIVACY.md §7 +
+  third-party table, MANUAL Updates section). Motivation: the fleet
+  wasn't converging — 35-40% of ~750-780 daily machines run old builds
+  and generate ~90% of relay traffic, lack the structural-integrity
+  fixes, and keep already-fixed bugs alive in the field. The flip is
+  NOT just a DEFAULTS change: `persist()` snapshots every key, so any
+  install that ever changed a setting has the old `false` baked into
+  its stored blob and a default change alone reaches only fresh
+  installs. `migrateAutoUpdateOptOut` runs on the desktop first-window
+  boot path, flips a stored `false` exactly once (marker key OUTSIDE
+  the settings blob: `cm-update-check-optout-migrated`), and shows a
+  one-time toast pointing at the toggle + tournament pause. Trade-off,
+  accepted: full-snapshot storage can't distinguish a deliberate
+  opt-out from the inherited default, so pre-flip deliberate opt-outs
+  are flipped once too — their next toggle-off then sticks forever.
+  Existing safeguards unchanged: silent unless an update is ready,
+  nothing installs without a click, tournament pause honored by both
+  the launch and daily checks, web edition untouched. 4 migration
+  tests.
+
 - **Tilde send: blank-line fill narrowed to legal placeholders**
   (`insertSpeechSlice` in `src/editor/speech-doc-send.ts`). Field
   report: sending a card added "2 empty tag headers" after it; second

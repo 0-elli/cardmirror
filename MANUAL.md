@@ -1850,9 +1850,12 @@ never triggers the extra question.
 
 ### Updates
 
-**(Desktop only.)** **Help → Check for Updates…** checks manually.
-Auto-check on launch is off by default — turn it on in Settings → General.
-Linux users who installed via the AUR update with `yay -Syu`.
+**(Desktop only.)** CardMirror checks for updates automatically — silently
+at launch and once a day — and only speaks up when a new version is
+actually ready. You can turn this off with the **Check for updates
+automatically** toggle in Settings → General → About this install;
+**Help → Check for Updates…** always works either way. Linux users who
+installed via the AUR update with `yay -Syu`.
 
 **Going to a tournament?** The **Pause update checks for 1 week**
 button (next to the auto-check toggle in Settings → General → About

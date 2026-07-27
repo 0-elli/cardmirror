@@ -1,6 +1,6 @@
 # CardMirror Privacy Policy
 
-**Last updated: July 18, 2026**
+**Last updated: July 27, 2026**
 
 CardMirror is a writing and research tool for debate and academic work. This
 policy explains, in plain language, what happens to your data when you use it.
@@ -147,9 +147,12 @@ the translate action, no text is sent to a translation service.
 
 ## 7. Software updates and downloads
 
-- **Update checks** are **off by default**. If you turn them on (or check
-  manually), the app asks **GitHub** whether a newer release exists; this reveals
-  your IP address and the app version to GitHub but sends no document content.
+- **Update checks** are **on by default** in the desktop app (you can turn
+  them off, or pause them for a week, in Settings → General → About this
+  install). At launch and once a day, the app asks **GitHub** whether a newer
+  release exists; this reveals your IP address and the app version to GitHub
+  but sends no document content. Nothing installs without your click. The web
+  edition performs no update checks.
 - **Voice dictation**, if you enable it, performs a **one‑time download** of a
   speech model from its host (`alphacephei.com`). This reveals your IP address to
   that host but sends no document content; speech recognition then runs **entirely
@@ -228,7 +231,7 @@ a feature that inherently requires it, and only to the extent that feature needs
 | **Anthropic** | AI features (opt‑in, your key, provider set to Anthropic) | The text/images and prompt you submit |
 | **OpenRouter** (+ the model operator it routes to) | AI features (opt‑in, your key, provider set to OpenRouter) | The text/images and prompt you submit |
 | **MyMemory / Google** | Translate action | The text you translate |
-| **GitHub** | Update checks (opt‑in) | Your IP address and app version |
+| **GitHub** | Update checks (on by default, desktop only; can be turned off) | Your IP address and app version |
 | **alphacephei.com** | First‑time voice‑model download (opt‑in) | Your IP address |
 
 Each third party handles what it receives under its own privacy policy.

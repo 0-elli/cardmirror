@@ -7,6 +7,18 @@ see `DETAILED_CHANGELOG.md`.
 
 ## 0.1.0-beta.26 — Unreleased
 
+### Changed
+
+- **Automatic update checks are now on by default (desktop).**
+  CardMirror silently checks GitHub for a newer release at launch and
+  once a day, and only speaks up when an update is actually ready —
+  nothing installs without your click. This was previously opt-in, and
+  existing installs are switched over once, with a notice the first
+  time. To opt out, turn off **Check for updates automatically** in
+  Settings → General → About this install; heading to a tournament,
+  use **Pause update checks for 1 week** right next to it. The privacy
+  policy's update-check section reflects the new default.
+
 ### Fixed
 
 - **Web: the GitHub button shows its icon again.** Since beta.22 the
