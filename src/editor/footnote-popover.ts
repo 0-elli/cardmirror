@@ -19,6 +19,7 @@ import {
   type FootnoteContent,
   type FootnoteRun,
 } from '../schema/footnotes.js';
+import { isAnyOverlayOpen } from './overlay-stack.js';
 
 let openEl: HTMLElement | null = null;
 let dismiss: (() => void) | null = null;
@@ -145,7 +146,13 @@ function showPopover(view: EditorView, node: PMNode, nodePos: number, edit = fal
     closePopover();
   };
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') closePopover();
+    if (e.key !== 'Escape') return;
+    // A modal dialog stacked above owns the keyboard — its Escape must
+    // not also dismiss the popover underneath.
+    if (isAnyOverlayOpen()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closePopover();
   };
   document.addEventListener('pointerdown', onDown, true);
   document.addEventListener('keydown', onKey, true);

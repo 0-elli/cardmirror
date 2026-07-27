@@ -74,7 +74,14 @@ see `DETAILED_CHANGELOG.md`.
   use work, everything else is ignored, and nothing reaches the
   document behind them. Dialogs also take keyboard focus while open
   (and hand it back on close), and Enter now confirms the default
-  choice in Save/Don't Save-style dialogs, matching their hints.
+  choice in Save/Don't Save-style dialogs, matching their hints. The
+  Settings dialog and the Select Speech Document picker had the same
+  gap — opened from the keyboard, typing could land in the document
+  behind them — and got the same treatment. And Escape-closable
+  panels (the footnote popover, the Doc menu, the crash-recovery
+  sidebar) no longer close on an Escape that was meant for a dialog
+  stacked above them, and one Escape press now closes exactly one
+  thing.
 
 ## 0.1.0-beta.24 — 2026-07-26
 

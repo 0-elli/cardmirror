@@ -61,7 +61,12 @@ import {
 import { buildKeybindingsEditor } from './keybindings-editor.js';
 import { TRANSLATION_LANGUAGES } from './translate.js';
 import { getHost, getElectronHost, isWindowsHost } from './host/index.js';
-import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
+import { pushOverlay, popOverlay } from './overlay-stack.js';
+import {
+  installModalKeys,
+  armDialogFocus,
+  captureFocusForDialog,
+} from './text-prompt.js';
 import { getInstallInfo } from './install-info.js';
 import { launchBenchmarkOverlay } from './benchmark-ui.js';
 import { resetTimer } from './timer-state.js';
@@ -219,6 +224,10 @@ class SettingsModal {
    *  when it's the topmost (a dialog opened from here — e.g. the AI
    *  cite-prompt editor — handles its own Escape first). */
   private overlayToken: symbol | null = null;
+  /** Modal-key uninstaller while open; null when closed. */
+  private removeModalKeys: (() => void) | null = null;
+  /** Returns focus to wherever it was before open(); null when closed. */
+  private restoreFocus: (() => void) | null = null;
   /** Rows whose enabled state is gated on a `dependsOn` condition.
    *  Refilled each open() via renderEntry bookkeeping; consumed by
    *  `refreshDependents`. */
@@ -252,26 +261,29 @@ class SettingsModal {
       if (e.target === this.overlay) this.close();
     });
 
-    // Escape closes — but only when this is the topmost overlay, so a
-    // dialog opened from within Settings closes alone on the first press.
-    document.addEventListener('keydown', (e) => {
-      if (
-        this.overlay.style.display !== 'none' &&
-        e.key === 'Escape' &&
-        this.overlayToken !== null &&
-        isTopOverlay(this.overlayToken)
-      ) {
-        this.close();
-      }
-    });
-
     document.body.appendChild(this.overlay);
   }
 
   open(target?: SettingsTarget): void {
     this.render();
     this.overlay.style.display = '';
-    if (this.overlayToken === null) this.overlayToken = pushOverlay();
+    if (this.overlayToken === null) {
+      const token = pushOverlay();
+      this.overlayToken = token;
+      this.restoreFocus = captureFocusForDialog();
+      // Own the keyboard while open (Escape closes; anything not aimed
+      // at the dialog's own controls is swallowed) — installModalKeys
+      // stands down by itself when a dialog opened from here (e.g. the
+      // AI cite-prompt editor) is stacked on top.
+      this.removeModalKeys = installModalKeys(this.dialog, token, (e) => {
+        if (e.key === 'Escape') {
+          this.close();
+          return true;
+        }
+        return false;
+      });
+    }
+    armDialogFocus(this.dialog, 'dialog', 'Settings');
     // Subscribe so toggling any "parent" setting (AI master switch,
     // multi-doc, etc.) greys / un-greys the dependent rows live
     // without needing a re-open.
@@ -350,6 +362,10 @@ class SettingsModal {
       popOverlay(this.overlayToken);
       this.overlayToken = null;
     }
+    this.removeModalKeys?.();
+    this.removeModalKeys = null;
+    this.restoreFocus?.();
+    this.restoreFocus = null;
   }
 
   private render(): void {

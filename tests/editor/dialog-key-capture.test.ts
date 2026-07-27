@@ -22,6 +22,8 @@ import {
   installModalKeys,
 } from '../../src/editor/text-prompt.js';
 import { pushOverlay, popOverlay } from '../../src/editor/overlay-stack.js';
+import { openDocMenu } from '../../src/editor/doc-menu-ui.js';
+import { openRecoverySidebar } from '../../src/editor/recovery-ui.js';
 
 function mkView(): EditorView {
   const el = document.createElement('div');
@@ -138,6 +140,65 @@ describe('dialog keys never reach the editor', () => {
     pressOnEditor(view, 'Enter');
     await p;
     expect(document.activeElement).toBe(view.dom); // restored
+    view.destroy();
+  });
+});
+
+/** Non-modal surfaces (menus, the recovery sidebar) close on Escape but
+ *  deliberately let every other key through — the editor stays usable
+ *  beside them. Their hardening is narrower: the Escape they DO handle
+ *  is consumed (no second surface closes on the same press), and they
+ *  stand down entirely while a modal overlay is stacked above. */
+describe('non-modal Escape surfaces', () => {
+  it('doc menu: Escape closes and is consumed; a modal above takes priority', () => {
+    const view = mkView();
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+    openDocMenu(anchor, view, [
+      { title: 'Test', items: [{ label: 'X', run: () => {} }] },
+    ]);
+    expect(document.querySelector('.pmd-doc-menu')).not.toBeNull();
+
+    // Modal overlay on top: the Escape is the modal's, menu stays.
+    const token = pushOverlay();
+    pressOnEditor(view, 'Escape');
+    expect(document.querySelector('.pmd-doc-menu')).not.toBeNull();
+    popOverlay(token);
+
+    const evt = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    view.dom.dispatchEvent(evt);
+    expect(document.querySelector('.pmd-doc-menu')).toBeNull();
+    expect(evt.defaultPrevented).toBe(true); // consumed — no double-fire
+    view.destroy();
+  });
+
+  it('recovery sidebar: Escape closes and is consumed; a modal above takes priority', async () => {
+    const view = mkView();
+    const done = openRecoverySidebar([], {
+      onSave: () => true,
+      onOpen: () => {},
+      onDiscard: () => {},
+    });
+    expect(document.querySelector('.pmd-recovery-sidebar')).not.toBeNull();
+
+    const token = pushOverlay();
+    pressOnEditor(view, 'Escape');
+    expect(document.querySelector('.pmd-recovery-sidebar')).not.toBeNull();
+    popOverlay(token);
+
+    const evt = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    view.dom.dispatchEvent(evt);
+    expect(evt.defaultPrevented).toBe(true);
+    await done; // close resolves the sidebar's promise
+    expect(document.querySelector('.pmd-recovery-sidebar')).toBeNull();
     view.destroy();
   });
 });

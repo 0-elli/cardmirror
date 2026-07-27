@@ -12,6 +12,7 @@ import {
   unregisterRibbonTooltip,
 } from './ribbon-tooltips.js';
 import type { RibbonCommandId } from './ribbon-commands.js';
+import { isAnyOverlayOpen } from './overlay-stack.js';
 
 export interface DocMenuItem {
   label: string;
@@ -44,7 +45,7 @@ function closeMenu(): void {
   openMenuEl.remove();
   openMenuEl = null;
   if (onDocPointerDown) document.removeEventListener('pointerdown', onDocPointerDown);
-  if (onDocKey) document.removeEventListener('keydown', onDocKey);
+  if (onDocKey) document.removeEventListener('keydown', onDocKey, true);
   onDocPointerDown = null;
   onDocKey = null;
 }
@@ -107,11 +108,17 @@ export function openDocMenu(
     anchor.setAttribute('aria-expanded', 'false');
   };
   onDocKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      closeMenu();
-      anchor.setAttribute('aria-expanded', 'false');
-    }
+    if (e.key !== 'Escape') return;
+    // A modal dialog above owns the keyboard — its Escape must not
+    // also dismiss this menu.
+    if (isAnyOverlayOpen()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    anchor.setAttribute('aria-expanded', 'false');
   };
   document.addEventListener('pointerdown', onDocPointerDown);
-  document.addEventListener('keydown', onDocKey);
+  // Capture phase: consume the Escape before any document-level bubble
+  // handler can double-fire on the same press.
+  document.addEventListener('keydown', onDocKey, true);
 }

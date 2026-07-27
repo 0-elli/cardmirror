@@ -157,7 +157,20 @@ in each release, see `CHANGELOG.md`.
   Converted: all five primitives plus the three hand-rolled dialogs
   (`confirmCloseUnsaved`, `confirmNewDocOverwrite`, the three-pane
   slot picker); `promptForRouteChoice` now actually implements its
-  documented Enter-confirms-first-choice. Regression tests in
+  documented Enter-confirms-first-choice. Follow-up sweep over the
+  remaining Escape-only surfaces: the Settings dialog and the
+  speech-doc picker were the same bug class (true modals listening
+  only for Escape, never moving focus — opened from the command bar,
+  typing fell through to the document behind the overlay) and now use
+  `installModalKeys` + `armDialogFocus` with focus restore; the three
+  non-modal surfaces (footnote popover, Doc menu, recovery sidebar)
+  keep letting typing through by design but now consume the Escape
+  they handle (pd + sp, Doc menu moved to capture) and stand down via
+  `isAnyOverlayOpen()` when a modal is stacked above — so one press
+  closes exactly one thing, top-most first. The deliberately-untouched
+  tier (context menus, font-size picker, anchored dropdowns) dismisses
+  on any interaction by design; swallowing keys there would change
+  correct behavior. Regression tests in
   `tests/editor/dialog-key-capture.test.ts` drive a live EditorView
   with `baseKeymap`; `tests/_setup-jsdom.ts` (wired via vitest
   `setupFiles`) polyfills `Range.getClientRects`, which jsdom lacks —

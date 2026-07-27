@@ -19,6 +19,7 @@
 
 import type { JournalEntry } from './host/index.js';
 import { setIcon } from './icons';
+import { isAnyOverlayOpen } from './overlay-stack.js';
 
 export interface RecoverySidebarCallbacks {
   /** Called when the user clicks Save on a row. Should write the
@@ -81,10 +82,13 @@ class RecoverySidebar {
 
   private readonly handleKey = (e: KeyboardEvent): void => {
     if (this.settled) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      this.close();
-    }
+    if (e.key !== 'Escape') return;
+    // A modal dialog above (e.g. a row's Save-As flow) owns the
+    // keyboard — its Escape must not also close the sidebar.
+    if (isAnyOverlayOpen()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.close();
   };
 
   private render(): void {
