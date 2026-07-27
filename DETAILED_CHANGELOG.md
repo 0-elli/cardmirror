@@ -7,6 +7,31 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.26 — Unreleased
 
+- **Tilde send: blank-line fill narrowed to legal placeholders**
+  (`insertSpeechSlice` in `src/editor/speech-doc-send.ts`). Field
+  report: sending a card added "2 empty tag headers" after it; second
+  report: the phantom tags carried numbering. Mechanism (reproduced in
+  a harness): the fill branch — designed in 0f48fce to consume the
+  doc-level trailer/seed placeholder so consecutive sends stack
+  cleanly — accepted ANY empty textblock, including a blank
+  `card_body` inside a card or an empty `tag`. `replaceRange` then
+  split the host card (each half's schema-mandated leading `tag`
+  synthesized empty = phantom #1), and the trailer-paragraph insert at
+  the mapped end position split the tail half AGAIN (= phantom #2);
+  the split halves copy the host's attrs, so in speech docs built from
+  numbered sends the phantoms rendered numbered (the attrs come from
+  the card the caret sat in, not the sent card — verified both
+  directions). The two earlier hardening passes (bf14404, e0b12c5)
+  snapped the neighboring branches but left the fill first-in-chain
+  and unguarded. Fix: the fill now additionally requires
+  `parent.canReplace(index, index+1, content)` — i.e. the incoming
+  content may legally stand where the blank line stands — else it
+  falls through to the same `nearestValidInsertPos` snap as every
+  other caret shape. The zone-flatten rewrite now happens BEFORE
+  placement so the check and the snap judge the content that actually
+  lands. Regression matrix extended with both caret shapes + a
+  numbering-variant test (verified failing pre-fix, 2 tests).
+
 - **Web GitHub button: octocat restored + icon-coverage guard**
   (`style.css`, `tests/editor/icon-coverage.test.ts`). The button's
   `.pmd-icon-github` rule was hand-added to the GENERATED `icons.css`

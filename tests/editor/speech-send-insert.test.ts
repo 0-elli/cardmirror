@@ -116,17 +116,103 @@ describe('insertSpeechSlice placement', () => {
         },
         false,
       ],
+      [
+        'caret on a BLANK line inside a card (the tilde "2 empty tag headers" bug)',
+        () => {
+          // Host card with an empty card_body line mid-card — the old fill
+          // branch replaced that line in place, splitting the host card
+          // (one synthesized tag) and then splitting the tail half again
+          // with the trailer paragraph (the second one).
+          const v = mkView(
+            schema.nodes['doc']!.create(null, [
+              schema.nodes['card']!.create(null, [
+                schema.nodes['tag']!.create(null, schema.text('HOST')),
+                schema.nodes['card_body']!.create(null, schema.text('before')),
+                schema.nodes['card_body']!.create(),
+                schema.nodes['card_body']!.create(null, schema.text('after')),
+              ]),
+            ]),
+          );
+          let blankPos = -1;
+          v.state.doc.descendants((n, p) => {
+            if (n.type.name === 'card_body' && n.content.size === 0) blankPos = p;
+            return true;
+          });
+          v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, blankPos + 1)));
+          return v;
+        },
+        false,
+      ],
+      [
+        'caret in an EMPTY TAG of an existing card',
+        () => {
+          const v = mkView(
+            schema.nodes['doc']!.create(null, [
+              card('FULL', 'body'),
+              schema.nodes['card']!.create(null, [
+                schema.nodes['tag']!.create(),
+                schema.nodes['card_body']!.create(),
+              ]),
+            ]),
+          );
+          let tagPos = -1;
+          v.state.doc.descendants((n, p) => {
+            if (n.type.name === 'tag' && n.content.size === 0) tagPos = p;
+            return true;
+          });
+          v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, tagPos + 1)));
+          return v;
+        },
+        false,
+      ],
     ];
     for (const [name, mk, atEnd] of targets) {
       const v = mk();
       const cardsBefore = cardCount(v.state.doc);
+      // Delta, not absolute: one target starts with an (intentional)
+      // empty-tag card — the insert must not ADD any.
+      const emptyTagsBefore = countEmptyTags(v.state.doc);
       insertSpeechSlice(v, slice, atEnd);
       await settle();
-      expect(countEmptyTags(v.state.doc), `${name}: empty tags`).toBe(0);
+      expect(countEmptyTags(v.state.doc), `${name}: empty tags`).toBe(emptyTagsBefore);
       // Exactly ONE card added — the sent one; a split would add fragments.
       expect(cardCount(v.state.doc), `${name}: card count`).toBe(cardsBefore + 1);
       v.destroy();
     }
+  });
+
+  it('a split can no longer mint numbered phantom cards (the numbering variant)', async () => {
+    // The synthesized split halves copied the HOST card's attrs — in a
+    // speech doc built from numbered sends, the phantom blank tags came
+    // out numbered. With the fill narrowed, no card but the host may
+    // carry its numRole.
+    const slice = takeSingleCardSlice()!;
+    const v = mkView(
+      schema.nodes['doc']!.create(null, [
+        schema.nodes['card']!.create({ numRole: 'number' }, [
+          schema.nodes['tag']!.create(null, schema.text('NUMBERED HOST')),
+          schema.nodes['card_body']!.create(null, schema.text('before')),
+          schema.nodes['card_body']!.create(),
+          schema.nodes['card_body']!.create(null, schema.text('after')),
+        ]),
+      ]),
+    );
+    let blankPos = -1;
+    v.state.doc.descendants((n, p) => {
+      if (n.type.name === 'card_body' && n.content.size === 0) blankPos = p;
+      return true;
+    });
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, blankPos + 1)));
+    insertSpeechSlice(v, slice, false);
+    await settle();
+    const roles: string[] = [];
+    v.state.doc.forEach((c) => {
+      if (c.type.name === 'card') roles.push(String(c.attrs['numRole']));
+    });
+    // Host + the sent card, nothing else (the snap may land the card on
+    // either side of the host, so order-insensitive).
+    expect([...roles].sort()).toEqual(['none', 'number']);
+    v.destroy();
   });
 
   it('a failing insert alerts instead of silently losing the card', async () => {

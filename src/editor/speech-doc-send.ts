@@ -253,6 +253,11 @@ export function insertSpeechSlice(
       // destroy — bail if that happened.
       if ((speechView as unknown as { docView: unknown }).docView == null) return;
       const liveState = speechView.state;
+      // A speech doc is a compiled artifact — flatten any live zone to plain
+      // content rather than carry a link into it. Computed up front: the
+      // placement logic below must judge the content that will actually
+      // land, not the pre-flatten slice.
+      const rewritten = rewriteHeadingIds(flattenZonesInSlice(slice));
       let liveFrom: number;
       let liveTo: number;
       if (atEnd) {
@@ -267,11 +272,28 @@ export function insertSpeechSlice(
       } else {
         const $from = liveState.selection.$from;
         const isEmpty = liveState.selection.empty;
+        // Fill only a blank line the incoming content may legally REPLACE
+        // in place — in practice the doc-level placeholder the previous
+        // send's trailer (or a new doc's seed paragraph) left, which is
+        // what the fill was designed for (0f48fce). The old check accepted
+        // ANY empty textblock — including a blank card_body INSIDE a card,
+        // where replaceRange had to split the host card: each half's
+        // schema-mandated leading `tag` was synthesized empty, and the
+        // trailer insert below then split the tail half a SECOND time —
+        // the field report's "2 empty tag headers" after a tilde send,
+        // carrying the split card's numbering attrs (2026-07-27).
         const inBlank =
           isEmpty &&
           $from.depth >= 1 &&
           $from.parent.isTextblock &&
-          $from.parent.content.size === 0;
+          $from.parent.content.size === 0 &&
+          $from
+            .node($from.depth - 1)
+            .canReplace(
+              $from.index($from.depth - 1),
+              $from.index($from.depth - 1) + 1,
+              rewritten.content,
+            );
         if (inBlank) {
           // Fill the empty placeholder line rather than insert beside it (which
           // would leave a stray blank line above the sent card).
@@ -285,7 +307,7 @@ export function insertSpeechSlice(
           liveFrom = liveTo = nearestValidInsertPos(
             liveState.doc,
             liveState.selection.from,
-            slice.content,
+            rewritten.content,
           );
         } else {
           // A range selection snaps exactly like a non-blank caret: to the
@@ -298,13 +320,10 @@ export function insertSpeechSlice(
           liveFrom = liveTo = nearestValidInsertPos(
             liveState.doc,
             liveState.selection.from,
-            slice.content,
+            rewritten.content,
           );
         }
       }
-      // A speech doc is a compiled artifact — flatten any live zone to plain
-      // content rather than carry a link into it.
-      const rewritten = rewriteHeadingIds(flattenZonesInSlice(slice));
       let tr = liveState.tr;
       tr.replaceRange(liveFrom, liveTo, rewritten);
       const sliceEndPos = tr.mapping.map(liveTo);

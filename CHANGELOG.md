@@ -14,6 +14,16 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Sending a card no longer leaves empty tag headers behind.** If the
+  speech document's cursor sat on a blank line *inside* a card, a
+  tilde send (or a palette insert) split that card to make room —
+  leaving two empty tag headers after the sent card, which also picked
+  up the surrounding card's numbering. The sent card now lands as a
+  clean neighbor instead; blank lines inside cards are left alone. The
+  tidy behavior on a *placeholder* blank line — the one a previous
+  send leaves — is unchanged: consecutive sends still stack without
+  accumulating blank lines.
+
 ## 0.1.0-beta.25 — 2026-07-27
 
 ### Added
