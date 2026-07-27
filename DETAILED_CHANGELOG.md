@@ -5,6 +5,21 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.26 — Unreleased
+
+- **Web GitHub button: octocat restored + icon-coverage guard**
+  (`style.css`, `tests/editor/icon-coverage.test.ts`). The button's
+  `.pmd-icon-github` rule was hand-added to the GENERATED `icons.css`
+  (692a11b); the next `gen-icons.mjs` regeneration (c52d9ee, shipped
+  beta.22) silently dropped it. An icon class with no `--pmd-icon`
+  doesn't render blank — the mask property fails and the box paints
+  solid `currentColor`, hence the black square. The rule now lives in
+  hand-maintained `style.css` beside the web-button styles, and a new
+  test scans every literal `pmd-icon-<name>` reference (index.html +
+  src TS — the raw-HTML gap the typed `icon()` helper can't cover)
+  against the union of mask definitions, so a regen can never silently
+  orphan an icon class again. Sweep found no other orphans.
+
 ## 0.1.0-beta.25 — 2026-07-27
 
 - **Salvage-mode open for damaged files** (`src/schema/salvage.ts`,

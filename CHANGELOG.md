@@ -5,6 +5,15 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.26 — Unreleased
+
+### Fixed
+
+- **Web: the GitHub button shows its icon again.** Since beta.22 the
+  web edition's GitHub button rendered as a solid square instead of
+  the GitHub mark. (Web only — the desktop app doesn't have this
+  button.)
+
 ## 0.1.0-beta.25 — 2026-07-27
 
 ### Added
