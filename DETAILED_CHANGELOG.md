@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.25 — Unreleased
+## 0.1.0-beta.25 — 2026-07-27
 
 - **Salvage-mode open for damaged files** (`src/schema/salvage.ts`,
   `parseNativeSalvage` + `NativeDamagedError` in `src/native/index.ts`,
