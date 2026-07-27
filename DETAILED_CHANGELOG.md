@@ -28,6 +28,27 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **CSS content glyphs escaped repo-wide (mojibake-proofing)**
+  (`style.css` ×5, `icons.css` ×85 via `gen-icons.mjs` `cssGlyph`,
+  guard test in `icon-coverage.test.ts`). Field report: the 🎤 pane
+  chip showed "ðŸŽ¤" and the numbering flow-in arrows garbled in a
+  three-pane dev session; a reload fixed both. Mechanism (reproduced
+  with a headless-Chrome probe against the live dev server): vite
+  serves CSS as `text/css` with NO charset and the files carry no
+  BOM/`@charset`, so the browser decodes the stylesheet per the
+  REFERENCING document's encoding — with a charset-bearing document
+  the probe computes `\1F3A4`, without one it computes exactly
+  `f0,178,17d,a4` (windows-1252 mojibake). The steady-state document
+  declares UTF-8, so the field hit was a transient context slip
+  during a mode-switch reload; rather than chase the race, every
+  non-ASCII `content:` value is now a hex escape (`\1F3A4 ` — the
+  trailing space is the parser-consumed terminator), which is pure
+  ASCII and immune to ANY decode context (dev, prod, file://).
+  Escaping is emitted by the icon generator (regen verified: 85
+  classic-glyph lines changed, 0 mask lines) and enforced by a test
+  scanning both stylesheets for non-ASCII content values. The
+  charset-less probe now renders the correct glyph end-to-end.
+
 - **Tilde send: blank-line fill narrowed to legal placeholders**
   (`insertSpeechSlice` in `src/editor/speech-doc-send.ts`). Field
   report: sending a card added "2 empty tag headers" after it; second

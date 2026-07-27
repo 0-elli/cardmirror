@@ -76,4 +76,22 @@ describe('icon mask coverage', () => {
   it('the web GitHub button icon is defined (the beta.22 regression)', () => {
     expect(definedIcons().has('github')).toBe(true);
   });
+
+  it('CSS content values are pure ASCII — decode-proof glyph escapes only', () => {
+    // A stylesheet served without a charset is decoded per the
+    // REFERENCING document; when that context slips (field bug
+    // 2026-07-27: the 🎤 pane chip and numbering arrows rendered as
+    // windows-1252 mojibake after a dev reload race), every raw
+    // emoji/glyph in a `content:` value garbles. Escapes (`\1F3A4 `)
+    // are immune. This scans every content value in both stylesheets.
+    const offenders: string[] = [];
+    for (const rel of ['src/editor/style.css', 'src/editor/icons.css']) {
+      const css = read(rel);
+      for (const m of css.matchAll(/content:\s*(['"])((?:(?!\1).)*)\1/g)) {
+        // eslint-disable-next-line no-control-regex
+        if (/[^\x00-\x7F]/.test(m[2]!)) offenders.push(`${rel}: content: ${m[1]}${m[2]}${m[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

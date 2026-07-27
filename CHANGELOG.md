@@ -26,6 +26,13 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Interface glyphs can no longer garble.** In rare cases (a reload
+  race in certain window states) the speech-doc microphone on a pane
+  chip and the numbering arrows could render as garbled characters
+  (e.g. "ðŸŽ¤") until a reload. Every symbol the interface draws via
+  CSS is now spelled in a form immune to that failure, including the
+  entire classic icon set.
+
 - **Sending a card no longer leaves empty tag headers behind.** If the
   speech document's cursor sat on a blank line *inside* a card, a
   tilde send (or a palette insert) split that card to make room —

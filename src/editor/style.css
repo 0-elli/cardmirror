@@ -1291,7 +1291,7 @@ html:has(body.pmd-speech-banner-visible) {
    so the box paints unmasked). tests/editor/icon-coverage.test.ts now
    guards every referenced icon class against this. */
 .pmd-icon-github { --pmd-icon: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2016%2016%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20fill%3D%22%23000%22%20d%3D%22M8%200C3.58%200%200%203.58%200%208c0%203.54%202.29%206.53%205.47%207.59.4.07.55-.17.55-.38%200-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01%201.08.58%201.23.82.72%201.21%201.87.87%202.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95%200-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12%200%200%20.67-.21%202.2.82.64-.18%201.32-.27%202-.27s1.36.09%202%20.27c1.53-1.04%202.2-.82%202.2-.82.44%201.1.16%201.92.08%202.12.51.56.82%201.27.82%202.15%200%203.07-1.87%203.75-3.65%203.95.29.25.54.73.54%201.48%200%201.07-.01%201.93-.01%202.2%200%20.21.15.46.55.38A8.012%208.012%200%200%200%2016%208c0-4.42-3.58-8-8-8Z%22%2F%3E%3C%2Fsvg%3E"); }
-:root[data-icons="classic"] .pmd-icon-github::before { content: "🐙"; }
+:root[data-icons="classic"] .pmd-icon-github::before { content: "\1F419 "; }
 #ribbon .ribbon-right-grid button {
   width: 1.6rem;
   height: 1.45rem;
@@ -2642,11 +2642,11 @@ code {
 }
 /* Down-arrow: numbering "flows down" into this continuing block. */
 .pmd-num-flow-in::after {
-  content: '↓';
+  content: '\2193 ';
 }
 /* Restart glyph: the count starts over at this card. */
 .pmd-num-restart::after {
-  content: '↺';
+  content: '\21BA ';
 }
 
 /* Analytic = same outline level as Tag, dark blue. The id-scoped
@@ -5496,7 +5496,7 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 }
 
 .pmd-nav-context-item-checked::before {
-  content: '✓';
+  content: '\2713 ';
   position: absolute;
   left: 0.5rem;
   color: var(--pmd-c-accent);
@@ -10978,8 +10978,16 @@ body.pmd-multi-nav-empty.pmd-multi-doc #status-bar {
    which slot is the active destination for the send-to-speech
    chord. The chip's accent stripe reinforces it without crowding
    the filename. */
+/* \1F3A4 = 🎤, spelled as an escape ON PURPOSE (as are all non-ASCII
+   `content` values repo-wide; icon-coverage.test.ts enforces it). A
+   stylesheet served without a charset is decoded per the REFERENCING
+   document, and when that context slips (field bug 2026-07-27: this
+   chip and the numbering arrows rendered as windows-1252 mojibake
+   after a dev reload race) every raw glyph garbles. Escapes are pure
+   ASCII — immune to any decoding. The trailing space terminates the
+   escape; the parser consumes it, it never renders. */
 .pmd-pane-speech .pmd-pane-chip-name::before {
-  content: '🎤';
+  content: '\1F3A4 ';
   margin-right: 0.3em;
 }
 /* Speech-doc tint when the slot is NOT focused. Matches the
