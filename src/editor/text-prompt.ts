@@ -484,6 +484,7 @@ export function confirmDialog(
     }
     const body = document.createElement('div');
     body.className = opts?.title ? 'pmd-choice-prompt-detail' : 'pmd-route-header';
+    body.style.whiteSpace = 'pre-line'; // multi-line bodies keep their breaks
     body.textContent = message;
     dialog.appendChild(body);
 
