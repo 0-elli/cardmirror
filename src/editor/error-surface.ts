@@ -81,6 +81,15 @@ export function fileLockedMessage(err: unknown): string | null {
  *  Toasting it would cry wolf on every launch. */
 const BENIGN_ERROR = /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/;
 
+/** Manually surface a caught error through the same last-resort
+ *  channel as uncaught ones (console + rate-limited toast). For catch
+ *  blocks that must not abort their flow but whose failures were
+ *  previously invisible — a silent `console.warn` in the field taught
+ *  us nothing when the guarded step actually broke. */
+export function surfaceError(kind: string, err: unknown): void {
+  surface(kind, err);
+}
+
 export function installGlobalErrorSurface(): void {
   window.addEventListener('unhandledrejection', (e) => {
     surface('unhandled rejection', (e as PromiseRejectionEvent).reason);

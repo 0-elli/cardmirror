@@ -470,14 +470,21 @@ function buildTableNode(spec: TableSpec): PMNode {
         ? [schema.text(cell.text, marks.length ? marks : null)]
         : [];
       const paragraph = paraType.create(null, paraContent);
-      cellNodes.push(cellType.create(
+      cellNodes.push(cellType.createChecked(
         { colspan: cell.colspan ?? 1, rowspan: cell.rowspan ?? 1 },
         [paragraph],
       ));
     }
-    rowNodes.push(rowType.create(null, cellNodes));
+    rowNodes.push(rowType.createChecked(null, cellNodes));
   }
-  return tableType.create(null, rowNodes);
+  // createChecked throughout (audit tier 4): this builds nodes from
+  // MODEL-derived JSON and inserts them as closed content, which the
+  // step machinery splices past validation — safe today only because
+  // the current schema happens to allow every shape validateTableSpec
+  // admits (e.g. empty rows). Checked construction turns a future
+  // schema tightening into a loud throw at build time instead of a
+  // silently-invalid doc.
+  return tableType.createChecked(null, rowNodes);
 }
 
 export function runGenerateTable(

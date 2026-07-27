@@ -18,6 +18,12 @@ see `DETAILED_CHANGELOG.md`.
   with a notice asking you to report it (that report is how we catch
   the underlying bug). A save is never refused.
 
+- **Silent failures now speak up.** A handful of internal error paths
+  that used to fail into the developer console — a condense step
+  failing after a paste, an AI edit that couldn't be applied — now
+  surface a visible notice, so problems get reported instead of
+  quietly shrugged off.
+
 - **Stored cards are validated before insertion.** Quick cards, the
   dropzone shelf, cards received from a paired machine, and
   send-to-speech now verify their stored content is structurally sound

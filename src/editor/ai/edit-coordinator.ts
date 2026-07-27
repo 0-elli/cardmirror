@@ -257,15 +257,23 @@ export function claimRegion(
     apply(tr) {
       try {
         view.dispatch(markBypass(tr));
-      } catch {
-        /* view torn down */
+      } catch (err) {
+        // ONLY view teardown is benign here (the doc/window closed
+        // under an in-flight AI edit). Swallowing every error made
+        // repair flows count a failed dispatch as applied and toast
+        // success for edits that never landed (audit tier 4) —
+        // anything else rethrows so the caller aborts its pass and
+        // the global error surface reports it.
+        if (view.isDestroyed) return;
+        throw err;
       }
     },
     release() {
       try {
         view.dispatch(markBypass(view.state.tr.setMeta(coordinatorKey, { t: 'release', id })));
-      } catch {
-        /* view torn down */
+      } catch (err) {
+        if (view.isDestroyed) return; // teardown — nothing to release
+        throw err;
       }
     },
   };

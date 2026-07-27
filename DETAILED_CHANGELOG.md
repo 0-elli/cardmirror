@@ -7,6 +7,27 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.25 — Unreleased
 
+- **Structural-integrity hardening batch** (audit tier 4, four items).
+  (1) The AI edit-coordinator's lease `apply`/`release` catches are
+  scoped to actual view teardown (`view.isDestroyed`) — swallowing
+  every dispatch error let repair flows count failed edits as applied
+  and toast success for work that never landed; real failures now
+  rethrow to the caller and the global error surface. (2) The
+  paste-then-condense catches route through the (new) `surfaceError`
+  export instead of a silent `console.warn`, so a condense bug is
+  visible in the field while the committed paste is kept. (3) Fragile-
+  by-convention constructions verified: the AI table builder uses
+  `createChecked` (model-derived JSON spliced as closed content — a
+  future schema tightening now throws at build instead of inserting
+  invalid), and export's `filterChildren` verifies the filtered
+  content and falls back to the unfiltered node rather than ever
+  exporting an invalid container. (4) The docx import pipeline gained
+  the `doc.check()` enforcement net the `.cmir` path has — the
+  importer's head-first convention was the only thing between a future
+  regression and silently-corrupt imports; an invalid import now fails
+  loudly with a report-this message. Passes against every existing
+  import fixture (i.e. it never fires today).
+
 - **Save-time structural tripwire** (`src/native/index.ts`,
   audit tier 1). `doc.check()` had exactly one call site — .cmir load
   — so an invalid live doc reached the journal in ~1–2s and the file

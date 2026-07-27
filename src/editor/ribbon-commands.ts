@@ -62,6 +62,7 @@ import {
 import { applyPlainPasteFromText, togglePlainPaste } from './paste-plugin.js';
 import { lockHighlighting } from './create-reference.js';
 import { showToast } from './toast.js';
+import { surfaceError } from './error-surface.js';
 import { TYPE_TO_LEVEL, TYPE_LABEL } from './headings.js';
 import { selectedTransclusion, enclosingZonePos, isTransclusionNode } from './transclusion.js';
 import { refreshZoneAtPos, refreshAllZones, detachZoneAtPos } from './transclusion-actions.js';
@@ -3584,7 +3585,10 @@ export function pasteTextAndCondense(view: EditorView, text: string, headingMode
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
     condenseMerge({ withPilcrows: false, headingMode })(view.state, view.dispatch.bind(view));
   } catch (err) {
-    console.warn('Paste + condense — condense step failed:', err);
+    // The paste itself is committed and valid — keep it — but a failed
+    // condense must be VISIBLE (audit tier 4): a silent warn here would
+    // hide a real condense bug from every field report.
+    surfaceError('paste + condense', err);
   }
 }
 

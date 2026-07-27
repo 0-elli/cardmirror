@@ -56,6 +56,7 @@ import { buildImageNodeFromBlob, insertImageNode } from './image-insert.js';
 import { fragmentHasZone, flattenZonesInSlice, enclosingZonePos } from './transclusion.js';
 import { recallLinkedCopy } from './clipboard-link-cache.js';
 import { detectPasteDialect } from './paste-dialect.js';
+import { surfaceError } from './error-surface.js';
 import { convertWordHtml, convertHakuHtml } from '../import/html-paste.js';
 import {
   FOLDABLE_SPACES_RE,
@@ -301,7 +302,9 @@ function condensePastedRange(
         });
     cmd(view.state, view.dispatch.bind(view));
   } catch (err) {
-    console.warn('Condense after paste — condense step failed:', err);
+    // Keep the committed paste, but surface the failure (audit tier 4)
+    // — a silent warn would hide a real condense bug in the field.
+    surfaceError('condense after paste', err);
   }
   // F2 normally leaves a collapsed cursor at the end of the paste;
   // restore that after the temporary range selection.

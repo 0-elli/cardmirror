@@ -72,19 +72,42 @@ export async function fromDocx(
   const endnotesRelsXml = await docx.readText('word/_rels/endnotes.xml.rels');
   // Word tolerates ragged tables (rows with differing cell counts); the
   // editor's table plumbing assumes rectangular ones. Repair on the way in.
-  return repairDoc(
-    importDoc(
-      documentXml,
-      relsXml,
-      mediaParts,
-      stylesXml,
-      {
-        footnotes: importNotes(footnotesXml, footnotesRelsXml, 'w:footnotes', 'w:footnote'),
-        endnotes: importNotes(endnotesXml, endnotesRelsXml, 'w:endnotes', 'w:endnote'),
-      },
-      provenanceOut,
+  return checkImportedDoc(
+    repairDoc(
+      importDoc(
+        documentXml,
+        relsXml,
+        mediaParts,
+        stylesXml,
+        {
+          footnotes: importNotes(footnotesXml, footnotesRelsXml, 'w:footnotes', 'w:footnote'),
+          endnotes: importNotes(endnotesXml, endnotesRelsXml, 'w:endnotes', 'w:endnote'),
+        },
+        provenanceOut,
+      ),
     ),
   );
+}
+
+/** Enforcement net behind the docx pipeline (audit tier 4): the
+ *  importer keeps its containers valid by hand-maintained convention
+ *  (`assembleDoc` always places the required head first), and
+ *  `repairDoc` fixes the known-legacy shapes — but nothing VERIFIED
+ *  the result, so a future importer regression would have reached the
+ *  editor (and disk) silently, exactly the invalid-structure class the
+ *  `.cmir` load path refuses. Failing the import loudly is strictly
+ *  better than opening corrupt state; today this never fires. */
+function checkImportedDoc(doc: PMNode): PMNode {
+  try {
+    doc.check();
+  } catch (err) {
+    throw new Error(
+      `This Word document imported into an invalid structure — please report this file (${
+        err instanceof Error ? err.message : String(err)
+      }).`,
+    );
+  }
+  return doc;
 }
 
 /** Like `fromDocx` but also returns the parsed comment threads.
@@ -115,12 +138,14 @@ export async function fromDocxFull(
   const endnotesXml = await docx.readText('word/endnotes.xml');
   const footnotesRelsXml = await docx.readText('word/_rels/footnotes.xml.rels');
   const endnotesRelsXml = await docx.readText('word/_rels/endnotes.xml.rels');
-  // Same rectangularity repair as `fromDocx`.
-  const doc = repairDoc(
-    importDoc(documentXml, relsXml, mediaParts, stylesXml, {
-      footnotes: importNotes(footnotesXml, footnotesRelsXml, 'w:footnotes', 'w:footnote'),
-      endnotes: importNotes(endnotesXml, endnotesRelsXml, 'w:endnotes', 'w:endnote'),
-    }),
+  // Same rectangularity repair + enforcement check as `fromDocx`.
+  const doc = checkImportedDoc(
+    repairDoc(
+      importDoc(documentXml, relsXml, mediaParts, stylesXml, {
+        footnotes: importNotes(footnotesXml, footnotesRelsXml, 'w:footnotes', 'w:footnote'),
+        endnotes: importNotes(endnotesXml, endnotesRelsXml, 'w:endnotes', 'w:endnote'),
+      }),
+    ),
   );
   const commentsXml = await docx.readText('word/comments.xml');
   const commentsExtendedXml = await docx.readText('word/commentsExtended.xml');

@@ -26,7 +26,7 @@
  *   - Tables: dropped (read mode plugin doesn't model them).
  */
 
-import type { Node as PMNode, Schema } from 'prosemirror-model';
+import { Fragment, type Node as PMNode, type Schema } from 'prosemirror-model';
 import { Transform } from 'prosemirror-transform';
 import { isReadingMarkerColor, READING_MARKER_COLOR } from '../editor/reading-marker.js';
 import { computeUnreadDecorations } from '../editor/mark-unread-plugin.js';
@@ -278,14 +278,24 @@ function stripUndertags(doc: PMNode): PMNode {
 // --------------------------- helpers -----------------------------
 
 /** Build a copy of a container node with only the children for which
- *  `predicate` returns true. The container's required first child is
- *  preserved as long as `predicate` accepts it (the caller's
- *  responsibility — both filter-helpers above only drop
- *  optional-slot children). */
+ *  `predicate` returns true. Both current callers only drop
+ *  optional-slot children, so the result is always valid — but this
+ *  helper runs on the direct save path, so it verifies rather than
+ *  trusts (audit tier 4): a future predicate that dropped a required
+ *  head would otherwise export invalid structure silently. On an
+ *  invalid filtered result the ORIGINAL node is kept (the un-stripped
+ *  child appears in the export — a cosmetic miss, never corruption). */
 function filterChildren(node: PMNode, predicate: (child: PMNode) => boolean): PMNode {
   const kept: PMNode[] = [];
   node.forEach((child) => {
     if (predicate(child)) kept.push(child);
   });
-  return node.type.create(node.attrs, kept);
+  const frag = Fragment.fromArray(kept);
+  if (!node.type.validContent(frag)) {
+    console.error(
+      `[cardmirror export] filterChildren would make ${node.type.name} invalid — keeping it unfiltered`,
+    );
+    return node;
+  }
+  return node.type.create(node.attrs, frag);
 }
