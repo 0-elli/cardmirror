@@ -35,6 +35,8 @@ import {
   splitInCardAnalytics,
   flattenNestedZones,
   healAnalyticUnits,
+  healCards,
+  healTables,
   dropEmptyZones,
   stripImageVisualMarks,
 } from '../schema/migrate.js';
@@ -205,9 +207,13 @@ export function parseNative(bytes: Uint8Array): ParseNativeResult {
   try {
     doc = stripImageVisualMarks(
       dropEmptyZones(
-        healAnalyticUnits(
-          flattenNestedZones(
-            splitInCardAnalytics(stampMissingHeadingIds(schema.nodeFromJSON(file.doc))),
+        healTables(
+          healCards(
+            healAnalyticUnits(
+              flattenNestedZones(
+                splitInCardAnalytics(stampMissingHeadingIds(schema.nodeFromJSON(file.doc))),
+              ),
+            ),
           ),
         ),
       ),

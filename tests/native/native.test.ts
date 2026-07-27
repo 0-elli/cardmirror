@@ -306,14 +306,19 @@ describe('parseNative structural validation (reject-invalid)', () => {
       JSON.stringify({ format: 'cardmirror-doc', formatVersion: 1, doc }),
     );
 
-  it('rejects invalid structure of known types (tagless card)', () => {
+  it('rejects invalid structure of known types (paragraph inside a card)', () => {
+    // NOTE: this example was a tagless card until 2026-07-26, when that
+    // shape joined the heal-known-legacy set (healCards). A paragraph is
+    // never legal card content and no heal touches it, so it still
+    // proves check() guards everything the heals don't.
     const bad = envelope({
       type: 'doc',
       content: [
         {
           type: 'card',
           content: [
-            { type: 'card_body', content: [{ type: 'text', text: 'no tag first' }] },
+            { type: 'tag', attrs: { id: 't-1' }, content: [{ type: 'text', text: 't' }] },
+            { type: 'paragraph', content: [{ type: 'text', text: 'illegal here' }] },
           ],
         },
       ],
@@ -434,6 +439,126 @@ describe('healAnalyticUnits (beta.22 field report: empty analytic_unit)', () => 
     });
     const { doc } = parseNative(file);
     expect(doc.firstChild!.type.name).toBe('analytic_unit');
+    expect(doc.firstChild!.childCount).toBe(2);
+  });
+});
+
+describe('healCards + healTables (2026-07-26 field report: empty card)', () => {
+  // Second and third members of the empty-shell family (see
+  // healAnalyticUnits above): a hollowed `card` (`tag (…)*`) and
+  // hollowed tables (`table_row+`, cells `paragraph+`) turn into
+  // "file is damaged" refusals at the beta.21 check. Same treatment:
+  // known-legacy shapes heal losslessly, check() guards the rest.
+  const envelope = (doc: unknown): Uint8Array =>
+    new TextEncoder().encode(
+      JSON.stringify({ format: 'cardmirror-doc', formatVersion: 1, doc }),
+    );
+  const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+  const tag = (text: string) => ({
+    type: 'tag',
+    attrs: { id: 't-1' },
+    content: [{ type: 'text', text }],
+  });
+  const body = (text: string) => ({ type: 'card_body', content: [{ type: 'text', text }] });
+
+  it('drops a completely empty card (the reported file shape)', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [para('before'), { type: 'card', content: [] }, para('after')],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.childCount).toBe(2);
+    expect(doc.textContent).toBe('beforeafter');
+  });
+
+  it('floats headless-card children up to the parent level', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [{ type: 'card', content: [body('stranded body')] }],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.firstChild!.type.name).toBe('card_body');
+    expect(doc.textContent).toBe('stranded body');
+  });
+
+  it('re-heads a mid-tail tag into its own card', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'card',
+          content: [tag('first'), body('one'), { ...tag('second'), attrs: { id: 't-2' } }, body('two')],
+        },
+      ],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.childCount).toBe(2);
+    expect(doc.child(0).type.name).toBe('card');
+    expect(doc.child(0).textContent).toBe('firstone');
+    expect(doc.child(1).type.name).toBe('card');
+    expect(doc.child(1).textContent).toBe('secondtwo');
+  });
+
+  it('heals an empty card inside a live zone too', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'transclusion_ref',
+          attrs: { src: 'x.cmir', base: 'doc' },
+          content: [para('zone text'), { type: 'card', content: [] }],
+        },
+      ],
+    });
+    const { doc } = parseNative(file);
+    const zone = doc.firstChild!;
+    expect(zone.childCount).toBe(1);
+    expect(zone.textContent).toBe('zone text');
+  });
+
+  it('drops an empty table, including one nested in a card', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [
+        { type: 'table', content: [] },
+        { type: 'card', content: [tag('t'), { type: 'table', content: [] }, body('kept')] },
+      ],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.childCount).toBe(1);
+    const card = doc.child(0);
+    expect(card.childCount).toBe(2); // tag + body; hollow table gone
+    expect(card.textContent).toBe('tkept');
+  });
+
+  it('fills an empty table cell with an empty paragraph (column count kept)', () => {
+    const cell = (text?: string) => ({
+      type: 'table_cell',
+      content: text === undefined ? [] : [para(text)],
+    });
+    const file = envelope({
+      type: 'doc',
+      content: [
+        {
+          type: 'table',
+          content: [{ type: 'table_row', content: [cell('a'), cell(), cell('c')] }],
+        },
+      ],
+    });
+    const { doc } = parseNative(file);
+    const row = doc.child(0).child(0);
+    expect(row.childCount).toBe(3);
+    expect(row.child(1).childCount).toBe(1);
+    expect(row.child(1).firstChild!.type.name).toBe('paragraph');
+  });
+
+  it('leaves a well-formed card byte-identical', () => {
+    const file = envelope({
+      type: 'doc',
+      content: [{ type: 'card', content: [tag('fine'), body('tail')] }],
+    });
+    const { doc } = parseNative(file);
+    expect(doc.firstChild!.type.name).toBe('card');
     expect(doc.firstChild!.childCount).toBe(2);
   });
 });

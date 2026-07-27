@@ -174,6 +174,121 @@ function healUnitsIn(frag: Fragment): Fragment {
   return changed ? Fragment.fromArray(out) : frag;
 }
 
+/**
+ * Heal structurally invalid `card`s — the card sibling of
+ * `healAnalyticUnits`. The schema requires
+ * `tag (card_body | undertag | cite_paragraph | table)*`, but a hollowed
+ * shell turns into a "file is damaged" refusal at the beta.21 check
+ * (field report 2026-07-26: an EMPTY card `<>` saved mid-session in a
+ * working doc — second member of the empty-shell family after the
+ * beta.22 unit report). Same normalize loop, same variants, lossless:
+ *
+ *   - empty card        → dropped (nothing inside to lose)
+ *   - headless children → float up to the parent (all legal there)
+ *   - tag mid-tail      → re-heads its own card, absorbing what
+ *                         follows (same absorb rule as
+ *                         `splitCardOnAnalytics`)
+ *
+ * Zones are walked one level deep, mirroring `healAnalyticUnits`.
+ */
+export function healCards(doc: PMNode): PMNode {
+  const healed = healCardsIn(doc.content);
+  return healed === doc.content ? doc : doc.type.create(doc.attrs, healed, doc.marks);
+}
+
+function cardNeedsHeal(card: PMNode): boolean {
+  if (card.childCount === 0) return true;
+  let bad = card.firstChild!.type.name !== 'tag';
+  card.forEach((c, _off, idx) => {
+    if (idx > 0 && c.type.name === 'tag') bad = true;
+  });
+  return bad;
+}
+
+function healCardsIn(frag: Fragment): Fragment {
+  let changed = false;
+  const out: PMNode[] = [];
+  frag.forEach((child) => {
+    if (child.type.name === 'transclusion_ref') {
+      const inner = healCardsIn(child.content);
+      if (inner !== child.content) {
+        changed = true;
+        out.push(child.type.create(child.attrs, inner, child.marks));
+      } else {
+        out.push(child);
+      }
+      return;
+    }
+    if (child.type.name === 'card' && cardNeedsHeal(child)) {
+      changed = true;
+      const kids: PMNode[] = [];
+      child.forEach((c) => kids.push(c));
+      let i = 0;
+      // Children before the first tag float up to the parent level.
+      while (i < kids.length && kids[i]!.type.name !== 'tag') {
+        out.push(kids[i]!);
+        i++;
+      }
+      // Each tag re-heads a card that absorbs what follows it.
+      while (i < kids.length) {
+        const cardChildren: PMNode[] = [kids[i]!];
+        i++;
+        while (i < kids.length && kids[i]!.type.name !== 'tag') {
+          cardChildren.push(kids[i]!);
+          i++;
+        }
+        out.push(child.type.create(child.attrs, Fragment.fromArray(cardChildren), child.marks));
+      }
+      return;
+    }
+    out.push(child);
+  });
+  return changed ? Fragment.fromArray(out) : frag;
+}
+
+/**
+ * Heal hollowed tables — the remaining members of the empty-shell
+ * family, audited 2026-07-26 when the card variant surfaced. Two node
+ * groups have required content: `table` (`table_row+`) and
+ * `table_cell` / `table_header` (`paragraph+`). An empty TABLE drops
+ * losslessly (every parent that can hold one — doc, card, unit, zone —
+ * has a `*` tail). An empty CELL can't drop — that would shift the
+ * row's columns — so it's filled with one empty paragraph, which is
+ * what an empty cell renders as anyway. Full recursive walk: tables
+ * nest inside cards / units / zones, cells inside rows.
+ */
+export function healTables(doc: PMNode): PMNode {
+  function walk(node: PMNode): PMNode | null {
+    if (node.type.name === 'table' && node.childCount === 0) return null;
+    if (
+      (node.type.name === 'table_cell' || node.type.name === 'table_header') &&
+      node.childCount === 0
+    ) {
+      return node.type.create(
+        node.attrs,
+        Fragment.from(schema.nodes['paragraph']!.create()),
+        node.marks,
+      );
+    }
+    if (node.isText || node.childCount === 0) return node;
+    let changed = false;
+    const out: PMNode[] = [];
+    node.forEach((child) => {
+      const w = walk(child);
+      if (w === null) {
+        changed = true;
+        return;
+      }
+      if (w !== child) changed = true;
+      out.push(w);
+    });
+    return changed
+      ? node.type.create(node.attrs, Fragment.fromArray(out), node.marks)
+      : node;
+  }
+  return walk(doc) ?? doc;
+}
+
 /** Recursively replace every `transclusion_ref` in a fragment with its content
  *  (any depth). Returns the same fragment when there was nothing to unwrap. */
 function unwrapZonesIn(frag: Fragment): Fragment {

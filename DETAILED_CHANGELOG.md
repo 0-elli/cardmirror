@@ -5,6 +5,30 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.25 — Unreleased
+
+- **healCards + healTables** (`src/schema/migrate.ts`, wired into the
+  `parseNative` heal chain after `healAnalyticUnits`). Field report: a
+  working doc saved mid-session carried an EMPTY `card` (`<>`), which
+  the beta.21 reject-invalid check refuses ("Invalid content for node
+  card"). Cards get the exact `healAnalyticUnits` treatment — empty
+  shell dropped, headless children floated to the parent (all card
+  content types are legal at the doc root and in zones), a mid-tail
+  tag re-heads its own card — with zones walked one level deep. A
+  schema audit then closed out the whole empty-shell family: the only
+  other nodes with required content are `table` (`table_row+`) and
+  `table_cell`/`table_header` (`paragraph+`); an empty table drops
+  losslessly (every possible parent has a `*` tail), and an empty cell
+  is refilled with one empty paragraph instead of dropped, since
+  removal would shift the row's column count. The reject-invalid
+  test's example (a tagless card) moved to a shape no heal covers, so
+  `check()` provably still guards everything outside the known-legacy
+  set. OPEN QUESTION: the file was saved by a LIVE session, meaning
+  some editing path can still hollow a card without removing the
+  shell (the unit variant in the beta.22 report was likewise never
+  root-caused) — the heal recovers the files, but the producer is
+  still at large.
+
 ## 0.1.0-beta.24 — 2026-07-26
 
 - **Modal dialogs join the shared overlay stack**

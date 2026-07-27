@@ -5,6 +5,20 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.25 — Unreleased
+
+### Fixed
+
+- **More "This CardMirror file is damaged" repairs.** beta.23 repaired
+  files carrying an invisible, empty analytic shell; the same problem
+  has now shown up with an empty **card** shell, and the same repair
+  applies — the empty shell is removed on open (losslessly — there was
+  nothing inside) and the file loads. An audit of every remaining
+  structure found two more shapes that could refuse a file the same
+  way — a hollow **table** and a hollow **table cell** — and both now
+  repair on open too (the table is dropped; the cell is refilled with
+  an empty line so the table's columns stay aligned).
+
 ## 0.1.0-beta.24 — 2026-07-26
 
 ### Added
