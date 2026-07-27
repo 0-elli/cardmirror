@@ -5986,25 +5986,38 @@ async function offerDamagedSalvage(name: string, bytes: Uint8Array): Promise<voi
     void alertDialog(`Failed to load: ${err instanceof Error ? err.message : err}`);
     return;
   }
-  const previews = salvaged.dropped
-    .slice(0, 5)
-    .map((d) => `${d.type}${d.textPreview ? ` “${d.textPreview}”` : ' (no visible text)'}`);
-  const more = salvaged.dropped.length - previews.length;
-  const lossLine =
-    salvaged.dropped.length === 0
-      ? 'No content needs to be removed.'
-      : `Removes ${salvaged.dropped.length} damaged element${salvaged.dropped.length === 1 ? '' : 's'}: ${previews.join('; ')}${more > 0 ? `; and ${more} more` : ''}.`;
-  const choice = await promptForRouteChoice<'open'>({
+  // Step 1: plain offer — the loss details live in the follow-up
+  // confirmation, not in the button (field feedback 2026-07-27: a
+  // paragraph of warning inside the button "sucks").
+  const choice = await promptForRouteChoice<'repair'>({
     message: `“${name}” is damaged and can’t be opened as-is.`,
     choices: [
       {
-        value: 'open',
-        label: 'Open a repaired copy',
-        description: `${lossLine} The original file is left untouched; saving the copy will ask where to save.`,
+        value: 'repair',
+        label: 'Repair',
+        description: 'Open a repaired copy. The original file is left untouched.',
       },
     ],
   });
-  if (choice !== 'open') return;
+  if (choice !== 'repair') return;
+
+  // Step 2: the concrete-loss confirmation. Skipped when nothing needs
+  // removing — there is no loss to warn about.
+  if (salvaged.dropped.length > 0) {
+    const previews = salvaged.dropped
+      .slice(0, 8)
+      .map((d) => `• ${d.type}${d.textPreview ? `: “${d.textPreview}”` : ' (no visible text)'}`);
+    const more = salvaged.dropped.length - previews.length;
+    const confirmed = await promptForRouteChoice<'confirm'>({
+      message: `Repairing removes ${salvaged.dropped.length} damaged element${salvaged.dropped.length === 1 ? '' : 's'}:`,
+      detail:
+        previews.join('\n') +
+        (more > 0 ? `\n…and ${more} more` : '') +
+        '\n\nSaving the repaired copy will ask where to save.',
+      choices: [{ value: 'confirm', label: 'Open repaired copy' }],
+    });
+    if (confirmed !== 'confirm') return;
+  }
   try {
     const log = JSON.parse(localStorage.getItem('cm-save-heal-log') ?? '[]') as unknown[];
     log.push({ at: new Date().toISOString(), salvageOpen: name, dropped: salvaged.dropped });

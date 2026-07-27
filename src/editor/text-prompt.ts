@@ -281,6 +281,10 @@ export interface RouteChoiceOption<T extends string> {
 export interface RouteChoiceOptions<T extends string> {
   /** Title / question shown above the buttons. */
   message: string;
+  /** Optional read-only body between the title and the buttons —
+   *  for details too long for a button description (e.g. a list of
+   *  what a destructive action will remove). Newlines are kept. */
+  detail?: string;
   /** Buttons in display order, rendered as two-line `pmd-route-btn`s and
    *  numbered 1..N. Number keys 1-9 (no modifier) activate them; Enter picks
    *  the first; Esc / overlay-click / Cancel resolves to null. */
@@ -309,6 +313,14 @@ export function promptForRouteChoice<T extends string>(
     header.className = 'pmd-route-header';
     header.textContent = opts.message;
     dialog.appendChild(header);
+
+    if (opts.detail) {
+      const detail = document.createElement('div');
+      detail.className = 'pmd-choice-prompt-detail';
+      detail.style.whiteSpace = 'pre-line'; // keep list line breaks
+      detail.textContent = opts.detail;
+      dialog.appendChild(detail);
+    }
 
     const buttons = document.createElement('div');
     buttons.className = 'pmd-route-buttons';
