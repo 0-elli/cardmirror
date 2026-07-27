@@ -74,7 +74,7 @@ import { getSpeechDocResolver } from './speech-doc-registry.js';
 import { sendToSpeech as runSendToSpeech } from './speech-doc-send.js';
 import { selfRefSelectionPos } from './self-transclusion-commands.js';
 import { transclusionDivergenceKey } from './transclusion-divergence-plugin.js';
-import { promptForText, alertDialog } from './text-prompt.js';
+import { promptForText, alertDialog, installModalKeys } from './text-prompt.js';
 import { showToast } from './toast.js';
 import { maybeDecryptForOpen, OpenCancelledError } from './open-encrypted.js';
 import {
@@ -2488,9 +2488,10 @@ class MultiPaneShell {
       // Cancel, Escape, digit key) so the document-level keydown
       // listener always detaches — a mouse-completed pick must not
       // leave a stale handler that eats the next typed '1'/'2'/'3'.
+      let removeKeys = (): void => {};
       const finish = (choice: SlotId | null): void => {
         popOverlay(overlayToken);
-        document.removeEventListener('keydown', onKey);
+        removeKeys();
         overlay.remove();
         resolve(choice);
       };
@@ -2527,23 +2528,26 @@ class MultiPaneShell {
       // Esc cancels; 1 / 2 / 3 pick the corresponding slot. Skips
       // chords with modifiers so e.g. Ctrl+1 keeps its slot-focus
       // meaning even if a picker is open.
-      const onKey = (e: KeyboardEvent) => {
-        if (!isTopOverlay(overlayToken)) return;
+      // Capture-phase + swallow (see installModalKeys): the picker
+      // opens over a focused editor on every multi-pane open, so a
+      // bubble-phase listener let unhandled keys — Enter especially —
+      // reach ProseMirror and edit the doc underneath.
+      removeKeys = installModalKeys(dialog, overlayToken, (e) => {
         if (e.key === 'Escape') {
           finish(null);
-          return;
+          return true;
         }
-        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
         let idx = -1;
         if (e.key === '1') idx = 0;
         else if (e.key === '2') idx = 1;
         else if (e.key === '3') idx = 2;
         if (idx >= 0) {
-          e.preventDefault();
           finish(SLOT_IDS[idx]!);
+          return true;
         }
-      };
-      document.addEventListener('keydown', onKey);
+        return false;
+      });
     });
   }
 

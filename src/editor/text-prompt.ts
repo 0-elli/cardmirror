@@ -22,6 +22,65 @@
 
 import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 
+/**
+ * Shared modal key wiring (field bug 2026-07-27: Enter confirming the
+ * mode-switch dialog ALSO inserted a newline at the editor cursor).
+ * These dialogs never steal focus by default, so a keydown's target is
+ * the focused editor — and ProseMirror's bubble-phase handler on
+ * `view.dom` dispatches transactions (Enter = split-block) BEFORE a
+ * bubble-phase document listener runs; a late preventDefault can't
+ * undo a dispatched transaction. The fix is the pattern the other ~19
+ * modals in this codebase already use: listen in CAPTURE phase, and
+ * preventDefault — ProseMirror's `eventBelongsToView` skips its
+ * handler entirely for default-prevented events — plus stopPropagation
+ * as defense against other document-level listeners. Keys not handled
+ * by the dialog and not aimed at its own controls are swallowed too:
+ * a modal must never let typing fall through into the document.
+ *
+ * `handle` returns true when it consumed the key (prevent+stop are
+ * applied here), false to fall through to the swallow rule — which
+ * exempts events targeting the dialog's own controls, so e.g. a
+ * textarea keeps its native Enter-newline.
+ */
+export function installModalKeys(
+  dialog: HTMLElement,
+  overlayToken: symbol,
+  handle: (e: KeyboardEvent) => boolean,
+): () => void {
+  const onKey = (e: KeyboardEvent): void => {
+    if (!isTopOverlay(overlayToken)) return;
+    if (handle(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (!dialog.contains(e.target as Node)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+  document.addEventListener('keydown', onKey, true);
+  return () => document.removeEventListener('keydown', onKey, true);
+}
+
+/** Give the dialog a coherent focus + accessibility story: focus moves
+ *  INTO the dialog (so keydown targets can never be the editor — the
+ *  second, independent line of defense against key leaks, and the one
+ *  that survives Electron focus-restore flakiness), and assistive tech
+ *  gets a labeled modal. Focus the container, not a button — a focused
+ *  button would ALSO native-activate on Enter and double-fire. */
+export function armDialogFocus(
+  dialog: HTMLElement,
+  role: 'dialog' | 'alertdialog',
+  label: string,
+): void {
+  dialog.setAttribute('role', role);
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-label', label);
+  dialog.tabIndex = -1;
+  dialog.focus();
+}
+
 /** Capture the focused element at dialog open; returns a restorer to call on
  *  close. In-DOM overlays don't steal OS-level focus, but removing them
  *  leaves the caret on <body> — the editor keeps its visible selection yet
@@ -99,10 +158,14 @@ export function promptForText(opts: TextPromptOptions): Promise<string | null> {
     const buttons = document.createElement('div');
     buttons.className = 'pmd-text-prompt-buttons';
 
+    let settled = false;
+    let removeKeys = (): void => {};
     const cleanup = (): void => {
+      if (settled) return;
+      settled = true;
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
       restoreFocus();
     };
 
@@ -136,24 +199,25 @@ export function promptForText(opts: TextPromptOptions): Promise<string | null> {
       }
     });
 
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
         cleanup();
         resolve(null);
-      } else if (e.key === 'Enter') {
-        // Multiline: Enter inserts a newline; Ctrl/Cmd+Enter submits.
-        // Single-line: Enter submits.
-        if (opts.multiline && !(e.ctrlKey || e.metaKey)) return;
-        e.preventDefault();
+        return true;
+      }
+      if (e.key === 'Enter') {
+        // Multiline: Enter inserts a newline (falls through to the
+        // input's native behavior); Ctrl/Cmd+Enter submits.
+        if (opts.multiline && !(e.ctrlKey || e.metaKey)) return false;
         cleanup();
         resolve(opts.password ? input.value : input.value.trim());
+        return true;
       }
-    };
-    document.addEventListener('keydown', onKey);
+      return false;
+    });
 
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'dialog', opts.message);
     // Focus + select so users can immediately type a replacement
     // when an initial value is supplied.
     setTimeout(() => {
@@ -210,10 +274,14 @@ export function promptForChoice<T extends string>(
     const buttons = document.createElement('div');
     buttons.className = 'pmd-text-prompt-buttons';
 
+    let settled = false;
+    let removeKeys = (): void => {};
     const cleanup = (): void => {
+      if (settled) return;
+      settled = true;
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
       restoreFocus();
     };
 
@@ -250,21 +318,22 @@ export function promptForChoice<T extends string>(
       }
     });
 
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
         cleanup();
         resolve(null);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
+        return true;
+      }
+      if (e.key === 'Enter') {
         cleanup();
         resolve(primary.value);
+        return true;
       }
-    };
-    document.addEventListener('keydown', onKey);
+      return false;
+    });
 
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'dialog', opts.message);
   });
 }
 
@@ -325,10 +394,14 @@ export function promptForRouteChoice<T extends string>(
     const buttons = document.createElement('div');
     buttons.className = 'pmd-route-buttons';
 
+    let settled = false;
+    let removeKeys = (): void => {};
     const cleanup = (): void => {
+      if (settled) return;
+      settled = true;
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
       restoreFocus();
     };
 
@@ -373,26 +446,30 @@ export function promptForRouteChoice<T extends string>(
       }
     });
 
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
         cleanup();
         resolve(null);
-        return;
+        return true;
+      }
+      if (e.key === 'Enter') {
+        // Enter picks the first choice, per the interface contract.
+        pick(opts.choices[0]!.value);
+        return true;
       }
       // Number keys mirror button order (1 = first). Skip when a modifier is
       // held so chords (e.g. Ctrl+1 slot focus) stay available.
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
       const n = Number(e.key);
       if (Number.isInteger(n) && n >= 1 && n <= opts.choices.length) {
-        e.preventDefault();
         pick(opts.choices[n - 1]!.value);
+        return true;
       }
-    };
-    document.addEventListener('keydown', onKey);
+      return false;
+    });
 
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'dialog', opts.message);
   });
 }
 
@@ -434,10 +511,14 @@ export function alertDialog(message: string, opts?: { title?: string }): Promise
     okBtn.type = 'button';
     okBtn.className = 'pmd-text-prompt-ok';
     okBtn.textContent = 'OK';
+    let settled = false;
+    let removeKeys = (): void => {};
     const done = (): void => {
+      if (settled) return;
+      settled = true;
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
       restoreFocus();
       resolve();
     };
@@ -449,15 +530,15 @@ export function alertDialog(message: string, opts?: { title?: string }): Promise
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) done();
     });
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape' || e.key === 'Enter') {
-        e.preventDefault();
         done();
+        return true;
       }
-    };
-    document.addEventListener('keydown', onKey);
+      return false;
+    });
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'alertdialog', opts?.title ?? message);
   });
 }
 
@@ -490,10 +571,14 @@ export function confirmDialog(
 
     const buttons = document.createElement('div');
     buttons.className = 'pmd-text-prompt-buttons';
+    let settled = false;
+    let removeKeys = (): void => {};
     const finish = (value: boolean): void => {
+      if (settled) return;
+      settled = true;
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
       restoreFocus();
       resolve(value);
     };
@@ -515,17 +600,18 @@ export function confirmDialog(
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) finish(false);
     });
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
         finish(false);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        finish(true);
+        return true;
       }
-    };
-    document.addEventListener('keydown', onKey);
+      if (e.key === 'Enter') {
+        finish(true);
+        return true;
+      }
+      return false;
+    });
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'alertdialog', opts?.title ?? message);
   });
 }

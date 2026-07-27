@@ -43,7 +43,7 @@ import {
   buildDeleteStructureTr,
   installIncomingSpeechSliceHandler,
 } from './speech-doc-send.js';
-import { promptForText, promptForRouteChoice, alertDialog, confirmDialog } from './text-prompt.js';
+import { promptForText, promptForRouteChoice, alertDialog, confirmDialog, installModalKeys, armDialogFocus } from './text-prompt.js';
 import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 import { openDocMenu } from './doc-menu-ui.js';
 import { createReference } from './create-reference.js';
@@ -2036,10 +2036,11 @@ function confirmNewDocOverwrite(): Promise<'save' | 'discard' | 'cancel'> {
     const buttons = document.createElement('div');
     buttons.className = 'pmd-route-buttons';
 
+    let removeKeys = (): void => {};
     const cleanup = (): void => {
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
     };
 
     const saveBtn = document.createElement('button');
@@ -2070,12 +2071,20 @@ function confirmNewDocOverwrite(): Promise<'save' | 'discard' | 'cancel'> {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) { cleanup(); resolve('cancel'); }
     });
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
-      if (e.key === 'Escape') { cleanup(); resolve('cancel'); }
-    };
-    document.addEventListener('keydown', onKey);
+    // Capture-phase + swallow (see installModalKeys): this dialog is
+    // bound to Mod-N, so it always opens over a FOCUSED editor — a
+    // bubble-phase listener let Enter reach ProseMirror's keydown and
+    // insert a newline before the dialog ever saw the key.
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        resolve('cancel');
+        return true;
+      }
+      return false;
+    });
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'alertdialog', 'Save your current document before creating a new one?');
   });
 }
 /** The Settings subtree (settings-ui + keybindings editor + benchmark
@@ -8013,10 +8022,11 @@ export function confirmCloseUnsaved(): Promise<'save' | 'saveAs' | 'discard' | '
     const buttons = document.createElement('div');
     buttons.className = 'pmd-route-buttons';
 
+    let removeKeys = (): void => {};
     const cleanup = (): void => {
       popOverlay(overlayToken);
       overlay.remove();
-      document.removeEventListener('keydown', onKey);
+      removeKeys();
     };
 
     const saveBtn = document.createElement('button');
@@ -8071,35 +8081,42 @@ export function confirmCloseUnsaved(): Promise<'save' | 'saveAs' | 'discard' | '
         resolve('cancel');
       }
     });
-    const onKey = (e: KeyboardEvent): void => {
-      if (!isTopOverlay(overlayToken)) return;
+    // Capture-phase + swallow (see installModalKeys). This is the
+    // Mod-W dialog — it opens over a focused editor on essentially
+    // every close, and with a bubble-phase listener Enter reached
+    // ProseMirror first and silently inserted a newline into the very
+    // doc the user was about to Save or Discard.
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape') {
         cleanup();
         resolve('cancel');
-        return;
+        return true;
       }
       // Number keys mirror button order so the dialog is fully
       // keyboard-navigable: 1=Save, 2=Save As, 3=Don't save.
       // Esc still cancels. Skips when a modifier is held so we
       // don't intercept chords (e.g., Ctrl+1 stays available for
       // its slot-focus meaning, even if a save prompt is open).
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
       if (e.key === '1') {
-        e.preventDefault();
         cleanup();
         resolve('save');
-      } else if (e.key === '2') {
-        e.preventDefault();
+        return true;
+      }
+      if (e.key === '2') {
         cleanup();
         resolve('saveAs');
-      } else if (e.key === '3') {
-        e.preventDefault();
+        return true;
+      }
+      if (e.key === '3') {
         cleanup();
         resolve('discard');
+        return true;
       }
-    };
-    document.addEventListener('keydown', onKey);
+      return false;
+    });
     document.body.appendChild(overlay);
+    armDialogFocus(dialog, 'alertdialog', 'You have unsaved changes. Save before closing?');
   });
 }
 

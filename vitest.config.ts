@@ -5,6 +5,12 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['tests/**/*.test.ts'],
+    // Geometry stubs jsdom lacks (Range.getClientRects) — ProseMirror
+    // reads them on any selection reconcile, so a test that moves focus
+    // with a live EditorView would otherwise throw inside a jsdom event
+    // listener and fail the RUN (non-zero exit) with every assertion
+    // still passing. See tests/_setup-jsdom.ts.
+    setupFiles: ['tests/_setup-jsdom.ts'],
     // The property-based Loro / co-editing fuzz suites spin up many wasm CRDT
     // peers across dozens of seeds. That wasm memory accumulates in vitest's
     // reused fork workers (it isn't freed per file), and the SUM across suites
