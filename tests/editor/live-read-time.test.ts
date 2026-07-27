@@ -142,7 +142,7 @@ describe('liveContainerSegment', () => {
       { name: 'Cal', wpm: 300 },
     ]);
     const seg = liveContainerSegment(stateAt(children, 'alpha body'))!;
-    expect(seg).toMatch(/^Card \d/);
+    expect(seg).toMatch(/^Card: \d/);
     expect(seg).toContain('Amy: ');
     expect(seg).toContain('Ben: ');
     expect(seg).not.toContain('Cal'); // first two readers only
@@ -160,7 +160,7 @@ describe('liveContainerSegment', () => {
         TextSelection.create(base.doc, base.selection.from, base.selection.from + 5),
       ),
     );
-    expect(liveContainerSegment(sel)).toMatch(/^Sel \d/);
+    expect(liveContainerSegment(sel)).toMatch(/^Sel: \d/);
     settings.set('liveSelectionWordCount', true);
     expect(liveContainerSegment(sel)).toBeNull();
   });

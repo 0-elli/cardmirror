@@ -1163,9 +1163,13 @@ class Slot {
       this.wcDocCache = { doc: rec.view.state.doc, words };
     }
     const readers = settings.get('readers').slice(0, 2);
+    // "Doc:" label while the container segment is enabled, mirroring
+    // single-pane; bare number when off (the pre-feature look).
     const head = hasSel
       ? `Sel: ${formatNumber(words)}`
-      : formatNumber(words);
+      : settings.get('liveContainerReadTime')
+        ? `Doc: ${formatNumber(words)}`
+        : formatNumber(words);
     const parts = [head];
     for (const r of readers) {
       parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);

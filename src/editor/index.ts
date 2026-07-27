@@ -4545,9 +4545,14 @@ function refreshWordCount(opts?: { selectionOnly?: boolean }): void {
   }
 
   const readers = settings.get('readers').slice(0, 2);
+  // With the container segment enabled the whole-doc side gets a "Doc:"
+  // label so the two sides read symmetrically ("Doc: … | Card: …");
+  // with it off, the readout is exactly the pre-feature bare number.
   const head = hasSelection
     ? `Selection: ${formatNumber(words)}`
-    : formatNumber(words);
+    : settings.get('liveContainerReadTime')
+      ? `Doc: ${formatNumber(words)}`
+      : formatNumber(words);
   const parts = [head];
   for (const r of readers) {
     parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);

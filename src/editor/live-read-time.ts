@@ -90,9 +90,10 @@ function countCached(doc: PMNode, from: number, to: number): number {
   return words;
 }
 
-/** The readout tail ("Card 42 · Amy: 0:31 · Ben: 0:34"), or null when
+/** The readout tail ("Card: 42 · Amy: 0:31 · Ben: 0:34"), or null when
  *  the feature is off or nothing applies. Callers join it to the
- *  primary readout with " | ". */
+ *  primary readout with " | " — and label their whole-doc side "Doc:"
+ *  while this feature is on, so the two sides read symmetrically. */
 export function liveContainerSegment(state: EditorState): string | null {
   if (!settings.get('liveContainerReadTime')) return null;
   const sel = state.selection;
@@ -110,7 +111,7 @@ export function liveContainerSegment(state: EditorState): string | null {
     label = container.label;
     words = countCached(state.doc, container.from, container.to);
   }
-  const parts = [`${label} ${formatNumber(words)}`];
+  const parts = [`${label}: ${formatNumber(words)}`];
   for (const r of settings.get('readers').slice(0, 2)) {
     parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);
   }
