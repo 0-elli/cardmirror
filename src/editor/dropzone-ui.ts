@@ -47,6 +47,7 @@ import { schema, newHeadingId } from '../schema/index.js';
 import { setIcon } from './icons';
 import { readModePlugin } from './read-mode-plugin.js';
 import { READ_MODE_DRAG_META } from './reading-marker.js';
+import { checkedSliceFromJSON } from '../schema/slice-check.js';
 
 interface DropzoneMountOptions {
   parent: HTMLElement;
@@ -351,7 +352,7 @@ export class DropzoneController {
     if (!view) return false;
     let slice: Slice;
     try {
-      slice = Slice.fromJSON(schema, item.sliceJson as Parameters<typeof Slice.fromJSON>[1]);
+      slice = checkedSliceFromJSON(item.sliceJson);
     } catch {
       return false;
     }
@@ -387,7 +388,7 @@ export class DropzoneController {
     if (!view) return;
     let slice: Slice;
     try {
-      slice = Slice.fromJSON(schema, item.sliceJson as Parameters<typeof Slice.fromJSON>[1]);
+      slice = checkedSliceFromJSON(item.sliceJson);
     } catch {
       return;
     }

@@ -110,6 +110,7 @@ import {
   type AnyCommandId,
 } from './ribbon-commands.js';
 import { availableRibbonCommandIds } from './ribbon-availability.js';
+import { checkedSliceFromJSON } from '../schema/slice-check.js';
 
 // ── Warm-cache machinery (module-level, shared by the open palette and
 //    the proactive idle pre-warm) ────────────────────────────────────
@@ -1685,7 +1686,7 @@ class QuickCardSearchUI {
         // Slice lazily from the kept parsed doc (no per-object slice held).
         slice = this.inFile.doc.slice(result.fileRange.from, result.fileRange.to);
       } else {
-        slice = Slice.fromJSON(schema, result.sliceJson as Parameters<typeof Slice.fromJSON>[1]);
+        slice = checkedSliceFromJSON(result.sliceJson);
       }
     } catch {
       showToast('That item is corrupted and can’t be inserted.');

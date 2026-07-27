@@ -7,6 +7,37 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.25 — Unreleased
 
+- **Save-time structural tripwire** (`src/native/index.ts`,
+  audit tier 1). `doc.check()` had exactly one call site — .cmir load
+  — so an invalid live doc reached the journal in ~1–2s and the file
+  at the next autosave: the persistence mechanism behind both
+  hollow-shell field incidents. `buildNativeEnvelope` (the choke point
+  under every save: manual, autosave, journal, both window modes) now
+  checks the doc; on failure it runs the same known-shape heals as the
+  load path and saves the HEALED doc, reporting through an injectable
+  listener (the module stays UI-free for node tooling) — the renderer
+  listener toasts (rate-limited), console.errors, and appends to a
+  durable localStorage ring buffer (`cm-save-heal-log`, capped 20), so
+  the still-unidentified producer gets caught red-handed at its first
+  save. An unhealable doc saves UNCHANGED: a save is never refused
+  (the journal is the crash lifeline), the original bytes preserve the
+  forensic shape, and load treats them exactly as before.
+
+- **Validated slice reconstruction** (`src/schema/slice-check.ts`,
+  audit tier 2). `Slice.fromJSON` validates nothing and the step
+  machinery validates only the splice frontier, so the seven surfaces
+  that rebuild stored slice JSON — quick cards (insert + manage
+  preview), dropzone (×2), pairing inbox + Receive pill, speech-doc
+  send — could re-inject a corrupted payload into live docs forever,
+  cross-machine via pairing. `checkedSliceFromJSON` gives CLOSED nodes
+  a full recursive `node.check()` while nodes on the open left/right
+  spines stay exempt (a mid-card copy legitimately arrives headless-
+  open; the Fitter closes those on insertion — the guard mirrors the
+  threat model exactly). All seven sites route through it, feeding
+  their existing bad-payload handling; the manage-UI preview degrades
+  to a placeholder doc; quick-cards bulk import filters invalid
+  records via `sliceJsonIsValid` and reports the skip count.
+
 - **CRDT merge heal: hollow containers materialize repaired instead of
   vanishing** (loro-prosemirror patch + `src/doc-repair.ts` +
   `src/editor/collab/collab-repair.ts`). Element-wise CRDT merges can

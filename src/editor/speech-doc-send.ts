@@ -26,6 +26,7 @@ import { getSpeechDocResolver } from './speech-doc-registry.js';
 import { getElectronHost } from './host/index.js';
 import { alertDialog } from './text-prompt.js';
 import { sectionEndFromHeading } from './headings.js';
+import { checkedSliceFromJSON } from '../schema/slice-check.js';
 
 // ── Web multi-tab slice transport ──────────────────────────────────────────
 // With no main process to route through, the speech doc may live in another
@@ -442,7 +443,7 @@ function applyIncomingSlice(uid: string, sliceJson: unknown, atEnd: boolean): bo
   if (!view) return false;
   let slice: Slice;
   try {
-    slice = Slice.fromJSON(schema, sliceJson as Parameters<typeof Slice.fromJSON>[1]);
+    slice = checkedSliceFromJSON(sliceJson);
   } catch (err) {
     console.error('Failed to deserialize incoming speech slice:', err);
     return false;

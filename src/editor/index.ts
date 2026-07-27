@@ -14,7 +14,7 @@ import { history, redo, undo } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
 import { Node as PMNode, type Mark, DOMSerializer } from 'prosemirror-model';
 import { schema, newHeadingId } from '../schema/index.js';
-import { fromDocxFull, toDocx, serializeNative, serializeNativeAsync, parseNative, readDocIdFromBytes, stampDocId } from '../index.js';
+import { fromDocxFull, toDocx, serializeNative, serializeNativeAsync, parseNative, readDocIdFromBytes, stampDocId, setSaveHealListener } from '../index.js';
 import { transformForExport, countMarkedCards } from '../export/transform-for-export.js';
 import type { Thread, Comment } from './comments-plugin.js';
 import type { LocalComment } from './learn-store.js';
@@ -302,6 +302,33 @@ import { formatSpeechFilename } from './speech-filename.js';
 // Install the last-resort error hooks before ANY app wiring — an exception
 // during boot or in a fire-and-forget flow must never be invisible again.
 installGlobalErrorSurface();
+
+// Save-time structural tripwire reporting (structural-integrity audit,
+// tier 1): a save that found an invalid doc heals it and reports here.
+// Surface it (rate-limited — journal writes fire every ~1-2s while the
+// producer bug is live) and keep a durable ring buffer of diagnostics
+// so the still-unidentified shell producer can be caught red-handed
+// from a field report instead of another corrupted file.
+let lastSaveHealToastAt = 0;
+setSaveHealListener(({ error, healed }) => {
+  console.error(`[cardmirror] invalid doc at save (healed=${healed}): ${error}`);
+  try {
+    const KEY = 'cm-save-heal-log';
+    const log = JSON.parse(localStorage.getItem(KEY) ?? '[]') as unknown[];
+    log.push({ at: new Date().toISOString(), healed, error });
+    localStorage.setItem(KEY, JSON.stringify(log.slice(-20)));
+  } catch {
+    /* diagnostics only — never let logging break a save */
+  }
+  const now = Date.now();
+  if (now - lastSaveHealToastAt < 60_000) return;
+  lastSaveHealToastAt = now;
+  showToast(
+    healed
+      ? 'CardMirror repaired invalid document structure while saving. Please report this — it means a bug corrupted the document in memory.'
+      : 'CardMirror found invalid document structure it could not repair while saving. Please report this.',
+  );
+});
 
 // Web edition only: reveal + wire the "Download the desktop app" and
 // GitHub buttons in the ribbon's right-hand grid (no-op under Electron).

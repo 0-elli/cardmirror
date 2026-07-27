@@ -13,6 +13,7 @@ import { flattenZonesInSlice } from '../transclusion.js';
 import { readModePlugin } from '../read-mode-plugin.js';
 import { READ_MODE_DRAG_META } from '../reading-marker.js';
 import { inboxStore, type InboxItem } from './inbox-store.js';
+import { checkedSliceFromJSON } from '../../schema/slice-check.js';
 
 /** Shown when a receive-pill insert has no visible destination — the home
  *  screen is covering the doc, or no doc is open at all. Shared by the
@@ -30,7 +31,7 @@ export const RECEIVE_NEEDS_DOC_MESSAGE =
 export function insertReceivedItem(view: EditorView, item: InboxItem, atEnd: boolean): boolean {
   let slice: Slice;
   try {
-    slice = Slice.fromJSON(schema, item.sliceJson as Parameters<typeof Slice.fromJSON>[1]);
+    slice = checkedSliceFromJSON(item.sliceJson);
   } catch {
     return false;
   }

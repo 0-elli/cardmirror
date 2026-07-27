@@ -29,12 +29,14 @@ export {
   serializeNativeAsync,
   parseNative,
   looksLikeNative,
+  setSaveHealListener,
   NATIVE_FILE_EXTENSION,
 } from './native/index.js';
 export type {
   NativeFile,
   SerializeNativeOptions,
   ParseNativeResult,
+  SaveHealReport,
 } from './native/index.js';
 
 export { Docx } from './ooxml/docx.js';

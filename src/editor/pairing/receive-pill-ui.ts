@@ -25,6 +25,7 @@ import { parseRoomInvite } from './room-invite.js';
 import { collabEnabled } from '../collab/collab-gate.js';
 import { collabInviteJoiner } from '../collab/collab-hooks.js';
 import { deletePrefetch } from '../collab/collab-store.js';
+import { checkedSliceFromJSON } from '../../schema/slice-check.js';
 
 interface ReceivePillMountOptions {
   parent: HTMLElement;
@@ -414,7 +415,7 @@ export class ReceivePillController {
     if (!view) return false;
     let slice: Slice;
     try {
-      slice = Slice.fromJSON(schema, item.sliceJson as Parameters<typeof Slice.fromJSON>[1]);
+      slice = checkedSliceFromJSON(item.sliceJson);
     } catch {
       return false;
     }

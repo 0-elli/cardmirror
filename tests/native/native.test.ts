@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema, newHeadingId } from '../../src/schema/index.js';
 import {
   serializeNative,
   parseNative,
   looksLikeNative,
+  setSaveHealListener,
   NATIVE_FILE_EXTENSION,
+  type SaveHealReport,
 } from '../../src/native/index.js';
 import type { Thread } from '../../src/editor/comments-plugin.js';
 
@@ -560,5 +562,68 @@ describe('healCards + healTables (2026-07-26 field report: empty card)', () => {
     const { doc } = parseNative(file);
     expect(doc.firstChild!.type.name).toBe('card');
     expect(doc.firstChild!.childCount).toBe(2);
+  });
+});
+
+describe('save-time structural tripwire (audit tier 1)', () => {
+  // No save path validated anything, so an invalid live doc reached
+  // the journal within seconds and the file at the next autosave —
+  // the persistence mechanism behind both hollow-shell field
+  // incidents. Every serialize now checks, heals known shapes, saves
+  // the HEALED bytes, and reports through the injectable listener.
+  const hollowCardDoc = () =>
+    schema.nodes['doc']!.create(null, [
+      schema.nodes['paragraph']!.create(null, schema.text('before')),
+      schema.nodes['card']!.create(), // hollow — unchecked construction
+      schema.nodes['card']!.createChecked(null, [
+        schema.nodes['tag']!.create({ id: 't-keep' }, schema.text('kept tag')),
+        schema.nodes['card_body']!.create(null, schema.text('kept body')),
+      ]),
+    ]);
+
+  afterEach(() => setSaveHealListener(null));
+
+  it('heals an invalid doc at save and reports healed=true', () => {
+    const reports: SaveHealReport[] = [];
+    setSaveHealListener((r) => reports.push(r));
+    const bytes = serializeNative(hollowCardDoc());
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.healed).toBe(true);
+    expect(reports[0]!.error).toContain('Invalid content for node card');
+    // The SAVED bytes are the healed doc: they round-trip cleanly.
+    const { doc } = parseNative(bytes);
+    expect(doc.textContent).toContain('kept body');
+    expect(doc.textContent).toContain('before');
+    expect(doc.childCount).toBe(2); // hollow shell dropped at save
+  });
+
+  it('a valid doc saves silently — no report', () => {
+    const reports: SaveHealReport[] = [];
+    setSaveHealListener((r) => reports.push(r));
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['paragraph']!.create(null, schema.text('clean')),
+    ]);
+    const bytes = serializeNative(doc);
+    expect(reports).toHaveLength(0);
+    expect(parseNative(bytes).doc.textContent).toBe('clean');
+  });
+
+  it('an unhealable doc still saves (original bytes) and reports healed=false', () => {
+    const reports: SaveHealReport[] = [];
+    setSaveHealListener((r) => reports.push(r));
+    // A paragraph inside a card — invalid, and outside the heal set.
+    const doc = schema.nodes['doc']!.create(null, [
+      schema.nodes['card']!.create(null, [
+        schema.nodes['tag']!.create({ id: 't-1' }, schema.text('t')),
+        schema.nodes['paragraph']!.create(null, schema.text('illegal')),
+      ]),
+    ]);
+    const bytes = serializeNative(doc);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.healed).toBe(false);
+    // Saving must never be refused; load-time still rejects the shape
+    // exactly as it would have before the tripwire existed.
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(() => parseNative(bytes)).toThrow(/damaged/);
   });
 });

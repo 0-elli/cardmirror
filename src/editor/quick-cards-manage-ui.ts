@@ -21,6 +21,7 @@ import { EditorView } from 'prosemirror-view';
 import { Slice } from 'prosemirror-model';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema/index.js';
+import { checkedSliceFromJSON, sliceJsonIsValid } from '../schema/slice-check.js';
 import { getHost } from './host/index.js';
 import {
   quickCardsStore,
@@ -575,10 +576,20 @@ class QuickCardsManageUI {
     }
     // Import as NEW (fresh ids) so an import never overwrites an
     // existing card; rebuild via buildQuickCard to recompute keys.
+    // Structural gate (audit tier 2): contentJson is arbitrary external
+    // JSON, and the insert path splices closed nodes past ProseMirror's
+    // frontier-only validation — refuse records whose slice doesn't
+    // validate rather than persist a payload that would re-inject
+    // invalid structure on every future use.
     const cards: QuickCard[] = [];
+    let skippedInvalid = 0;
     for (const raw of incoming) {
       const r = raw as Partial<QuickCard>;
       if (typeof r.name !== 'string' || r.contentJson === undefined) continue;
+      if (!sliceJsonIsValid(r.contentJson)) {
+        skippedInvalid++;
+        continue;
+      }
       cards.push(
         buildQuickCard({
           name: r.name,
@@ -590,11 +601,20 @@ class QuickCardsManageUI {
       );
     }
     if (cards.length === 0) {
-      void alertDialog('No importable quick cards found in that file.');
+      void alertDialog(
+        skippedInvalid > 0
+          ? `No importable quick cards — ${skippedInvalid} record${skippedInvalid === 1 ? ' was' : 's were'} skipped as structurally invalid.`
+          : 'No importable quick cards found in that file.',
+      );
       return;
     }
     await quickCardsStore.importMany(cards);
-    void alertDialog(`Imported ${cards.length} quick card${cards.length === 1 ? '' : 's'}.`);
+    void alertDialog(
+      `Imported ${cards.length} quick card${cards.length === 1 ? '' : 's'}.` +
+        (skippedInvalid > 0
+          ? ` Skipped ${skippedInvalid} structurally invalid record${skippedInvalid === 1 ? '' : 's'}.`
+          : ''),
+    );
   }
 }
 
@@ -656,13 +676,23 @@ function field(label: string): HTMLLabelElement {
 
 /** Build an editable doc seeded with a card's stored slice. Inserting
  *  the slice into an empty doc (replaceSelection) handles open/inline
- *  slices the way paste does, so any captured content is editable. */
+ *  slices the way paste does, so any captured content is editable.
+ *  A stored payload that fails validation (see slice-check.ts) yields
+ *  a placeholder doc instead of an exception — the manage UI must
+ *  keep working around one corrupt record. */
 function docFromCard(card: QuickCard): PMNode {
-  const slice = Slice.fromJSON(schema, card.contentJson as Parameters<typeof Slice.fromJSON>[1]);
   const empty = schema.topNodeType.createAndFill();
   let st = EditorState.create({ doc: empty ?? schema.topNodeType.create(), schema });
-  st = st.apply(st.tr.replaceSelection(slice));
-  return st.doc;
+  try {
+    const slice = checkedSliceFromJSON(card.contentJson);
+    st = st.apply(st.tr.replaceSelection(slice));
+    return st.doc;
+  } catch {
+    st = st.apply(
+      st.tr.insertText("This quick card's stored content is invalid and can't be edited."),
+    );
+    return st.doc;
+  }
 }
 
 /** Extract the edited content back to a slice JSON + plain-text key,

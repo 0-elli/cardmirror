@@ -9,6 +9,24 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Fixed
 
+- **Documents are now checked and repaired at every save.** Until now,
+  if a bug ever corrupted a document's structure in memory, the broken
+  state reached the crash journal within seconds and the file at the
+  next autosave — which is how the "file is damaged" reports happened.
+  Every save now validates the document first; known damage is
+  repaired on the spot and the repaired version is what gets written,
+  with a notice asking you to report it (that report is how we catch
+  the underlying bug). A save is never refused.
+
+- **Stored cards are validated before insertion.** Quick cards, the
+  dropzone shelf, cards received from a paired machine, and
+  send-to-speech now verify their stored content is structurally sound
+  before inserting it — so one corrupted saved card can no longer
+  quietly re-corrupt every document it's pasted into (or spread from
+  another machine). Corrupt items are refused with a message instead,
+  and the quick-cards bulk import skips structurally invalid records
+  and tells you how many.
+
 - **Co-editing no longer silently deletes a card caught in a merge
   conflict.** When two people's offline edits merged such that a card
   lost its heading (one deleted the body while the other's edit

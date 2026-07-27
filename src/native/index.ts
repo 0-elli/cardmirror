@@ -84,6 +84,59 @@ export interface SerializeNativeOptions {
   docId?: string;
 }
 
+/** Diagnostic hook for the save-time structural tripwire below. The
+ *  renderer registers a listener (toast + durable log) — this module
+ *  must stay UI- and DOM-free (node tooling imports it), so reporting
+ *  is injected. Unset → console.error only. */
+export interface SaveHealReport {
+  /** The original check() failure message. */
+  error: string;
+  /** True when the heal chain produced a valid doc that was saved in
+   *  place of the invalid one; false when even the heals couldn't fix
+   *  it and the ORIGINAL bytes were saved (load will refuse them —
+   *  same as before the tripwire, but now with a diagnostic trail). */
+  healed: boolean;
+}
+let saveHealListener: ((report: SaveHealReport) => void) | null = null;
+export function setSaveHealListener(cb: ((report: SaveHealReport) => void) | null): void {
+  saveHealListener = cb;
+}
+
+/** Save-time structural tripwire (structural-integrity audit, tier 1).
+ *  No save path validated anything: an invalid live doc reached the
+ *  crash journal within seconds and the real file at the next autosave
+ *  — which is exactly how both hollow-shell field incidents persisted.
+ *  Every save now runs `doc.check()`; an invalid doc is healed with
+ *  the same known-shape passes the load path uses and the HEALED doc
+ *  is saved, with the failure reported via the listener — catching the
+ *  (still unidentified) producer red-handed at its first save. A doc
+ *  the heals can't fix saves UNCHANGED: a save must never be refused
+ *  (the journal is the crash lifeline), the original bytes preserve
+ *  the forensic shape, and load-time treats them exactly as it would
+ *  have before. check() is a tree walk on par with the toJSON() walk
+ *  below, and gzip dominates both. */
+function tripwireForSave(doc: PMNode): PMNode {
+  try {
+    doc.check();
+    return doc;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const healedDoc = healTables(healCards(healAnalyticUnits(doc)));
+    let healed = false;
+    let out = doc;
+    try {
+      healedDoc.check();
+      healed = true;
+      out = healedDoc;
+    } catch {
+      /* unhealable — save the original, report below */
+    }
+    if (saveHealListener) saveHealListener({ error, healed });
+    else console.error(`[cardmirror] invalid doc at save (healed=${healed}): ${error}`);
+    return out;
+  }
+}
+
 /** Build the minified-JSON envelope both serialize variants gzip-wrap.
  *  Minified: gzip makes pretty-printing pointless for inspection
  *  (`gunzip file.cmir | jq` restores it on demand). Compression yields
@@ -96,7 +149,7 @@ function buildNativeEnvelope(doc: PMNode, opts: SerializeNativeOptions): Uint8Ar
     formatVersion: FORMAT_VERSION,
     createdBy: opts.appVersion ?? 'CardMirror',
     createdAt: new Date().toISOString(),
-    doc: doc.toJSON(),
+    doc: tripwireForSave(doc).toJSON(),
   };
   if (opts.threads && opts.threads.length > 0) {
     file.threads = [...opts.threads];
