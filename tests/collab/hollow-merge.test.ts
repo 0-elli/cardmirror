@@ -32,6 +32,7 @@ import { schema } from '../../src/schema/index.js';
 import { collabRepairPlugin } from '../../src/editor/collab/collab-repair.js';
 import {
   createLoroPeers,
+  joinPeerFromBlob,
   syncAll,
   settle,
   docOf,
@@ -209,10 +210,29 @@ describe('hollow-container CRDT merges', () => {
     // A FRESH peer joining from the leader's full state must see a
     // valid card with a REAL (non-sentinel) tag — i.e. the repair
     // reached the CRDT itself, not just the leader's display.
-    const joiner = (await createLoroPeers(seed(), 1))[0]!;
+    const joiner = await joinPeerFromBlob(peers[0]!.exportAll());
     peers.push(joiner);
-    joiner.import(peers[0]!.exportAll());
-    await settle();
+
+    const card = firstCard(joiner);
+    expect(card.firstChild!.type.name).toBe('tag');
+    expect(String(card.firstChild!.attrs['id'] ?? '')).not.toContain('crdt-heal');
+    expect(docText(joiner.doc())).toContain('body evidence text');
+    expect(() => joiner.doc().check()).not.toThrow();
+  });
+
+  it('write-back needs NO leader — followers canonicalize too (mixed-version hardening)', async () => {
+    // Nobody is leader: the all-peer half (buildMarkRepairTr) must
+    // still land the head in the CRDT, so old-version peers would
+    // materialize a valid card as soon as possible.
+    peers = await createLoroPeers(seed(), 2, () => [collabRepairPlugin(() => false)]);
+
+    hollowCard(peers[0]!.ldoc, 'tag');
+    await syncAll(peers);
+    await settle(5);
+    await syncAll(peers);
+
+    const joiner = await joinPeerFromBlob(peers[1]!.exportAll());
+    peers.push(joiner);
 
     const card = firstCard(joiner);
     expect(card.firstChild!.type.name).toBe('tag');

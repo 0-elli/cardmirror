@@ -93,6 +93,41 @@ export async function createLoroPeers(
   return peers;
 }
 
+/** A NEW peer joining an existing session from an exported blob.
+ *  Unlike `createLoroPeers` — which seeds a FRESH universe with fresh
+ *  container ids every call — this boots the peer on the session's own
+ *  history. A "joiner" built via createLoroPeers + import merges two
+ *  unrelated seeds, and LWW on the root children key picks one
+ *  universe wholesale (coin-flipped by random peer ids): a flaky
+ *  clobber that can silently discard the session's actual state. */
+export async function joinPeerFromBlob(
+  blob: Uint8Array,
+  extraPlugins?: (ldoc: LoroDoc) => Plugin[],
+): Promise<LoroPeer> {
+  const ldoc = new LoroDoc();
+  ldoc.configTextStyle(textStyleConfig());
+  ldoc.import(blob);
+  const view = mkView([
+    LoroSyncPlugin({ doc: ldoc as SyncDoc }),
+    ...(extraPlugins ? extraPlugins(ldoc) : []),
+  ]);
+  const peer: LoroPeer = {
+    view,
+    ldoc,
+    doc: () => view.state.doc,
+    exportAll: () => {
+      ldoc.commit();
+      return ldoc.export({ mode: 'update' });
+    },
+    import: (b) => {
+      ldoc.import(b);
+    },
+    destroy: () => view.destroy(),
+  };
+  await settle();
+  return peer;
+}
+
 /** Exchange full updates among all peers until quiescent. */
 export async function syncAll(peers: LoroPeer[]): Promise<void> {
   for (let round = 0; round < 3; round++) {

@@ -19,6 +19,13 @@
  *     off, frames lost), making everyone leader. That degrades to
  *     churn, not corruption — the repair is idempotent on its own
  *     output and the normalizer round cap stops any dispatch loop.
+ *   - Heal-sentinel canonicalization deliberately runs on EVERY peer
+ *     (inside buildMarkRepairTr), NOT leader-gated: it is convergent
+ *     under concurrency (same-value id rewrites; concurrent head
+ *     write-backs are absorbed by the materializer's multi-head
+ *     normalization), and all-peer write-back shrinks the
+ *     mixed-version window in which an old client can still finalize
+ *     a dropped card.
  *
  * Repair transactions carry the normalizer origin (read mode admits
  * them; the round cap applies) and sync like ordinary edits.

@@ -69,12 +69,42 @@ function sweepExclusiveMarks(tr: Transaction): void {
   });
 }
 
-/** Exclusive-marks resolution ONLY — no tables, no structural fixes.
- *  Session repair runs this on every peer (mark-level, converges),
- *  while the structural half stays leader-gated (see collab-repair). */
+/** Canonicalize display-heal sentinels (see the loro-prosemirror
+ *  patch's cardmirrorHealInvalidNode): a head whose id carries the
+ *  'crdt-heal-' prefix was synthesized at CRDT materialization and
+ *  exists ONLY in this peer's PM doc — the CRDT children list still
+ *  lacks the head. Rewriting the id (deterministically — repair must
+ *  stay a pure function of the doc) gives the transaction a step on
+ *  that node, and the sync layer's diff then writes the whole head
+ *  into the CRDT as an ordinary edit. The rewritten prefix no longer
+ *  matches, so the pass cannot re-fire on its own output.
+ *
+ *  Runs on EVERY peer, not just the leader (2026-07-26, mixed-version
+ *  hardening): the sooner ANY current-version peer lands the head in
+ *  the CRDT, the sooner an old-version peer materializes a valid card
+ *  instead of dropping it — and un-gating is safe because concurrent
+ *  write-backs merge into duplicate heads that the materializer's
+ *  multi-head normalization converges deterministically (and the id
+ *  rewrite itself is same-value, so it merges harmlessly). */
+function canonicalizeHealSentinels(tr: Transaction): void {
+  tr.doc.descendants((node, pos) => {
+    if (node.type.name !== 'tag' && node.type.name !== 'analytic') return true;
+    const id = String(node.attrs['id'] ?? '');
+    if (id.startsWith('crdt-heal-')) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, id: 'ch-' + id.slice('crdt-heal-'.length) });
+    }
+    return false;
+  });
+}
+
+/** The all-peer repair half: exclusive-marks resolution + heal-sentinel
+ *  canonicalization — both deterministic and convergent under
+ *  concurrent application, unlike the structural table/head insertions
+ *  in `buildDocRepairTr`, which stay leader-gated (see collab-repair). */
 export function buildMarkRepairTr(state: EditorState): Transaction | null {
   const tr = state.tr;
   sweepExclusiveMarks(tr);
+  canonicalizeHealSentinels(tr);
   return tr.steps.length ? tr : null;
 }
 
@@ -104,24 +134,10 @@ export function buildDocRepairTr(state: EditorState): Transaction | null {
     tr.insert(ins.pos, schema.nodes[ins.type]!.create());
   }
 
-  // Canonicalize display-heal sentinels (see the loro-prosemirror
-  // patch's cardmirrorHealInvalidNode): a head whose id carries the
-  // 'crdt-heal-' prefix was synthesized at CRDT materialization and
-  // exists ONLY in this peer's PM doc — the CRDT children list still
-  // lacks the head. Rewriting the id (deterministically — this pass
-  // must stay a pure function of the doc) gives the transaction a
-  // step on that node, and the sync layer's diff then writes the
-  // whole head into the CRDT as an ordinary edit. The rewritten
-  // prefix no longer matches, so the pass cannot re-fire on its own
-  // output. setNodeMarkup shifts no positions, so one scan suffices.
-  tr.doc.descendants((node, pos) => {
-    if (node.type.name !== 'tag' && node.type.name !== 'analytic') return true;
-    const id = String(node.attrs['id'] ?? '');
-    if (id.startsWith('crdt-heal-')) {
-      tr.setNodeMarkup(pos, undefined, { ...node.attrs, id: 'ch-' + id.slice('crdt-heal-'.length) });
-    }
-    return false;
-  });
+  // Heal-sentinel canonicalization (shared with the all-peer repair
+  // half — see canonicalizeHealSentinels above). setNodeMarkup shifts
+  // no positions, so running it after the insertions above is safe.
+  canonicalizeHealSentinels(tr);
 
   return tr.steps.length ? tr : null;
 }
