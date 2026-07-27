@@ -137,6 +137,34 @@ in each release, see `CHANGELOG.md`.
   root-caused) — the heal recovers the files, but the producer is
   still at large.
 
+- **Modal keys stop leaking into the editor** (`installModalKeys` +
+  `armDialogFocus` in `src/editor/text-prompt.ts`). Field bug: Enter
+  confirming the three-pane mode-switch dialog ALSO split-blocked at
+  the cursor. Mechanism (verified against prosemirror-view): the five
+  text-prompt primitives listened on `document` in BUBBLE phase
+  without moving focus, so a keydown reached ProseMirror's handler on
+  `view.dom` first and the transaction was already dispatched — Enter
+  and Backspace dispatch synchronously inside keydown, while digits
+  are deferred default actions, which is why the beta.24 slot-picker
+  fix held for numbers while Enter kept leaking. Fix: a shared
+  capture-phase document listener, gated on `isTopOverlay`; handled
+  keys get preventDefault + stopPropagation (PM's `eventBelongsToView`
+  skips any default-prevented event), and every unhandled key not
+  aimed at the dialog's own controls is swallowed — a modal can never
+  let typing through. Dialogs also focus their container on open (not
+  a button, which would native-activate on Enter and double-fire) with
+  `role`/`aria-modal`/`aria-label`, restoring focus on close.
+  Converted: all five primitives plus the three hand-rolled dialogs
+  (`confirmCloseUnsaved`, `confirmNewDocOverwrite`, the three-pane
+  slot picker); `promptForRouteChoice` now actually implements its
+  documented Enter-confirms-first-choice. Regression tests in
+  `tests/editor/dialog-key-capture.test.ts` drive a live EditorView
+  with `baseKeymap`; `tests/_setup-jsdom.ts` (wired via vitest
+  `setupFiles`) polyfills `Range.getClientRects`, which jsdom lacks —
+  without it, any test moving focus with a live view throws inside
+  PM's selection-reconcile listener and fails the run with every
+  assertion passing.
+
 ## 0.1.0-beta.24 — 2026-07-26
 
 - **Modal dialogs join the shared overlay stack**

@@ -66,6 +66,16 @@ see `DETAILED_CHANGELOG.md`.
   repair on open too (the table is dropped; the cell is refilled with
   an empty line so the table's columns stay aligned).
 
+- **Pressing Enter to confirm a dialog no longer also types into the
+  document.** Confirming certain dialogs with the keyboard — most
+  visibly Enter on the three-pane mode-switch confirmation — also sent
+  that keystroke to the editor, leaving a stray newline at the cursor.
+  Dialogs now claim the keyboard completely while open: the keys they
+  use work, everything else is ignored, and nothing reaches the
+  document behind them. Dialogs also take keyboard focus while open
+  (and hand it back on close), and Enter now confirms the default
+  choice in Save/Don't Save-style dialogs, matching their hints.
+
 ## 0.1.0-beta.24 — 2026-07-26
 
 ### Added
