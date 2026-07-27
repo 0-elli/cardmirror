@@ -27,7 +27,7 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { LoroMap, LoroList, type LoroDoc } from 'loro-crdt';
+import { LoroMap, LoroList, LoroText, type LoroDoc } from 'loro-crdt';
 import { schema } from '../../src/schema/index.js';
 import { collabRepairPlugin } from '../../src/editor/collab/collab-repair.js';
 import {
@@ -81,6 +81,29 @@ function hollowCard(ldoc: LoroDoc, which: 'tag' | '*'): void {
 const seed = () =>
   docOf(para('intro paragraph'), cardNode('Original tag', ['body evidence text']));
 
+/** Insert a duplicate head element into the card's CRDT children list —
+ *  the shape the degraded-leader corner produces (two "leaders" both
+ *  writing their blank head back concurrently). `text` non-empty
+ *  models a duplicate that somehow carries typed content. */
+function insertDuplicateHead(
+  ldoc: LoroDoc,
+  index: number,
+  id: string,
+  text = '',
+): void {
+  const kids = cardContainer(ldoc).get('children') as LoroList;
+  const m = kids.insertContainer(index, new LoroMap());
+  m.set('nodeName', 'tag');
+  const attrs = m.setContainer('attributes', new LoroMap());
+  attrs.set('id', id);
+  const inner = m.setContainer('children', new LoroList());
+  if (text) {
+    const t = inner.insertContainer(0, new LoroText());
+    t.insert(0, text);
+  }
+  ldoc.commit();
+}
+
 let peers: LoroPeer[] = [];
 afterEach(() => {
   for (const p of peers) p.destroy();
@@ -124,6 +147,47 @@ describe('hollow-container CRDT merges', () => {
     expect(a.doc().eq(b.doc())).toBe(true);
   });
 
+  it('duplicate BLANK heads (degraded-leader double write-back) normalize to one', async () => {
+    peers = await createLoroPeers(seed(), 2);
+    const [a, b] = peers as [LoroPeer, LoroPeer];
+
+    insertDuplicateHead(a.ldoc, 1, 'dup-blank-1');
+    await syncAll(peers);
+
+    for (const p of peers) {
+      const card = firstCard(p);
+      // One head, the ORIGINAL one — the empty duplicate is dropped,
+      // never the whole card (the pre-hardening behavior).
+      const tags: string[] = [];
+      card.forEach((n) => {
+        if (n.type.name === 'tag') tags.push(n.textContent);
+      });
+      expect(tags).toEqual(['Original tag']);
+      expect(docText(p.doc())).toContain('body evidence text');
+      expect(() => p.doc().check()).not.toThrow();
+    }
+    expect(a.doc().eq(b.doc())).toBe(true);
+  });
+
+  it('a duplicate head carrying text demotes to a body — nothing typed is lost', async () => {
+    peers = await createLoroPeers(seed(), 2);
+    const [a, b] = peers as [LoroPeer, LoroPeer];
+
+    insertDuplicateHead(a.ldoc, 1, 'dup-text-1', 'stray typed words');
+    await syncAll(peers);
+
+    for (const p of peers) {
+      const card = firstCard(p);
+      expect(card.firstChild!.textContent).toBe('Original tag');
+      const tagCount = countType(card, 'tag');
+      expect(tagCount).toBe(1);
+      expect(card.textContent).toContain('stray typed words'); // demoted, kept
+      expect(docText(p.doc())).toContain('body evidence text');
+      expect(() => p.doc().check()).not.toThrow();
+    }
+    expect(a.doc().eq(b.doc())).toBe(true);
+  });
+
   it("leader repair writes the healed head back into the CRDT — a fresh joiner materializes clean", async () => {
     // Peer 0 is the leader; peer 1 a follower.
     let leaderView: unknown = null;
@@ -157,6 +221,14 @@ describe('hollow-container CRDT merges', () => {
     expect(() => joiner.doc().check()).not.toThrow();
   });
 });
+
+function countType(node: import('prosemirror-model').Node, type: string): number {
+  let n = 0;
+  node.forEach((c) => {
+    if (c.type.name === type) n++;
+  });
+  return n;
+}
 
 function firstCard(p: LoroPeer) {
   let found: import('prosemirror-model').Node | null = null;

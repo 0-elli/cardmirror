@@ -29,9 +29,15 @@ in each release, see `CHANGELOG.md`.
   diff writes the head into the CRDT as an ordinary edit; followers
   and fresh joiners then materialize cleanly with no heal at all.
   Never all-peer write-back: concurrent compensating inserts would
-  merge into duplicate heads and ping-pong. A rate-limited toast
-  surfaces the repair (the silent version is how the data loss went
-  unnoticed). Locked by `tests/collab/hollow-merge.test.ts` — written
+  merge into duplicate heads and ping-pong. The one residual conflict
+  window — degraded leader election (presence empty → everyone leads)
+  letting several peers write their blank head back concurrently,
+  merging to `[tag, tag, …]` — is closed by the same heal: a
+  duplicate mid-tail head normalizes deterministically (an empty one
+  is dropped, one carrying text demotes to a body), so even that
+  corner converges to the single-blank-head endpoint instead of a
+  drop. A rate-limited toast surfaces the repair (the silent version
+  is how the data loss went unnoticed). Locked by `tests/collab/hollow-merge.test.ts` — written
   red-first against the old drop behavior: headless-with-content
   heals + converges, fully-empty converges to gone, and a fresh
   joiner from the leader's state gets a canonical (non-sentinel)
