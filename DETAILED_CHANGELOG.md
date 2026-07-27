@@ -7,6 +7,26 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.25 — Unreleased
 
+- **Salvage-mode open for damaged files** (`src/schema/salvage.ts`,
+  `parseNativeSalvage` + `NativeDamagedError` in `src/native/index.ts`,
+  `offerDamagedSalvage` in the editor). When a `.cmir` fails `check()`
+  even after the heal chain, the refusal now carries a typed error and
+  the open paths (single-doc AND three-pane, file picker / drag /
+  recents) offer a repaired copy. The salvage walk is bottom-up and
+  deterministic: children first, then a greedy content-match refit
+  that (1) keeps every child the expression accepts, (2) GENERATES
+  missing required content via `fillBefore` — both before a misplaced
+  child (a body where a head belongs keeps the body behind a generated
+  empty head) and at the end (a hollow cell gains its paragraph) —
+  and (3) drops only what can't fit even with filling, recording each
+  loss with a type + 80-char text preview; a whole-node drop subsumes
+  its inner entries. The result is re-`check()`ed; anything still
+  invalid keeps the plain refusal. Consent-first UI quotes the
+  concrete losses; the copy mounts with NO file handle (first save
+  forces Save As, so the damaged original stays byte-intact for
+  forensics) under a "(repaired)" name, marked dirty; the drop report
+  joins the `cm-save-heal-log` diagnostics ring buffer.
+
 - **Structural-integrity hardening batch** (audit tier 4, four items).
   (1) The AI edit-coordinator's lease `apply`/`release` catches are
   scoped to actual view teardown (`view.isDestroyed`) — swallowing

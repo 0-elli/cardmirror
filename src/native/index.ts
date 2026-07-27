@@ -30,6 +30,7 @@
 
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema/index.js';
+import { salvageDoc, type DroppedNode } from '../schema/salvage.js';
 import { stampMissingHeadingIds } from '../schema/ids.js';
 import {
   splitInCardAnalytics,
@@ -194,10 +195,39 @@ export interface ParseNativeResult {
   };
 }
 
+/** The "damaged file" refusal — a distinct class so open flows can
+ *  tell "this parsed but is structurally invalid" (salvage may apply)
+ *  from "these bytes aren't a CardMirror file at all". */
+export class NativeDamagedError extends Error {
+  override name = 'NativeDamagedError';
+}
+
 /** Parse CardMirror native bytes back into a doc + threads. Throws
  *  with a descriptive message when the bytes aren't a valid CardMirror
  *  file — caller can show that to the user. */
 export function parseNative(bytes: Uint8Array): ParseNativeResult {
+  return parseNativeImpl(bytes, false);
+}
+
+/** Last-resort variant: when the doc fails `check()` even after the
+ *  heal chain, run `salvageDoc` (drop the minimal invalid subtrees,
+ *  fill required content) and return the valid remainder plus a
+ *  report of what was dropped. Still throws when even salvage can't
+ *  produce a valid doc. Callers MUST get user consent before opening
+ *  the result, must open it WITHOUT the original's file handle (first
+ *  save forces Save As, preserving the damaged original for
+ *  forensics), and should log the drop report. */
+export function parseNativeSalvage(
+  bytes: Uint8Array,
+): ParseNativeResult & { dropped: DroppedNode[] } {
+  const result = parseNativeImpl(bytes, true);
+  return { ...result, dropped: result.dropped ?? [] };
+}
+
+function parseNativeImpl(
+  bytes: Uint8Array,
+  salvage: boolean,
+): ParseNativeResult & { dropped?: DroppedNode[] } {
   // An empty read is the tell-tale of a cloud "online-only" placeholder
   // (Dropbox / iCloud Drive) that hasn't downloaded: `readFile` hands back 0
   // bytes instead of the real content, which would otherwise die cryptically as
@@ -257,6 +287,7 @@ export function parseNative(bytes: Uint8Array): ParseNativeResult {
   // validating; this rewrites it into a trailing analytic_unit before the doc
   // reaches the editor. See `schema/migrate.ts`.
   let doc: PMNode;
+  let dropped: DroppedNode[] | undefined;
   try {
     doc = stripImageVisualMarks(
       dropEmptyZones(
@@ -282,10 +313,20 @@ export function parseNative(bytes: Uint8Array): ParseNativeResult {
     // misbehaves later. The heal passes above run first: they exist for
     // specific known-legacy shapes, and a healed doc passes; `check()`
     // walks everything else (content expressions, mark constraints) and
-    // throws with a precise location.
-    doc.check();
+    // throws with a precise location. In salvage mode a check failure
+    // falls through to `salvageDoc` — minimal drops, user-consented at
+    // the call site — and only an unsalvageable doc still refuses.
+    try {
+      doc.check();
+    } catch (checkErr) {
+      if (!salvage) throw checkErr;
+      const salvaged = salvageDoc(doc);
+      if (!salvaged) throw checkErr;
+      doc = salvaged.doc;
+      dropped = salvaged.dropped;
+    }
   } catch (err) {
-    throw new Error(
+    throw new NativeDamagedError(
       `This CardMirror file is damaged and can’t be opened (${
         err instanceof Error ? err.message : String(err)
       }).`,
@@ -300,6 +341,7 @@ export function parseNative(bytes: Uint8Array): ParseNativeResult {
       createdAt: typeof file.createdAt === 'string' ? file.createdAt : '',
       formatVersion: file.formatVersion,
     },
+    ...(dropped ? { dropped } : {}),
   };
 }
 

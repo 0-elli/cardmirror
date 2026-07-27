@@ -4,6 +4,8 @@ import { schema, newHeadingId } from '../../src/schema/index.js';
 import {
   serializeNative,
   parseNative,
+  parseNativeSalvage,
+  NativeDamagedError,
   looksLikeNative,
   setSaveHealListener,
   NATIVE_FILE_EXTENSION,
@@ -562,6 +564,65 @@ describe('healCards + healTables (2026-07-26 field report: empty card)', () => {
     const { doc } = parseNative(file);
     expect(doc.firstChild!.type.name).toBe('card');
     expect(doc.firstChild!.childCount).toBe(2);
+  });
+});
+
+describe('parseNativeSalvage (damaged-file salvage open)', () => {
+  const envelope = (doc: unknown): Uint8Array =>
+    new TextEncoder().encode(
+      JSON.stringify({
+        format: 'cardmirror-doc',
+        formatVersion: 1,
+        doc,
+        docId: 'doc-123',
+        threads: [],
+      }),
+    );
+  // A paragraph inside a card: invalid, outside every heal — the
+  // salvage-only class.
+  const damagedDoc = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'intro' }] },
+      {
+        type: 'card',
+        content: [
+          { type: 'tag', attrs: { id: 't-1' }, content: [{ type: 'text', text: 'kept tag' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'poisoned' }] },
+          { type: 'card_body', content: [{ type: 'text', text: 'kept body' }] },
+        ],
+      },
+    ],
+  };
+
+  it('parseNative refuses with the typed damaged error', () => {
+    let caught: unknown;
+    try {
+      parseNative(envelope(damagedDoc));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NativeDamagedError);
+  });
+
+  it('salvage opens the valid remainder and reports the drops', () => {
+    const result = parseNativeSalvage(envelope(damagedDoc));
+    expect(() => result.doc.check()).not.toThrow();
+    expect(result.doc.textContent).toContain('kept tag');
+    expect(result.doc.textContent).toContain('kept body');
+    expect(result.doc.textContent).not.toContain('poisoned');
+    expect(result.dropped).toEqual([{ type: 'paragraph', textPreview: 'poisoned' }]);
+    expect(result.docId).toBe('doc-123'); // metadata preserved
+  });
+
+  it('a healthy file salvage-parses with zero drops', () => {
+    const clean = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'fine' }] }],
+    };
+    const result = parseNativeSalvage(envelope(clean));
+    expect(result.dropped).toEqual([]);
+    expect(result.doc.textContent).toBe('fine');
   });
 });
 

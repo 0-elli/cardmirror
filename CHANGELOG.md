@@ -7,6 +7,17 @@ see `DETAILED_CHANGELOG.md`.
 
 ## 0.1.0-beta.25 — Unreleased
 
+### Added
+
+- **Damaged files can open as a repaired copy.** When a `.cmir` is so
+  damaged that even the automatic repairs can't fix it, CardMirror now
+  offers to open a repaired copy with the damaged elements removed —
+  and tells you exactly what would be removed, quoting each element's
+  text (or noting when no visible text is lost). The original file is
+  never touched: the repaired copy opens unsaved, and saving it asks
+  where to save. Previously the only options were a backup or asking
+  for help.
+
 ### Fixed
 
 - **Documents are now checked and repaired at every save.** Until now,

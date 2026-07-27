@@ -28,10 +28,13 @@ export {
   serializeNative,
   serializeNativeAsync,
   parseNative,
+  parseNativeSalvage,
+  NativeDamagedError,
   looksLikeNative,
   setSaveHealListener,
   NATIVE_FILE_EXTENSION,
 } from './native/index.js';
+export type { DroppedNode } from './schema/salvage.js';
 export type {
   NativeFile,
   SerializeNativeOptions,

@@ -14,7 +14,7 @@ import { history, redo, undo } from 'prosemirror-history';
 import { baseKeymap } from 'prosemirror-commands';
 import { Node as PMNode, type Mark, DOMSerializer } from 'prosemirror-model';
 import { schema, newHeadingId } from '../schema/index.js';
-import { fromDocxFull, toDocx, serializeNative, serializeNativeAsync, parseNative, readDocIdFromBytes, stampDocId, setSaveHealListener } from '../index.js';
+import { fromDocxFull, toDocx, serializeNative, serializeNativeAsync, parseNative, parseNativeSalvage, NativeDamagedError, readDocIdFromBytes, stampDocId, setSaveHealListener } from '../index.js';
 import { transformForExport, countMarkedCards } from '../export/transform-for-export.js';
 import type { Thread, Comment } from './comments-plugin.js';
 import type { LocalComment } from './learn-store.js';
@@ -5843,6 +5843,10 @@ async function routeOpenedFile(opened: OpenedFile): Promise<void> {
     try {
       await multiDocOnFileOpen({ name: src.name, bytes: src.bytes, handle: src.handle });
     } catch (err) {
+      if (err instanceof NativeDamagedError) {
+        await offerDamagedSalvage(src.name, src.bytes);
+        return;
+      }
       console.error('Multi-doc open failed:', err);
       void alertDialog(`Failed to open: ${err instanceof Error ? err.message : err}`);
     }
@@ -5901,35 +5905,147 @@ async function routeOpenedFile(opened: OpenedFile): Promise<void> {
       docThreads = result.threads;
       docId = result.docId;
     }
-    // Opening replaces the current doc; clear its journal and
-    // mint a fresh uid for the new session.
-    void clearCurrentJournal();
-    mountView(docNode, docThreads);
-    currentDocFilename = src.name;
-    setCurrentDocHandle(src.handle ?? null);
-    currentDocFormat = format;
-    // Restore this file's remembered autosave toggle (off if unknown).
-    settings.set('autosaveEnabled', isAutosaveOnForPath(src.handle));
-    currentDocUid = newSessionDocUid();
-    adoptDocId(docId, src.name, src.handle ?? null, format);
-    // A recovered journal mounts dirty (no on-disk file to be in sync with), so
-    // closing prompts to save; a normal open is clean.
-    if (src.recovered) markCurrentDocDirty();
-    else markCurrentDocClean();
-    syncSingleDocSpeechRegistration();
-    markNonPristineStarter();
-    updateWindowTitle();
-    // A recovered journal has no path yet — don't record an unreopenable
-    // (handle-null) recent; the Save flow records it once it's written.
-    if (!src.recovered) {
-      recordRecent({ handle: typeof src.handle === 'string' ? src.handle : null, filename: src.name, format });
-    }
-    homeScreen.hide();
-    console.log(`Loaded ${src.name}: ${countSummary(docNode)}`);
+    mountOpenedSingleDoc({
+      docNode,
+      docThreads,
+      docId,
+      name: src.name,
+      handle: src.handle ?? null,
+      format,
+      dirty: src.recovered === true,
+      recordAsRecent: !src.recovered,
+    });
   } catch (err) {
+    if (err instanceof NativeDamagedError) {
+      await offerDamagedSalvage(src.name, openBytes);
+      return;
+    }
     console.error('Failed to load doc:', err);
     void alertDialog(`Failed to load: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+/** The single-doc mount tail shared by a normal open and a salvage
+ *  open (which passes handle: null so the first save forces Save As,
+ *  preserving the damaged original on disk). */
+function mountOpenedSingleDoc(args: {
+  docNode: PMNode;
+  docThreads: Thread[] | undefined;
+  docId: string | null;
+  name: string;
+  handle: unknown;
+  format: 'cmir' | 'docx';
+  dirty: boolean;
+  recordAsRecent: boolean;
+}): void {
+  // Opening replaces the current doc; clear its journal and
+  // mint a fresh uid for the new session.
+  void clearCurrentJournal();
+  mountView(args.docNode, args.docThreads);
+  currentDocFilename = args.name;
+  setCurrentDocHandle(args.handle ?? null);
+  currentDocFormat = args.format;
+  // Restore this file's remembered autosave toggle (off if unknown).
+  settings.set('autosaveEnabled', isAutosaveOnForPath(args.handle));
+  currentDocUid = newSessionDocUid();
+  adoptDocId(args.docId, args.name, args.handle ?? null, args.format);
+  // A recovered journal / salvaged copy mounts dirty (no on-disk file
+  // to be in sync with), so closing prompts to save; a normal open is
+  // clean.
+  if (args.dirty) markCurrentDocDirty();
+  else markCurrentDocClean();
+  syncSingleDocSpeechRegistration();
+  markNonPristineStarter();
+  updateWindowTitle();
+  // A recovered/salvaged doc has no path yet — don't record an
+  // unreopenable (handle-null) recent; Save records it once written.
+  if (args.recordAsRecent) {
+    recordRecent({
+      handle: typeof args.handle === 'string' ? args.handle : null,
+      filename: args.name,
+      format: args.format,
+    });
+  }
+  homeScreen.hide();
+  console.log(`Loaded ${args.name}: ${countSummary(args.docNode)}`);
+}
+
+/** Damaged-file salvage offer (structural-integrity audit follow-on):
+ *  when a .cmir fails the load check even after the heals, offer to
+ *  open a repaired COPY with the minimal invalid subtrees removed.
+ *  Consent-first with a concrete loss list; the copy mounts with no
+ *  file handle so the first save forces Save As and the damaged
+ *  original stays byte-intact for forensics; the drop report joins
+ *  the local diagnostics log. */
+async function offerDamagedSalvage(name: string, bytes: Uint8Array): Promise<void> {
+  let salvaged: ReturnType<typeof parseNativeSalvage>;
+  try {
+    salvaged = parseNativeSalvage(bytes);
+  } catch (err) {
+    // Even salvage can't produce a valid doc — the plain refusal.
+    void alertDialog(`Failed to load: ${err instanceof Error ? err.message : err}`);
+    return;
+  }
+  const previews = salvaged.dropped
+    .slice(0, 5)
+    .map((d) => `${d.type}${d.textPreview ? ` “${d.textPreview}”` : ' (no visible text)'}`);
+  const more = salvaged.dropped.length - previews.length;
+  const lossLine =
+    salvaged.dropped.length === 0
+      ? 'No content needs to be removed.'
+      : `Removes ${salvaged.dropped.length} damaged element${salvaged.dropped.length === 1 ? '' : 's'}: ${previews.join('; ')}${more > 0 ? `; and ${more} more` : ''}.`;
+  const choice = await promptForRouteChoice<'open'>({
+    message: `“${name}” is damaged and can’t be opened as-is.`,
+    choices: [
+      {
+        value: 'open',
+        label: 'Open a repaired copy',
+        description: `${lossLine} The original file is left untouched; saving the copy will ask where to save.`,
+      },
+    ],
+  });
+  if (choice !== 'open') return;
+  try {
+    const log = JSON.parse(localStorage.getItem('cm-save-heal-log') ?? '[]') as unknown[];
+    log.push({ at: new Date().toISOString(), salvageOpen: name, dropped: salvaged.dropped });
+    localStorage.setItem('cm-save-heal-log', JSON.stringify(log.slice(-20)));
+  } catch {
+    /* diagnostics only */
+  }
+  const repairedName = name.replace(/\.cmir$/i, '') + ' (repaired)';
+  const threads = salvaged.threads.length > 0 ? salvaged.threads : undefined;
+  if (multiDocActive && multiDocOnRecoveredDoc) {
+    try {
+      await multiDocOnRecoveredDoc({
+        uid: newSessionDocUid(),
+        filename: repairedName,
+        handle: null,
+        format: 'cmir',
+        docId: salvaged.docId,
+        doc: salvaged.doc,
+        threads: salvaged.threads,
+        dirty: true,
+      });
+    } catch (err) {
+      void alertDialog(`Failed to open repaired copy: ${err instanceof Error ? err.message : err}`);
+    }
+    return;
+  }
+  mountOpenedSingleDoc({
+    docNode: salvaged.doc,
+    docThreads: threads,
+    docId: salvaged.docId,
+    name: repairedName,
+    handle: null,
+    format: 'cmir',
+    dirty: true,
+    recordAsRecent: false,
+  });
+  showToast(
+    salvaged.dropped.length === 0
+      ? 'Opened a repaired copy.'
+      : `Opened a repaired copy — ${salvaged.dropped.length} damaged element${salvaged.dropped.length === 1 ? '' : 's'} removed.`,
+  );
 }
 
 // ─── Home screen wiring ────────────────────────────────────────────
