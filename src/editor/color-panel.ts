@@ -65,6 +65,8 @@ interface ColorControlSetup {
   onMainClick: () => Command;
   /** Command applied per drag-select while paintbrush mode is active. */
   paintbrushApply: () => Command;
+  /** Same, for an Alt/Option stroke — the strip-pen ("no color"). */
+  stripApply: () => Command;
   /** Builds the swatch grid; calls `pick(value)` when a swatch is clicked. */
   buildPicker: (pick: (value: string | null) => void) => HTMLElement;
   /** Update the live indicator bar (and the font-color glyph) to reflect the active color. */
@@ -73,6 +75,11 @@ interface ColorControlSetup {
 
 export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   let activePaintbrush: PaintbrushMode | null = null;
+  // Alt/Option held = temporary strip-pen ("paint no color") while a
+  // colored pen is armed. This flag only keeps the CURSOR truthful —
+  // the actual apply decision reads e.altKey off the mouseup itself,
+  // so a missed keyup can never make the wrong pen fire.
+  let altStripOverride = false;
 
   const controls: ColorControlSetup[] = [
     buildHighlightControl(),
@@ -118,9 +125,12 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
       // start a paint drag on, plus a small swatch hanging off the
       // lower-right showing the active color. Refreshed on every
       // settings change (subscriber below) so swapping the color
-      // in mid-session updates the cursor live.
+      // in mid-session updates the cursor live. While Alt holds the
+      // strip-pen override, the swatch shows the app's "no color"
+      // glyph (white with a red slash) instead of the pen color.
       if (editorEl) {
-        const color = resolvePaintbrushColor(activePaintbrush);
+        const strip = altStripOverride && !penIsNone(activePaintbrush);
+        const color = strip ? null : resolvePaintbrushColor(activePaintbrush);
         editorEl.style.cursor = `url("${paintbrushCursorDataUri(color)}") 6 10, text`;
       }
     }
@@ -167,7 +177,10 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   // the editor so click-mouseup on ribbon buttons doesn't accidentally
   // re-apply the last selection. After applying, collapse the
   // selection to the end of the painted range so the user can see
-  // what they just painted (Word's "lift the brush" UX).
+  // what they just painted (Word's "lift the brush" UX). Alt/Option
+  // held at release turns a colored pen into the strip-pen for this
+  // stroke ("paint no color"); a pen already set to "none" ignores
+  // Alt — it strips either way.
   document.addEventListener('mouseup', (e) => {
     if (!activePaintbrush) return;
     const view = viewRef.view;
@@ -175,8 +188,10 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
     if (!view.dom.contains(e.target as Node)) return;
     const sel = view.state.selection;
     if (sel.empty) return;
-    const cmd = controls.find((c) => c.paintbrushMode === activePaintbrush)?.paintbrushApply();
-    if (!cmd) return;
+    const setup = controls.find((c) => c.paintbrushMode === activePaintbrush);
+    if (!setup) return;
+    const strip = e.altKey && !penIsNone(activePaintbrush);
+    const cmd = strip ? setup.stripApply() : setup.paintbrushApply();
     applyAndCollapseSelection(view, cmd);
   });
 
@@ -185,6 +200,30 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
     if (e.key === 'Escape' && activePaintbrush) {
       setPaintbrush(null);
       e.preventDefault();
+    }
+  });
+
+  // Track Alt/Option for the strip-pen override cursor. `keydown`
+  // repeats while held — the flag guard keeps the cursor rebuild to
+  // one per press. A window blur clears the override: Cmd-Tabbing
+  // away with Alt down eats the keyup, and returning stuck in strip
+  // mode would paint "no color" with a colored cursor showing.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt' && activePaintbrush && !altStripOverride) {
+      altStripOverride = true;
+      syncPaintbrushUI();
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Alt' && altStripOverride) {
+      altStripOverride = false;
+      if (activePaintbrush) syncPaintbrushUI();
+    }
+  });
+  window.addEventListener('blur', () => {
+    if (altStripOverride) {
+      altStripOverride = false;
+      if (activePaintbrush) syncPaintbrushUI();
     }
   });
 
@@ -208,6 +247,15 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
       openPicker(anchor, setup, viewRef);
     },
   };
+}
+
+/** Whether the armed pen for `mode` is the "no color" pen. The Alt
+ *  strip-pen override is only meaningful for a COLORED pen — a none
+ *  pen already strips, so Alt changes nothing there. */
+function penIsNone(mode: PaintbrushMode): boolean {
+  if (mode === 'highlight') return settings.get('lastHighlightColor') === null;
+  if (mode === 'shading') return settings.get('lastShadingColor') === null;
+  return settings.get('lastFontColor') === null;
 }
 
 /** Resolve the active color for a paintbrush mode to a CSS color
@@ -234,8 +282,15 @@ function resolvePaintbrushColor(mode: PaintbrushMode): string {
  *  thin I-beam (precision pointer for text selection) with a small
  *  color swatch hanging off the lower-right corner. Hotspot:
  *  centered on the I-beam (x=6, y=10 in the 24x24 viewBox), set in
- *  the consuming `cursor:` declaration. */
-function paintbrushCursorDataUri(fillColor: string): string {
+ *  the consuming `cursor:` declaration. A null `fillColor` renders
+ *  the "no color" glyph — white with a red diagonal slash, matching
+ *  the pickers' none-swatch — for the Alt strip-pen override. */
+function paintbrushCursorDataUri(fillColor: string | null): string {
+  const swatch =
+    fillColor === null
+      ? '<rect x="12" y="13" width="10" height="10" fill="#fff" stroke="#000" stroke-width="1"/>' +
+        '<line x1="12" y1="23" x2="22" y2="13" stroke="#d21" stroke-width="2"/>'
+      : `<rect x="12" y="13" width="10" height="10" fill="${fillColor}" stroke="#000" stroke-width="1"/>`;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' +
     // I-beam: vertical stem + top/bottom caps. Two-tone (white
@@ -252,7 +307,7 @@ function paintbrushCursorDataUri(fillColor: string): string {
     '<line x1="3" y1="18" x2="9" y2="18"/>' +
     '</g>' +
     // Color swatch in the lower-right with a thin dark outline.
-    `<rect x="12" y="13" width="10" height="10" fill="${fillColor}" stroke="#000" stroke-width="1"/>` +
+    swatch +
     '</svg>';
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
@@ -267,6 +322,8 @@ function buildHighlightControl(): ColorControlSetup {
     // Paintbrush uses the toggle (applyHighlight, not setHighlightColor)
     // so re-painting a uniformly-highlighted range strips it.
     paintbrushApply: () => applyHighlight(() => settings.get('lastHighlightColor')),
+    // Alt stroke: the null pen — strips regardless of the armed color.
+    stripApply: () => applyHighlight(() => null),
     buildPicker: (pick) => {
       const grid = document.createElement('div');
       grid.className = 'pmd-color-picker-grid';
@@ -299,6 +356,7 @@ function buildShadingControl(): ColorControlSetup {
     // Toggle, mirroring highlight paintbrush — re-painting an already-
     // shaded range strips the mark.
     paintbrushApply: () => applyShading(() => settings.get('lastShadingColor')),
+    stripApply: () => applyShading(() => null),
     buildPicker: (pick) => {
       const grid = document.createElement('div');
       grid.className = 'pmd-color-picker-grid';
@@ -326,6 +384,8 @@ function buildFontColorControl(): ColorControlSetup {
     paintbrushMode: 'fontcolor',
     onMainClick: () => setFontColor(settings.get('lastFontColor')),
     paintbrushApply: () => setFontColor(settings.get('lastFontColor')),
+    // Alt stroke: temporary "Automatic" — strips the font_color mark.
+    stripApply: () => setFontColor(null),
     buildPicker: (pick) => {
       const grid = document.createElement('div');
       grid.className = 'pmd-color-picker-grid';
