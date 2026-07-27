@@ -28,6 +28,31 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **Three-pane focus follows visibility** (`focusSlot` guard +
+  `createNewDoc`/`createNewSpeechDocument` in `multi-pane-shell.ts`).
+  Investigating the intermittent "new doc ignores styling until I
+  click the caret line" report surfaced a confirmed split-routing
+  hole: `Slot.push` unconditionally transferred `focusedSlot` +
+  activeView to the receiving slot, and in expand mode the receiving
+  pane can be `hidden` — so ribbon/command routing pointed at an
+  invisible doc while DOM focus (which a hidden subtree silently
+  refuses) stayed with the visible one. Chords (view keymaps, need
+  DOM focus) and commands (active view) then disagree, reading as
+  "styling does nothing"; clicking any text line re-syncs both, but
+  clicking pane background fixes only the bookkeeping — exactly the
+  reported asymmetry. Per the user's design call, the invariant is
+  now FOCUS FOLLOWS VISIBILITY: `focusSlot` early-returns for a
+  hidden pane (the expanded pane is what you're looking at; it keeps
+  the keyboard), and the two creation paths skip their DOM `focus()`
+  into hidden panes. NOTE: the user's own repro was NOT in expand
+  mode, so at least one more focus-dropper is at large in the
+  three-pane ribbon-New path; the single-pane home-tile new/open
+  paths also never focus after mount (`mountView` has no focus call)
+  — both are candidates for the proposed focus-follows-active-doc
+  reconciler, not yet built. No automated test: the multi-pane shell
+  has no unit harness (its constructor needs live app scaffolding) —
+  standing one up is its own task.
+
 - **CSS content glyphs escaped repo-wide (mojibake-proofing)**
   (`style.css` ×5, `icons.css` ×85 via `gen-icons.mjs` `cssGlyph`,
   guard test in `icon-coverage.test.ts`). Field report: the 🎤 pane

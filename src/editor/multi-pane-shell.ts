@@ -1968,6 +1968,14 @@ class MultiPaneShell {
    *  third doc brings it into view, but clicking the middle (fully
    *  visible) doc leaves the scroll position alone. */
   focusSlot(slot: Slot): void {
+    // Focus follows VISIBILITY: a pane hidden behind an expanded slot
+    // can receive docs (the slot picker routes there happily) but must
+    // never take the keyboard — the expanded pane is what the user is
+    // looking at. Transferring `focusedSlot`/activeView to an invisible
+    // doc splits chord routing (view keymaps need DOM focus) from
+    // command routing (active view), which reads as "styling does
+    // nothing". The slot takes focus normally when it becomes visible.
+    if (slot.paneEl.hidden) return;
     const wasSame = this.focusedSlot === slot && getActiveView() === slot.visible?.view;
     if (this.focusedSlot && this.focusedSlot !== slot) {
       this.focusedSlot.paneEl.classList.remove('pmd-pane-focused');
@@ -2631,10 +2639,13 @@ class MultiPaneShell {
     slot.push(record);
     // Caret into the empty paragraph + focus, so typing (or arming a
     // style for typing) works immediately with no extra click. Every
-    // other slot-populating path focuses too.
+    // other slot-populating path focuses too — UNLESS the target pane
+    // is hidden behind an expanded slot: the expanded pane keeps the
+    // keyboard (focus follows visibility; see focusSlot). A focus()
+    // into a hidden subtree would silently no-op anyway.
     const tr = record.view.state.tr.setSelection(Selection.atEnd(record.view.state.doc));
     record.view.dispatch(tr);
-    record.view.focus();
+    if (!slot.paneEl.hidden) record.view.focus();
   }
 
   /** Create a fresh unsaved doc to hold a joining/resuming co-editing
@@ -2727,7 +2738,9 @@ class MultiPaneShell {
       TextSelection.create(record.view.state.doc, cursorPos),
     );
     record.view.dispatch(tr);
-    record.view.focus();
+    // Same visibility guard as createNewDoc: an expand-obscured pane
+    // never takes the keyboard.
+    if (!slot.paneEl.hidden) record.view.focus();
     // Mark as the speech doc. The registry hook fires the
     // resolver subscription, which refreshes chrome (the 📌
     // button's aria-pressed + the slot's chip).

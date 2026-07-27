@@ -26,6 +26,14 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Three-pane: an expanded pane now always keeps the keyboard.**
+  Creating a new document routed to a slot hidden behind an expanded
+  pane used to silently move command routing to the invisible doc
+  while your keystrokes stayed with the visible one — typing and
+  styling appeared dead until you clicked into a document. Focus now
+  follows visibility: a hidden pane can receive documents but never
+  takes focus; it gets its turn when it's shown.
+
 - **Interface glyphs can no longer garble.** In rare cases (a reload
   race in certain window states) the speech-doc microphone on a pane
   chip and the numbering arrows could render as garbled characters
