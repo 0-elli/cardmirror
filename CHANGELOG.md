@@ -7,6 +7,19 @@ see `DETAILED_CHANGELOG.md`.
 
 ## 0.1.0-beta.27 — Unreleased
 
+### Changed
+
+- **Screen reader support is now much safer to turn on.** The Chromium
+  crash that made us disable assistive-technology support (white
+  screen, lost work) lives in a new accessibility engine Chromium is
+  still stabilizing. CardMirror now starts with that engine switched
+  off, so screen readers use Chromium's older, long-established
+  accessibility path instead — measured as equivalent in coverage and
+  speed. **Screen reader support** in Settings → Accessibility stays
+  off by default for now, but turning it on no longer means opting
+  into a known crash; if you use a screen reader, please try it and
+  report back.
+
 ### Added
 
 - **`cardmirror-read`: a tiny companion tool for reading files without

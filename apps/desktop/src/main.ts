@@ -152,6 +152,30 @@ try {
 if (!rendererAccessibilityEnabled) {
   app.commandLine.appendSwitch('disable-renderer-accessibility');
 }
+// Route accessibility around the code that crashed in the field.
+// `AXBlockFlowIterator` is Chromium's NEW line-navigation engine for
+// accessibility (an in-progress performance rewrite, enabled by
+// default since ~2025); every frame in our five symbolicated crash
+// dumps lives inside it, and upstream is still landing fixes there
+// (a null-deref in 2024-12, a missing-LayoutObject crash in 2025-12,
+// and one in ComputeNeighborOnLine itself — our exact function — in
+// 2026-07). Disabling the feature falls back to the legacy
+// `AbstractInlineTextBox` path, which is still fully present in
+// Chromium 148 (verified in ax_object_cache_impl.cc / ax_inline_text_box.cc,
+// which branch on ::features::IsAccessibilityBlockFlowIteratorEnabled)
+// and served every Chromium screen reader for a decade.
+//
+// Measured on this Chromium (Electron 42 / 148.0.7778.97), 1,200
+// densely-marked cards with the full tree forced on: legacy produced
+// 56,109 nodes / 26,603 inline text boxes in ~530ms vs the new
+// engine's 56,442 / 26,766 in ~500ms — equivalent coverage, no
+// meaningful slowdown, so this costs nothing while the rewrite
+// stabilizes. Unconditional on purpose: it's inert while the tree is
+// disabled, and it must apply on the very first launch after a user
+// opts in (the pref is read before the window exists).
+// REMOVE when Electron ships a Chromium whose crbug for
+// ComputeNeighborOnLine is fixed.
+app.commandLine.appendSwitch('disable-features', 'AccessibilityBlockFlowIterator');
 
 interface FileFilter {
   name: string;

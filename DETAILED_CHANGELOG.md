@@ -7,6 +7,41 @@ in each release, see `CHANGELOG.md`.
 
 ## 0.1.0-beta.27 — Unreleased
 
+- **Accessibility: route around the crashing Chromium engine**
+  (`main.ts` launch switch + the `accessibilityTreeEnabled` setting
+  copy). Investigating a user's screen-reader request re-opened the
+  a11y lockdown from the white-screen audit. Finding: all five
+  symbolicated field dumps sit inside `AXBlockFlowIterator`,
+  Chromium's NEW accessibility line-navigation engine — and it is
+  behind a runtime feature flag whose legacy `AbstractInlineTextBox`
+  fallback is still fully present in our Chromium 148 (verified in
+  `ax_object_cache_impl.cc` / `ax_inline_text_box.cc`, which branch on
+  `::features::IsAccessibilityBlockFlowIteratorEnabled`). So
+  `--disable-features=AccessibilityBlockFlowIterator` gives working
+  assistive technology WITHOUT the code that crashed. Upstream is
+  still landing fixes in that engine (null-deref 2024-12,
+  missing-LayoutObject crash 2025-12, and one in `ComputeNeighborOnLine`
+  — our exact function — 2026-07-21, bug 536936867), which is why the
+  switch is worth carrying now.
+  EXPERIMENT (isolated Electron instance, own temp userData so the
+  user's working app was untouched; CDP-driven; AX forced on via
+  `--force-renderer-accessibility=complete` + `setAccessibilitySupport-
+  Enabled`, since `Accessibility.getFullAXTree` alone serializes NO
+  inline text boxes — the first run looked clean only because the
+  crash layer wasn't exercised): 1,200 densely-marked cards, 12 rounds
+  of full-tree serialization interleaved with edits. New engine 56,442
+  nodes / 26,766 inline text boxes in ~500ms; legacy 56,109 / 26,603
+  in ~530ms — equivalent coverage, no meaningful slowdown, so the flag
+  is free. NEITHER engine crashed on macOS, including a second harness
+  shaped like the July upstream bug (400 wrapping linked cites, focus
+  ring moved through them, 15 rounds). Consistent with all five field
+  dumps being Windows 11: Windows AT clients (IA2/UIA) drive
+  line-neighbor computation far harder than VoiceOver. So this is
+  defense-in-depth reasoned from the stack, NOT a locally reproduced
+  fix — stated plainly in the setting copy, which now asks screen
+  reader users to try it and report rather than warning them off.
+  Harnesses kept at `scratchpad/ax-test/` for the eventual Windows run.
+
 - **cardmirror-read CLI** (`src/tools/cardmirror-read-{lib,cli}.ts`,
   bundled single-file to `packaging/cardmirror-read/cardmirror-read.cjs`
   via `npm run build:readtool`; README with curl one-liner). Field
