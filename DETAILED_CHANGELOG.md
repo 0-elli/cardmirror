@@ -28,6 +28,30 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **Focus-audit follow-through: chord guard, read-only modals, read-mode
+  alignment** (the audit's two bonus CONFIRMED bugs + slim Phase 2).
+  (1) The global ribbon chord handler (`index.ts` window keydown) now
+  skips VIEW-dispatching commands when the keystroke targets a native
+  form field (INPUT/TEXTAREA/SELECT) — previously Cmd-B while typing
+  in the font-size box / tag filter applied bold to the background
+  doc. The PM editor is contenteditable (not a native field), so
+  editor chords are unaffected; VIEWLESS file commands (new/open/
+  save-as) still fire from fields; the skip does NOT preventDefault,
+  so the field keeps native behavior. (2) Word-count and
+  shortcuts-reference modals converted to the shared modal wiring
+  (pushOverlay + installModalKeys + armDialogFocus + focus restore) —
+  both previously held no focus and had permanent unregistered
+  Escape-only listeners, so typing over them fell through to the doc.
+  (3) Single-pane's `editable: () => !readMode` EditorView prop
+  REMOVED: it predates (2026-05-09) the read-mode plugin's
+  editable+filterTransaction design (2026-06-08, which multi-pane
+  follows) — contenteditable=false also made PM's view.focus() a DOM
+  no-op in single-pane read mode. The filter admits only
+  sync/normalizer/marker/bounded-undo/drag transactions, so edit
+  blocking is unchanged. Deliberately NOT registered (by design, per
+  audit): command palette, comments column, tag picker. Tests: both
+  modals' register/swallow/restore in dialog-key-capture.test.ts.
+
 - **Word-selection: doc-level click positions coerced to inline
   content — THE root cause of the "styling dead until caret-line
   click" class** (`dispatchSelection` in `word-selection-plugin.ts`).

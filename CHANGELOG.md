@@ -26,6 +26,25 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Formatting shortcuts typed into text boxes stay in the text box.**
+  Pressing a formatting shortcut (bold, highlight, …) while typing in
+  a small text field — the font-size box, a search filter — used to
+  apply it to the document behind the field. Document-level shortcuts
+  (new / open / save as) still work from anywhere.
+
+- **The Word Count and Keyboard Shortcuts windows now hold the
+  keyboard.** Typing while either was open fell through into the
+  document behind them. Keys are now contained, Escape closes, and
+  focus returns to the editor afterwards.
+
+- **Read mode now works identically in both layouts.** The single-pane
+  editor was made non-editable at the browser level in read mode — an
+  older mechanism that could make the cursor unplaceable and the
+  Space/Enter reading markers unreliable there. It now uses the same
+  edit-blocking as three-pane panes: everything is still locked
+  against changes, but the cursor and reading markers behave the same
+  everywhere.
+
 - **Clicking below the last line no longer breaks the editor.** THE
   root cause of the long-standing "typing and styling stop working
   until I click a text line" reports, in both layouts: a click below

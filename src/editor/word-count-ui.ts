@@ -10,10 +10,23 @@ import type { EditorView } from 'prosemirror-view';
 import { settings } from './settings.js';
 import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
 import { setIcon } from './icons';
+import { pushOverlay, popOverlay } from './overlay-stack.js';
+import {
+  installModalKeys,
+  armDialogFocus,
+  captureFocusForDialog,
+} from './text-prompt.js';
 
 class WordCountModal {
   private overlay: HTMLDivElement;
   private dialog: HTMLDivElement;
+  /** Modal plumbing while open (2026-07-27 focus audit: this modal
+   *  held no focus and registered nothing — keystrokes typed over it
+   *  fell through into the document behind, and background handlers
+   *  saw "no modal open"). */
+  private overlayToken: symbol | null = null;
+  private removeKeys: (() => void) | null = null;
+  private restoreFocus: (() => void) | null = null;
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -27,9 +40,6 @@ class WordCountModal {
     this.overlay.addEventListener('click', (e) => {
       if (e.target === this.overlay) this.close();
     });
-    document.addEventListener('keydown', (e) => {
-      if (this.overlay.style.display !== 'none' && e.key === 'Escape') this.close();
-    });
 
     document.body.appendChild(this.overlay);
   }
@@ -37,10 +47,31 @@ class WordCountModal {
   open(view: EditorView): void {
     this.render(view);
     this.overlay.style.display = '';
+    if (this.overlayToken === null) {
+      const token = pushOverlay();
+      this.overlayToken = token;
+      this.restoreFocus = captureFocusForDialog();
+      this.removeKeys = installModalKeys(this.dialog, token, (e) => {
+        if (e.key === 'Escape') {
+          this.close();
+          return true;
+        }
+        return false;
+      });
+    }
+    armDialogFocus(this.dialog, 'dialog', 'Word Count');
   }
 
   close(): void {
     this.overlay.style.display = 'none';
+    if (this.overlayToken !== null) {
+      popOverlay(this.overlayToken);
+      this.overlayToken = null;
+    }
+    this.removeKeys?.();
+    this.removeKeys = null;
+    this.restoreFocus?.();
+    this.restoreFocus = null;
   }
 
   private render(view: EditorView): void {

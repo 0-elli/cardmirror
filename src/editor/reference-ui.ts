@@ -20,6 +20,12 @@ import { isRibbonCommandAvailable } from './ribbon-availability.js';
 import { pluginCommandIds } from './plugin-registry.js';
 import { settings } from './settings.js';
 import { setIcon } from './icons';
+import { pushOverlay, popOverlay } from './overlay-stack.js';
+import {
+  installModalKeys,
+  armDialogFocus,
+  captureFocusForDialog,
+} from './text-prompt.js';
 
 
 class ReferenceModal {
@@ -28,6 +34,12 @@ class ReferenceModal {
   /** Live filter query for the searchbar — kept on the instance
    *  so reopening the modal preserves the last search. */
   private searchQuery = '';
+  /** Modal plumbing while open (2026-07-27 focus audit: same
+   *  no-focus, unregistered pattern as the word-count modal —
+   *  keystrokes fell through to the document behind). */
+  private overlayToken: symbol | null = null;
+  private removeKeys: (() => void) | null = null;
+  private restoreFocus: (() => void) | null = null;
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -42,22 +54,37 @@ class ReferenceModal {
       if (e.target === this.overlay) this.close();
     });
 
-    document.addEventListener('keydown', (e) => {
-      if (this.overlay.style.display !== 'none' && e.key === 'Escape') {
-        this.close();
-      }
-    });
-
     document.body.appendChild(this.overlay);
   }
 
   open(): void {
     this.render();
     this.overlay.style.display = '';
+    if (this.overlayToken === null) {
+      const token = pushOverlay();
+      this.overlayToken = token;
+      this.restoreFocus = captureFocusForDialog();
+      this.removeKeys = installModalKeys(this.dialog, token, (e) => {
+        if (e.key === 'Escape') {
+          this.close();
+          return true;
+        }
+        return false;
+      });
+    }
+    armDialogFocus(this.dialog, 'dialog', 'Keyboard shortcuts');
   }
 
   close(): void {
     this.overlay.style.display = 'none';
+    if (this.overlayToken !== null) {
+      popOverlay(this.overlayToken);
+      this.overlayToken = null;
+    }
+    this.removeKeys?.();
+    this.removeKeys = null;
+    this.restoreFocus?.();
+    this.restoreFocus = null;
   }
 
   private render(): void {

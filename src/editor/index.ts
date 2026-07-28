@@ -3937,6 +3937,18 @@ window.addEventListener('keydown', (e) => {
     settings.get('ribbonKeyOverrides'),
   );
   if (!cmdId) return;
+  // A chord typed into a NATIVE text field (find bar, font-size box,
+  // tag filter, a dialog input) must not dispatch view commands into
+  // the document behind it (2026-07-27 focus audit: Cmd-B while
+  // typing in the font-size input bolded the background doc). The
+  // ProseMirror editor is contenteditable, not a native field, so
+  // editor chords are unaffected; viewless file commands stay
+  // available from fields — they act on the app, not the widget. No
+  // preventDefault on the skip: the field keeps its native behavior.
+  const targetTag = e.target instanceof HTMLElement ? e.target.tagName : '';
+  const inNativeField =
+    targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
+  if (inNativeField && !VIEWLESS_RIBBON_COMMANDS.has(cmdId)) return;
   e.preventDefault();
   // File-level commands (newDocument / openFile / saveAs) and the
   // shortcuts-dialog opener don't need a live view — invoke the
@@ -5193,7 +5205,14 @@ function mountView(doc: PMNode, threads: Thread[] = []): void {
   view = new EditorView(editorEl, {
     state,
     nodeViews: editorNodeViews,
-    editable: () => !settings.get('readMode'),
+    // NO `editable` prop: read mode is enforced by the read-mode
+    // plugin's filterTransaction, with the view kept editable so the
+    // caret is placeable and Space/Enter reading markers work — the
+    // design documented in read-mode-plugin.ts and what multi-pane
+    // panes already do. The old `editable: () => !readMode` here
+    // predated that design (2026-05-09 vs 2026-06-08) and quietly
+    // diverged single-pane: contenteditable=false also makes PM's
+    // view.focus() a DOM no-op (2026-07-27 focus audit).
     // Browser's built-in spellcheck stays OFF — `editorSpellcheck` is
     // served by the custom viewport checker (viewport-spellcheck.ts),
     // which also catches imported text and renders under Wayland.

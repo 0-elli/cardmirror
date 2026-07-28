@@ -25,6 +25,8 @@ import { pushOverlay, popOverlay, isAnyOverlayOpen } from '../../src/editor/over
 import { openDocMenu } from '../../src/editor/doc-menu-ui.js';
 import { openRecoverySidebar } from '../../src/editor/recovery-ui.js';
 import { showConfirm } from '../../src/editor/confirm-dialog.js';
+import { openWordCount } from '../../src/editor/word-count-ui.js';
+import { openReference } from '../../src/editor/reference-ui.js';
 
 function mkView(): EditorView {
   const el = document.createElement('div');
@@ -178,6 +180,38 @@ describe('showConfirm modal hardening', () => {
     pressOnEditor(view, 'Escape');
     await expect(p).resolves.toBe(false);
     expect(document.activeElement).toBe(view.dom); // restored
+    view.destroy();
+  });
+});
+
+/** The word-count and shortcuts-reference modals shared showConfirm's
+ *  pattern (focus audit, CONFIRMED): no focus, no overlay registration,
+ *  Escape-only listener — typing over them fell through to the doc. */
+describe('read-only modals (word count, shortcuts reference)', () => {
+  it('word count: registers, swallows keys, Escape closes + restores focus', () => {
+    const view = mkView();
+    const before = view.state.doc.toJSON();
+    openWordCount(view);
+    expect(isAnyOverlayOpen()).toBe(true);
+    pressOnEditor(view, 'Backspace');
+    pressOnEditor(view, 'Enter');
+    expect(view.state.doc.toJSON()).toEqual(before); // nothing reached the doc
+    pressOnEditor(view, 'Escape');
+    expect(isAnyOverlayOpen()).toBe(false);
+    expect(document.activeElement).toBe(view.dom); // restored
+    view.destroy();
+  });
+
+  it('shortcuts reference: registers, swallows keys, Escape closes + restores focus', () => {
+    const view = mkView();
+    const before = view.state.doc.toJSON();
+    openReference();
+    expect(isAnyOverlayOpen()).toBe(true);
+    pressOnEditor(view, 'Backspace');
+    expect(view.state.doc.toJSON()).toEqual(before);
+    pressOnEditor(view, 'Escape');
+    expect(isAnyOverlayOpen()).toBe(false);
+    expect(document.activeElement).toBe(view.dom);
     view.destroy();
   });
 });
