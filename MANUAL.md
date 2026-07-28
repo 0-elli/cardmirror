@@ -1848,6 +1848,26 @@ stale draft never overwrites newer work silently. Recovering normally —
 your unsaved edits from the crashed session are newer than the file —
 never triggers the extra question.
 
+### Damaged files
+
+Structural damage to a `.cmir` file is rare, and CardMirror defends
+against it in layers. Every save validates the document first: known
+damage is repaired on the spot, the repaired version is what gets
+written, and a notice asks you to report it (that report is how the
+underlying bug gets found and fixed). On open, files carrying
+known-fixable damage — like an invisible empty shell left by an old
+bug — are repaired automatically and simply load.
+
+If a file is too damaged even for the automatic repairs, the "This
+CardMirror file is damaged" message offers **Repair**: CardMirror
+shows you exactly what would be removed — quoting each damaged
+element's text, or noting when nothing visible would be lost — and, if
+you accept, opens a repaired copy. The original file is never touched:
+the repaired copy opens unsaved under a "(repaired)" name, and saving
+it asks where to save, so the damaged original stays intact on disk.
+If you'd rather not repair, restoring a backup or asking for help
+remain the alternatives.
+
 ### Updates
 
 **(Desktop only.)** CardMirror checks for updates automatically — silently
