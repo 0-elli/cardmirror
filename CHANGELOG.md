@@ -5,6 +5,21 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.27 — Unreleased
+
+### Added
+
+- **`cardmirror-read`: a tiny companion tool for reading files without
+  the app.** A single-file command-line utility (in
+  `packaging/cardmirror-read/`, one `curl` to get) that turns a
+  `.cmir` or `.docx` into a temporary, read-only copy in either
+  markdown-flavored plain text (structure, cites, and the
+  highlight/underline layers kept legible) or the full-fidelity
+  uncompressed JSON. Built for AI assistants and screen-reader
+  pipelines that can't open the app's formats; it reuses CardMirror's
+  real parsers, so it reads exactly what the editor reads. The
+  original file is never modified.
+
 ## 0.1.0-beta.26 — 2026-07-28
 
 ### Changed

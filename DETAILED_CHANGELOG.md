@@ -5,6 +5,30 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.27 — Unreleased
+
+- **cardmirror-read CLI** (`src/tools/cardmirror-read-{lib,cli}.ts`,
+  bundled single-file to `packaging/cardmirror-read/cardmirror-read.cjs`
+  via `npm run build:readtool`; README with curl one-liner). Field
+  request: an AI desktop assistant reading a user's Dropbox can't
+  consume `.cmir` (gzip envelope) or `.docx` (zip) directly. Two
+  forms: `--form json` = uncompressed envelope — for `.cmir` a pure
+  gunzip+pretty (works on damaged files; forensics-friendly), for
+  `.docx` the real importer + real `serializeNative` save path, so
+  output ≡ Save-As-.cmir; `--form text` = markdown-flavored rendering
+  (#/##/### Pocket/Hat/Block, #### tag/analytic, `Cite:` lines,
+  ==highlight==/__underline__/*emphasis* with adjacent-run merging and
+  wrapper-outside-whitespace, tables as pipe rows, transclusions
+  rendered as labeled cached copies, footnotes inline). Default
+  output: ONE stdout line = absolute path of a chmod-444 temp file
+  (agent-friendly); `--stdout`/`--out` variants. Reuses parseNative
+  (heals incl.) + fromDocxFull — both proven DOM-free — so the tool
+  can't drift from the app. Errors: NativeDamagedError → suggests
+  --form json; unsupported types exit 1. Tests: renderer + serialize
+  round-trip (tests/tools/). Verified against real backfiles: Space
+  Aff Demo .cmir (52 MB pretty JSON — README warns text is the
+  reading form) and a real cut .docx.
+
 ## 0.1.0-beta.26 — 2026-07-28
 
 - **Automatic update checks flip to opt-OUT** (`settings.ts` default +
