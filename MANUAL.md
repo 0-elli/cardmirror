@@ -1865,8 +1865,8 @@ element's text, or noting when nothing visible would be lost — and, if
 you accept, opens a repaired copy. The original file is never touched:
 the repaired copy opens unsaved under a "(repaired)" name, and saving
 it asks where to save, so the damaged original stays intact on disk.
-If you'd rather not repair, restoring a backup or asking for help
-remain the alternatives.
+If you'd rather not repair, you can restore the file from a backup
+instead.
 
 ### Updates
 
