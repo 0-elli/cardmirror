@@ -28,6 +28,36 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **Word-selection: doc-level click positions coerced to inline
+  content — THE root cause of the "styling dead until caret-line
+  click" class** (`dispatchSelection` in `word-selection-plugin.ts`).
+  User-supplied console warning cracked it: "TextSelection endpoint
+  not pointing into a node with inline content (doc)". PM's
+  `TextSelection.create` does NOT throw on invalid endpoints — it
+  `console.warn`s ONCE PER SESSION (`warnedAboutTextSelection` flag;
+  why the report was so hard to correlate) and returns a broken
+  selection anyway. The plugin's try/catch "fallback" was therefore
+  dead code, and a click below the last line (which still hits
+  view.dom padding, resolving to a doc-level position) DISPATCHED the
+  broken selection into state — after which every selection-dependent
+  command silently no-oped until a real text click installed a valid
+  selection. Explains the entire original phenomenology: layout-
+  independent, "intermittent" (depends on clicking below content),
+  revived only by a caret-line click (pane-background clicks don't
+  reach the plugin), and worst in fresh docs (one line, everything
+  below it is the trap). Fix at the single chokepoint all ten
+  click/drag/extend paths funnel through: clamp + resolve both
+  endpoints and construct via `TextSelection.between`, which coerces
+  to the nearest inline content — a below-content click now lands the
+  caret at the end of the last line (the natural affordance).
+  Regression test drives `extendActiveEndTo` to a doc-level position
+  and asserts endpoint validity (verified failing pre-fix). The
+  earlier focus-audit fixes remain valid and necessary — they were
+  real co-existing holes — but this was the driver of the field
+  reports. NOTE the reusable lesson: TextSelection.create is
+  warn-not-throw; any code path feeding it posAtCoords-derived
+  positions must validate/coerce first.
+
 - **Focus-audit Phase 1: every mount path focuses; dialog hygiene**
   (driven by a 15-agent audit, 93 findings; full record in the
   gitignored FOCUS_AUDIT.md). The "new doc ignores styling until a

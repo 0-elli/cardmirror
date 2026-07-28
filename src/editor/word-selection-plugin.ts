@@ -41,7 +41,6 @@
  */
 
 import { Plugin, TextSelection } from 'prosemirror-state';
-import type { Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode, ResolvedPos } from 'prosemirror-model';
 import { classifyChar } from './word-break.js';
@@ -558,11 +557,26 @@ function dispatchSelection(
   headPos: number,
   anchor: SelectionAnchor,
 ): void {
+  // Coerce BOTH endpoints to the nearest inline content before
+  // constructing anything. PM's TextSelection.create does NOT throw
+  // on an endpoint outside inline content — it console.warns (once
+  // per session) and returns a broken selection anyway, so the old
+  // try/catch "fallback" here was dead code, and the broken selection
+  // was DISPATCHED into state (field bug 2026-07-27: a click below
+  // the last line resolves to a doc-level position; every
+  // selection-dependent command then silently no-oped until a real
+  // text click installed a valid selection — the "styling does
+  // nothing until I click the caret line" class). `between` also
+  // gives the natural UX: a below-content click lands the caret at
+  // the end of the last line.
+  const doc = view.state.doc;
+  const clamp = (p: number): number => Math.max(0, Math.min(p, doc.content.size));
+  const sel = TextSelection.between(doc.resolve(clamp(anchorPos)), doc.resolve(clamp(headPos)));
   const cur = view.state.selection;
   if (
     cur instanceof TextSelection &&
-    cur.anchor === anchorPos &&
-    cur.head === headPos
+    cur.anchor === sel.anchor &&
+    cur.head === sel.head
   ) {
     // Even when the selection is already in the desired state,
     // make sure the editor is focused — `event.preventDefault()`
@@ -573,22 +587,7 @@ function dispatchSelection(
     if (!view.hasFocus()) view.focus();
     return;
   }
-  let tr: Transaction;
-  try {
-    tr = view.state.tr.setSelection(
-      TextSelection.create(view.state.doc, anchorPos, headPos),
-    );
-  } catch {
-    // Invalid TextSelection (e.g., positions in non-text node).
-    // Fall back to closest valid position.
-    try {
-      tr = view.state.tr.setSelection(
-        TextSelection.near(view.state.doc.resolve(headPos)),
-      );
-    } catch {
-      return;
-    }
-  }
+  const tr = view.state.tr.setSelection(sel);
   tr.setMeta(SEL_FROM_PLUGIN, true);
   anchor.fingerprint = nextFingerprint++;
   view.dispatch(tr);

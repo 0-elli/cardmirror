@@ -26,6 +26,16 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Clicking below the last line no longer breaks the editor.** THE
+  root cause of the long-standing "typing and styling stop working
+  until I click a text line" reports, in both layouts: a click below
+  the document's content resolved to a position outside any text
+  line, and the word-selection machinery installed a broken selection
+  there — every command that acts on the selection then silently did
+  nothing until a real text click replaced it. A below-content click
+  now places the caret at the end of the last line, like every other
+  editor.
+
 - **Keyboard focus reliably lands in newly opened documents.** A
   family of intermittent "the editor ignores typing and styling until
   I click a text line" bugs, traced by a focus audit: several

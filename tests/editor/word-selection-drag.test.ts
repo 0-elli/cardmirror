@@ -132,4 +132,22 @@ describe('direction-based head during single-click drags', () => {
     expect(sel(view)).toEqual([p(2), p(4)]); // exact point→pos
     view.destroy();
   });
+
+  it('a doc-level position never installs an invalid selection (the below-content click)', () => {
+    // Field bug 2026-07-27: clicking below the last line resolves to a
+    // position whose parent is the DOC node. PM's TextSelection.create
+    // doesn't throw there — it console.warns ONCE per session and
+    // returns a broken selection, which was then dispatched into
+    // state; every selection-dependent command silently no-oped until
+    // a real text click. The chokepoint must coerce endpoints to
+    // inline content instead.
+    const view = makeView();
+    const p = (o: number): number => bodyPos(view, o);
+    const docEnd = view.state.doc.content.size; // parent = doc, no inline content
+    const anchor = createPointAnchor(view, p(2));
+    extendActiveEndTo(view, anchor, docEnd);
+    expect(view.state.selection.$head.parent.inlineContent).toBe(true);
+    expect(view.state.selection.$anchor.parent.inlineContent).toBe(true);
+    view.destroy();
+  });
 });
