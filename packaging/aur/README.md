@@ -87,15 +87,14 @@ CardMirror:
 
 - **`yay -Syu` / `pamac upgrade`** — pulls a new PKGBUILD when
   `_origver` is bumped on AUR. Standard Arch flow.
-- **In-app auto-updater** — CardMirror's main process checks
-  GitHub Releases on launch (opt-in, off by default since
-  alpha.3 — flip in Settings → General → "About this install"
-  → "Check for updates on launch"). Found-update notification
-  links to the GitHub release page so users can grab the new
-  `.pacman` manually.
+- **In-app auto-updater** — CardMirror checks GitHub Releases
+  automatically (ON by default since beta.26: silent at launch
+  and once daily; turn it off — or pause it for a tournament —
+  in Settings → General → "About this install"). A pacman-based
+  install can't swap its own files, so a found update points at
+  the GitHub release page; in practice AUR users just run
+  `yay -Syu` once `_origver` is bumped.
 
 Both work. The in-app path notifies sooner (no waiting for the
 AUR maintainer to bump `_origver`); the AUR path is more in
-keeping with system-level package management. The in-app check
-is off by default, so AUR-installed users won't see it unless
-they explicitly enable it.
+keeping with system-level package management.
