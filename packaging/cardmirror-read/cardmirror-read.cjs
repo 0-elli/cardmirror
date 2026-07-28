@@ -13623,6 +13623,11 @@ process.stdout.on("error", (err3) => {
   if (err3.code === "EPIPE") process.exit(0);
   throw err3;
 });
+function expandTilde(p) {
+  if (p === "~") return (0, import_node_os.homedir)();
+  if (p.startsWith("~/")) return (0, import_node_path3.join)((0, import_node_os.homedir)(), p.slice(2));
+  return p;
+}
 function fail(msg) {
   process.stderr.write(`cardmirror-read: ${msg}
 `);
@@ -13651,10 +13656,11 @@ async function main() {
     if (a === "--mirror") {
       const v = args[++i];
       if (!v) fail("--mirror needs a folder");
-      mirrors.push(v);
+      mirrors.push(expandTilde(v));
     } else if (a === "--out-dir") {
       outDir = args[++i] ?? null;
       if (!outDir) fail("--out-dir needs a folder");
+      outDir = expandTilde(outDir);
     } else if (a === "--mcp") mcp = true;
     else if (a === "--mcp-http") mcpHttp = true;
     else if (a === "--port") {
@@ -13664,7 +13670,7 @@ async function main() {
     } else if (a === "--root") {
       const v = args[++i];
       if (!v) fail("--root needs a folder");
-      roots.push(v);
+      roots.push(expandTilde(v));
     } else if (a === "--form") {
       const v = args[++i];
       if (v !== "text" && v !== "json") fail(`--form must be "text" or "json", got "${v}"`);
@@ -13673,13 +13679,19 @@ async function main() {
     else if (a === "--out") {
       outPath = args[++i] ?? null;
       if (!outPath) fail("--out needs a path");
+      outPath = expandTilde(outPath);
     } else if (a === "--help" || a === "-h") usage();
     else if (a.startsWith("--")) fail(`unknown flag ${a}`);
     else if (file)
       fail(
         `unexpected extra argument "${a}" \u2014 if a folder or file path contains spaces, wrap it in quotes (e.g. --root "/Users/you/My Debate Folder")`
       );
-    else file = a;
+    else file = expandTilde(a);
+  }
+  for (const dir of [...roots, ...mirrors]) {
+    if (!(0, import_node_fs3.existsSync)(dir) || !(0, import_node_fs3.statSync)(dir).isDirectory()) {
+      fail(`folder does not exist: "${dir}"`);
+    }
   }
   if (mcp || mcpHttp) {
     if (mirrors.length || file)

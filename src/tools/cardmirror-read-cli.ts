@@ -18,8 +18,8 @@
  * consumable by an agent. Errors go to stderr with exit code 1.
  */
 
-import { readFileSync, writeFileSync, mkdtempSync, chmodSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, mkdtempSync, chmodSync, existsSync, statSync } from 'node:fs';
+import { tmpdir, homedir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
 import { looksLikeNative, NativeDamagedError } from '../native/index.js';
 import {
@@ -38,6 +38,16 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') process.exit(0);
   throw err;
 });
+
+/** Shells don't expand `~` inside quotes — and quoting is exactly what
+ *  we tell users to do for paths with spaces (field report: a quoted
+ *  "~/Documents/…" resolved to $PWD/~/…). Expand it ourselves so both
+ *  spellings work. */
+function expandTilde(p: string): string {
+  if (p === '~') return homedir();
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  return p;
+}
 
 function fail(msg: string): never {
   process.stderr.write(`cardmirror-read: ${msg}\n`);
@@ -73,10 +83,11 @@ async function main(): Promise<void> {
     if (a === '--mirror') {
       const v = args[++i];
       if (!v) fail('--mirror needs a folder');
-      mirrors.push(v);
+      mirrors.push(expandTilde(v));
     } else if (a === '--out-dir') {
       outDir = args[++i] ?? null;
       if (!outDir) fail('--out-dir needs a folder');
+      outDir = expandTilde(outDir);
     } else if (a === '--mcp') mcp = true;
     else if (a === '--mcp-http') mcpHttp = true;
     else if (a === '--port') {
@@ -86,7 +97,7 @@ async function main(): Promise<void> {
     } else if (a === '--root') {
       const v = args[++i];
       if (!v) fail('--root needs a folder');
-      roots.push(v);
+      roots.push(expandTilde(v));
     } else if (a === '--form') {
       const v = args[++i];
       if (v !== 'text' && v !== 'json') fail(`--form must be "text" or "json", got "${v}"`);
@@ -95,13 +106,23 @@ async function main(): Promise<void> {
     else if (a === '--out') {
       outPath = args[++i] ?? null;
       if (!outPath) fail('--out needs a path');
+      outPath = expandTilde(outPath);
     } else if (a === '--help' || a === '-h') usage();
     else if (a.startsWith('--')) fail(`unknown flag ${a}`);
     else if (file)
       fail(
         `unexpected extra argument "${a}" — if a folder or file path contains spaces, wrap it in quotes (e.g. --root "/Users/you/My Debate Folder")`,
       );
-    else file = a;
+    else file = expandTilde(a);
+  }
+
+  // A mistyped or non-expanded folder should fail LOUDLY here — a
+  // server "working" over a nonexistent root reads as mysteriously
+  // empty instead of misconfigured.
+  for (const dir of [...roots, ...mirrors]) {
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+      fail(`folder does not exist: "${dir}"`);
+    }
   }
 
   // Long-running modes.
