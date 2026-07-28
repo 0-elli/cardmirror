@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.26 — Unreleased
+## 0.1.0-beta.26 — 2026-07-27
 
 - **Automatic update checks flip to opt-OUT** (`settings.ts` default +
   `migrateAutoUpdateOptOut`, boot call in `index.ts`, PRIVACY.md §7 +
