@@ -74,7 +74,13 @@ import { getSpeechDocResolver } from './speech-doc-registry.js';
 import { sendToSpeech as runSendToSpeech } from './speech-doc-send.js';
 import { selfRefSelectionPos } from './self-transclusion-commands.js';
 import { transclusionDivergenceKey } from './transclusion-divergence-plugin.js';
-import { promptForText, alertDialog, installModalKeys } from './text-prompt.js';
+import {
+  promptForText,
+  alertDialog,
+  installModalKeys,
+  armDialogFocus,
+  captureFocusForDialog,
+} from './text-prompt.js';
 import { showToast } from './toast.js';
 import { maybeDecryptForOpen, OpenCancelledError } from './open-encrypted.js';
 import {
@@ -2337,6 +2343,15 @@ class MultiPaneShell {
     // the switch arrives clean — its on-disk file already matches.
     record.dirty = entry.dirty;
     slot.push(record);
+    // Same focus-after-mount as every other slot-populating path
+    // (2026-07-27 focus audit) — this one runs on crash recovery AND
+    // every mode-switch reload, so a missing focus here made the
+    // whole workspace keyboard-dead after switching modes until a
+    // click landed on a text line. Recovery restores several docs in
+    // sequence; each push re-focuses, leaving focus on the last one,
+    // which matches the visible end state (last pushed doc is
+    // focused-slot). Hidden-pane guard: focus follows visibility.
+    if (!slot.paneEl.hidden) record.view.focus();
   }
 
   /** A slot's stack just became empty. If it was the expanded
@@ -2490,6 +2505,15 @@ class MultiPaneShell {
       // '3' over the home screen ALSO fired the matching home action
       // (isAnyOverlayOpen() saw no overlay).
       const overlayToken = pushOverlay();
+      // Deterministic focus story (2026-07-27 focus audit: this was
+      // the ONE overlay dialog with no focus arming, and Electron's
+      // async focus restoration on dialog teardown has twice before
+      // landed AFTER a renderer-side .focus() — the prime suspect for
+      // the intermittent "new doc ignores styling" repro). Focus moves
+      // INTO the dialog on open and is restored synchronously on
+      // close, BEFORE the caller's own view.focus() runs — so the
+      // caller's focus always wins the ordering.
+      const restoreFocus = captureFocusForDialog();
       const overlay = document.createElement('div');
       overlay.className = 'pmd-route-overlay';
       // Single resolution path for all four ways out (slot click,
@@ -2501,6 +2525,7 @@ class MultiPaneShell {
         popOverlay(overlayToken);
         removeKeys();
         overlay.remove();
+        restoreFocus();
         resolve(choice);
       };
       const dialog = document.createElement('div');
@@ -2556,6 +2581,7 @@ class MultiPaneShell {
         }
         return false;
       });
+      armDialogFocus(dialog, 'dialog', `Open ${filename} into a slot`);
     });
   }
 
@@ -2602,6 +2628,11 @@ class MultiPaneShell {
       threads,
     });
     slot.push(record);
+    // DOM focus into the just-opened doc so keyboard chords work with
+    // no extra click (2026-07-27 focus audit: this path never focused
+    // — push only moves the bookkeeping). Skipped for a pane hidden
+    // behind an expanded slot: focus follows visibility.
+    if (!slot.paneEl.hidden) record.view.focus();
   }
 
   /** Look for an already-open DocRecord whose on-disk handle
@@ -2663,6 +2694,11 @@ class MultiPaneShell {
       format: null,
     });
     slot.push(record);
+    // Focus-after-mount, like every slot-populating path (2026-07-27
+    // focus audit). The Loro binding replaces the blank content right
+    // after; focus survives a state replace. Hidden-pane guard: focus
+    // follows visibility.
+    if (!slot.paneEl.hidden) record.view.focus();
     return record.uid;
   }
 

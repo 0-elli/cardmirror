@@ -1900,10 +1900,17 @@ const ribbonContext: RibbonContext = {
   openTableMenu: () => tableMenuBtn?.click(),
 };
 
+// Toolbar convention (same as homeBtn below): don't let the click
+// steal focus onto the button — the flows these trigger end by
+// focusing the mounted doc, and a focused button would otherwise hold
+// the keyboard if any async step in between dropped the ball
+// (2026-07-27 focus audit).
+openBtn.addEventListener('mousedown', (e) => e.preventDefault());
 openBtn.addEventListener('click', () => {
   void runOpenFlow();
 });
 if (newBtn) {
+  newBtn.addEventListener('mousedown', (e) => e.preventDefault());
   newBtn.addEventListener('click', () => {
     void onNewDocClicked();
   });
@@ -2015,6 +2022,10 @@ async function replaceWithSessionDoc(): Promise<boolean> {
   // there): the session doc just replaced the content — home must yield
   // to it, like every other doc-mounting path.
   homeScreen.hide();
+  // Focus after hide (2026-07-27 focus audit: mountView drops focus to
+  // body; the Loro binding then replaces the content, which focus
+  // survives). Keyboard works in the joined session with no click.
+  view?.focus();
   return true;
 }
 
@@ -6126,6 +6137,13 @@ async function loadFileInPlace(file: {
     recordRecent({ handle: typeof file.handle === 'string' ? file.handle : null, filename: file.filename, format: file.format });
   }
   homeScreen.hide();
+  // Focus AFTER hide (home hides the editor tree via ancestor CSS; a
+  // focus() into display:none silently no-ops). 2026-07-27 focus
+  // audit: no in-place open ever focused the new view — mountView
+  // destroys the previously-focused view, dropping focus to body, so
+  // keyboard chords went dead until a click landed on a text line.
+  // Covers every caller: home Open tile, Cmd-O, recents, drag-drop.
+  view?.focus();
 }
 
 const homeCallbacks: HomeScreenCallbacks = {
@@ -6140,6 +6158,12 @@ const homeCallbacks: HomeScreenCallbacks = {
     }
     mountFreshBlankDoc();
     homeScreen.hide();
+    // Focus AFTER hide: the home overlay hides the editor tree via an
+    // ancestor CSS class, and focus() into a display:none subtree is a
+    // silent no-op (2026-07-27 focus audit — this path never focused,
+    // so a home-created doc ignored typing/styling until a click
+    // landed on a text line).
+    view?.focus();
   },
   newSpeechDoc: () => {
     if (multiDocActive) {
@@ -8886,6 +8910,12 @@ async function mountFromSpawnPayload(
       const anchor = payload.focusAnchor;
       requestAnimationFrame(() => focusDescriptorInActiveView(anchor, payload.filename));
     }
+    // A spawned window with real content exists to be worked in —
+    // focus the editor so keyboard chords work with no extra click
+    // (2026-07-27 focus audit; spawned-blank windows already do this
+    // in the boot path). Home is never up in a spawned window, and
+    // the focusAnchor rAF above wins afterwards when present.
+    view?.focus();
     markNonPristineStarter();
     updateWindowTitle();
     console.log(`Spawned with ${payload.filename}: ${countSummary(docNode)}`);

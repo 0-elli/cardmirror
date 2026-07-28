@@ -6,6 +6,9 @@
  * backdrop click. Headless (no `document`) resolves `false`.
  */
 
+import { pushOverlay, popOverlay } from './overlay-stack.js';
+import { installModalKeys, captureFocusForDialog } from './text-prompt.js';
+
 export interface ConfirmOptions {
   /** Optional bold title line above the message. */
   title?: string;
@@ -61,37 +64,48 @@ export function showConfirm(opts: ConfirmOptions): Promise<boolean> {
     backdrop.appendChild(dialog);
     document.body.appendChild(backdrop);
 
-    const previouslyFocused = document.activeElement as HTMLElement | null;
+    // Full modal treatment (2026-07-27 focus audit): this primitive
+    // predates the shared wiring and was the one dialog file the
+    // modal-key sweep missed — it registered nothing on the overlay
+    // stack (so background handlers and any future focus logic saw
+    // "no modal open") and swallowed only Enter/Escape, leaking every
+    // other key during the pre-focus window.
+    const overlayToken = pushOverlay();
+    const restoreFocus = captureFocusForDialog();
+    let removeKeys = (): void => {};
     let settled = false;
     const close = (result: boolean): void => {
       if (settled) return;
       settled = true;
-      document.removeEventListener('keydown', onKey, true);
+      removeKeys();
+      popOverlay(overlayToken);
       backdrop.remove();
       // Return focus to wherever it was (usually the editor).
-      previouslyFocused?.focus?.();
+      restoreFocus();
       resolve(result);
     };
 
-    const onKey = (e: KeyboardEvent): void => {
+    removeKeys = installModalKeys(dialog, overlayToken, (e) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
         close(false);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        e.stopPropagation();
-        close(true);
+        return true;
       }
-    };
+      if (e.key === 'Enter') {
+        close(true);
+        return true;
+      }
+      return false;
+    });
 
     cancelBtn.addEventListener('click', () => close(false));
     confirmBtn.addEventListener('click', () => close(true));
     backdrop.addEventListener('mousedown', (e) => {
       if (e.target === backdrop) close(false);
     });
-    document.addEventListener('keydown', onKey, true);
 
+    // Focus the OK button (not the container): Tab reaches Cancel, and
+    // Space activates natively. Enter is handled above BEFORE native
+    // button activation (preventDefault), so it can't double-fire.
     setTimeout(() => confirmBtn.focus(), 0);
   });
 }

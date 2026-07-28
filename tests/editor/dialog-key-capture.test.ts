@@ -21,9 +21,10 @@ import {
   promptForRouteChoice,
   installModalKeys,
 } from '../../src/editor/text-prompt.js';
-import { pushOverlay, popOverlay } from '../../src/editor/overlay-stack.js';
+import { pushOverlay, popOverlay, isAnyOverlayOpen } from '../../src/editor/overlay-stack.js';
 import { openDocMenu } from '../../src/editor/doc-menu-ui.js';
 import { openRecoverySidebar } from '../../src/editor/recovery-ui.js';
+import { showConfirm } from '../../src/editor/confirm-dialog.js';
 
 function mkView(): EditorView {
   const el = document.createElement('div');
@@ -139,6 +140,43 @@ describe('dialog keys never reach the editor', () => {
     expect(document.activeElement).not.toBe(view.dom); // dialog holds focus
     pressOnEditor(view, 'Enter');
     await p;
+    expect(document.activeElement).toBe(view.dom); // restored
+    view.destroy();
+  });
+});
+
+/** showConfirm (confirm-dialog.ts) is the standalone confirm primitive
+ *  the 2026-07-27 modal-key sweep missed — the focus audit CONFIRMED it
+ *  registered nothing on the overlay stack and swallowed only
+ *  Enter/Escape, leaking every other key during its pre-focus window. */
+describe('showConfirm modal hardening', () => {
+  it('registers on the overlay stack for its lifetime', async () => {
+    expect(isAnyOverlayOpen()).toBe(false);
+    const p = showConfirm({ message: 'Sure?' });
+    expect(isAnyOverlayOpen()).toBe(true);
+    document.querySelector<HTMLButtonElement>('.pmd-confirm-ok')!.click();
+    await expect(p).resolves.toBe(true);
+    expect(isAnyOverlayOpen()).toBe(false);
+  });
+
+  it('swallows unhandled keys — nothing reaches the editor', async () => {
+    const view = mkView();
+    const before = view.state.doc.toJSON();
+    const p = showConfirm({ message: 'Sure?' });
+    pressOnEditor(view, 'Backspace'); // PM-handled — must be swallowed
+    expect(view.state.doc.toJSON()).toEqual(before);
+    pressOnEditor(view, 'Enter'); // confirms, no split-block
+    await expect(p).resolves.toBe(true);
+    expect(view.state.doc.toJSON()).toEqual(before);
+    view.destroy();
+  });
+
+  it('Escape cancels and focus returns to the editor', async () => {
+    const view = mkView();
+    expect(document.activeElement).toBe(view.dom);
+    const p = showConfirm({ message: 'Sure?' });
+    pressOnEditor(view, 'Escape');
+    await expect(p).resolves.toBe(false);
     expect(document.activeElement).toBe(view.dom); // restored
     view.destroy();
   });

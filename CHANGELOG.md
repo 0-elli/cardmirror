@@ -26,6 +26,20 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Keyboard focus reliably lands in newly opened documents.** A
+  family of intermittent "the editor ignores typing and styling until
+  I click a text line" bugs, traced by a focus audit: several
+  open/create paths never gave the new document keyboard focus —
+  creating or opening from the Home screen, opening into a three-pane
+  slot, crash recovery, every mode-switch reload, spawned windows
+  with content, and joining a co-editing session — and the three-pane
+  slot picker could lose a race with the system's own focus
+  restoration. Every one of those paths now focuses the document
+  explicitly, the slot picker holds focus properly while open, and
+  the Save As and confirmation dialogs got the same keyboard
+  hardening as the rest of the dialogs (Save As also returns focus to
+  the editor when closed instead of leaving it stranded).
+
 - **Three-pane: an expanded pane now always keeps the keyboard.**
   Creating a new document routed to a slot hidden behind an expanded
   pane used to silently move command routing to the invisible doc

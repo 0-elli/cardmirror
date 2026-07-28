@@ -28,6 +28,42 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **Focus-audit Phase 1: every mount path focuses; dialog hygiene**
+  (driven by a 15-agent audit, 93 findings; full record in the
+  gitignored FOCUS_AUDIT.md). The "new doc ignores styling until a
+  text-line click" class = DOM focus never landing in the mounted
+  view (PM keymaps need contenteditable focus; pane-background clicks
+  fix only bookkeeping). Fixes: (1) `promptForSlot` — the ONE overlay
+  dialog with no focus arming, and the prime suspect for the
+  intermittent three-pane ribbon-New repro (Electron's async focus
+  restoration on dialog teardown has twice before landed after a
+  renderer-side .focus()) — now does captureFocusForDialog +
+  armDialogFocus + synchronous restore-before-caller-focus. (2)
+  Missing focus-after-mount added everywhere the audit enumerated:
+  multi-pane `loadOpenedIntoSlot` (ribbon Open / drag-drop),
+  `onRecoveredDoc` (crash recovery AND every mode-switch reload —
+  likely the biggest real-world hole), `createSessionDocIntoSlot`;
+  single-pane home New/Open tiles (focus AFTER homeScreen.hide() —
+  home hides the editor tree via ancestor CSS, so an earlier focus()
+  silently no-ops), `loadFileInPlace` tail (covers Cmd-O/recents/
+  drag-drop), `mountFromSpawnPayload`, `replaceWithSessionDoc`. All
+  multi-pane focuses carry the hidden-pane guard (focus follows
+  visibility). (3) `showConfirm` (confirm-dialog.ts — the primitive
+  the modal-key sweep missed; audit CONFIRMED it leaked non-Enter/
+  Escape keys during its pre-focus window and never registered on the
+  overlay stack) → installModalKeys + pushOverlay + focus restore.
+  (4) `SaveAsModal` → overlay registration + installModalKeys +
+  focus capture/restore (previously Escape-only bare listener, never
+  restored focus). (5) Ribbon Open/New buttons preventDefault their
+  mousedown (toolbar convention, matching homeBtn) so a dropped
+  async step can't leave the keyboard on the button. The audit also
+  killed the proposed global focus reconciler as designed (overlay
+  stack unreliable as a guard; body-focus predicate wrong in both
+  directions; PM focus() no-ops when uneditable) — Phase 2 (overlay
+  registration sweep) and the revised reconciler remain contingent on
+  field feedback. Tests: showConfirm overlay/swallow/restore trio in
+  dialog-key-capture.test.ts.
+
 - **Three-pane focus follows visibility** (`focusSlot` guard +
   `createNewDoc`/`createNewSpeechDocument` in `multi-pane-shell.ts`).
   Investigating the intermittent "new doc ignores styling until I

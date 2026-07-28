@@ -22,6 +22,8 @@
 
 import { settings } from './settings.js';
 import { setIcon } from './icons';
+import { pushOverlay, popOverlay } from './overlay-stack.js';
+import { installModalKeys, captureFocusForDialog } from './text-prompt.js';
 
 export type SaveAsFormat = 'cmir' | 'docx';
 
@@ -92,6 +94,14 @@ class SaveAsModal {
   private formatRadios!: Record<SaveAsFormat, HTMLInputElement>;
   private settled = false;
   private currentFormat: SaveAsFormat;
+  /** Overlay-stack token + modal-key uninstaller + focus restorer
+   *  (2026-07-27 focus audit: this dialog registered nothing, so
+   *  background handlers saw "no modal open" while it was up, its
+   *  Escape-only listener let other keys pass, and closing it never
+   *  returned focus to the editor). */
+  private overlayToken = pushOverlay();
+  private removeKeys: () => void = () => {};
+  private restoreFocus: () => void = () => {};
 
   constructor(
     private readonly opts: OpenSaveAsOptions,
@@ -109,7 +119,17 @@ class SaveAsModal {
       if (e.target === this.overlay) this.cancel();
     });
 
-    document.addEventListener('keydown', this.handleKey);
+    this.restoreFocus = captureFocusForDialog();
+    this.removeKeys = installModalKeys(this.dialog, this.overlayToken, (e) => {
+      if (e.key === 'Escape') {
+        this.cancel();
+        return true;
+      }
+      // Everything else: keys aimed at the dialog's own inputs pass
+      // through natively (Enter in the filename field submits the
+      // form); keys aimed anywhere else are swallowed by the helper.
+      return false;
+    });
 
     this.render();
     document.body.appendChild(this.overlay);
@@ -126,14 +146,6 @@ class SaveAsModal {
       }
     });
   }
-
-  private readonly handleKey = (e: KeyboardEvent): void => {
-    if (this.settled) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      this.cancel();
-    }
-  };
 
   private render(): void {
     const header = document.createElement('header');
@@ -442,8 +454,10 @@ class SaveAsModal {
   private finish(result: SaveAsResult | null): void {
     if (this.settled) return;
     this.settled = true;
-    document.removeEventListener('keydown', this.handleKey);
+    this.removeKeys();
+    popOverlay(this.overlayToken);
     this.overlay.remove();
+    this.restoreFocus();
     this.settle(result);
   }
 }
