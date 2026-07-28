@@ -30,6 +30,13 @@ import {
   type FileKind,
 } from './cardmirror-read-lib.js';
 
+// A closed read end (e.g. `cardmirror-read … --stdout | head`) must be
+// a clean exit, not an unhandled-EPIPE crash dump — agents pipe.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') process.exit(0);
+  throw err;
+});
+
 function fail(msg: string): never {
   process.stderr.write(`cardmirror-read: ${msg}\n`);
   process.exit(1);

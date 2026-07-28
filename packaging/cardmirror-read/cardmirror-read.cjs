@@ -13242,6 +13242,10 @@ function renderPlainText(doc, sourceName) {
 }
 
 // src/tools/cardmirror-read-cli.ts
+process.stdout.on("error", (err2) => {
+  if (err2.code === "EPIPE") process.exit(0);
+  throw err2;
+});
 function fail(msg) {
   process.stderr.write(`cardmirror-read: ${msg}
 `);
