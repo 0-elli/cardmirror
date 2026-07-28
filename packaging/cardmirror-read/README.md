@@ -63,7 +63,7 @@ this file as a local (stdio) MCP server and it can browse and read
 your debate files **on demand** — no pre-converted copies:
 
 ```sh
-node cardmirror-read.cjs --mcp --root ~/Dropbox/Debate
+node cardmirror-read.cjs --mcp --root "$HOME/Dropbox/Debate"
 ```
 
 Typical client configuration (the JSON shape most MCP clients use):
@@ -88,7 +88,7 @@ command** (some only take URLs), run the HTTP variant and paste the
 URL it prints:
 
 ```sh
-node cardmirror-read.cjs --mcp-http --root ~/Dropbox/Debate
+node cardmirror-read.cjs --mcp-http --root "$HOME/Dropbox/Debate"
 # → cardmirror-read MCP server listening on http://127.0.0.1:3323/mcp
 ```
 

@@ -13675,11 +13675,17 @@ async function main() {
       if (!outPath) fail("--out needs a path");
     } else if (a === "--help" || a === "-h") usage();
     else if (a.startsWith("--")) fail(`unknown flag ${a}`);
-    else if (file) fail("only one input file is supported");
+    else if (file)
+      fail(
+        `unexpected extra argument "${a}" \u2014 if a folder or file path contains spaces, wrap it in quotes (e.g. --root "/Users/you/My Debate Folder")`
+      );
     else file = a;
   }
   if (mcp || mcpHttp) {
-    if (mirrors.length || file) fail("--mcp cannot be combined with --mirror or a file argument");
+    if (mirrors.length || file)
+      fail(
+        file ? `unexpected argument "${file}" alongside --mcp \u2014 if your --root path contains spaces, wrap it in quotes (e.g. --root "/Users/you/My Debate Folder")` : "--mcp cannot be combined with --mirror"
+      );
     if (roots.length === 0) fail("--mcp needs at least one --root folder to serve");
     if (mcpHttp) runMcpHttpServer(roots, port);
     else runMcpServer(roots);
