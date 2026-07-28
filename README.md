@@ -148,8 +148,11 @@ the full breakdown.
 current, or announces an available update and downloads it in the
 background.
 
-Auto-check on launch is off by default. Turn it on in Settings →
-General → "About this install" → **Check for updates on launch**.
+CardMirror also checks for updates automatically — silently at launch
+and once a day, speaking up only when a new version is actually ready.
+Turn this off (or pause it for a week — handy at a tournament) in
+Settings → General → "About this install" → **Check for updates
+automatically**.
 
 Updates never interrupt you: when a new version has finished
 downloading, a small chip appears in the status bar ("Update x.y.z

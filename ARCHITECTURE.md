@@ -590,8 +590,10 @@ The desktop edition is the production surface for rounds:
   gray out cleanly when offline.
 - **Aggressive autosave + journaling**, so the editor survives a hard
   kill and offers crash recovery on next launch.
-- **No surprise updates.** Auto-update is off by default; updates are a
-  deliberate manual action.
+- **No surprise updates.** Update checks run automatically (opt-out
+  since beta.26 — the fleet wasn't converging), but nothing ever
+  installs without an explicit click, and the automatic checks can be
+  paused for a week from Settings for tournament stability.
 - **Spell-check off by default** — a custom viewport-scoped checker
   (nspell over a bundled dictionary; only the on-screen text is checked,
   re-run after scroll/edit settles, so cost is bounded regardless of doc
