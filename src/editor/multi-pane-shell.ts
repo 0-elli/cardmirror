@@ -1983,11 +1983,21 @@ class MultiPaneShell {
     // nothing". The slot takes focus normally when it becomes visible.
     if (slot.paneEl.hidden) return;
     const wasSame = this.focusedSlot === slot && getActiveView() === slot.visible?.view;
-    if (this.focusedSlot && this.focusedSlot !== slot) {
-      this.focusedSlot.paneEl.classList.remove('pmd-pane-focused');
+    // The focused highlight is DERIVED: stamped across all panes on
+    // every focus change, never incrementally transferred. The old
+    // remove-from-previous-only bookkeeping leaked a stale class
+    // whenever `focusedSlot` was nulled between transfers
+    // (handleSlotEmptied): the emptied pane kept its class —
+    // invisible while empty and hidden, but the next doc to land in
+    // that slot showed BOTH panes as focused (field bug 2026-07-28,
+    // surfaced by the focus-follows-visibility guard above; the old
+    // hidden-slot focus seizure had re-normalized the class by
+    // accident).
+    for (const id of SLOT_IDS) {
+      const s = this.slots[id];
+      s.paneEl.classList.toggle('pmd-pane-focused', s === slot);
     }
     this.focusedSlot = slot;
-    slot.paneEl.classList.add('pmd-pane-focused');
     if (!wasSame) {
       setActiveView(slot.visible?.view ?? null);
       // The shared comments column lives at the shell-row level, not
@@ -2394,6 +2404,12 @@ class MultiPaneShell {
     }
     if (this.focusedSlot !== slot) return;
     this.focusedSlot = null;
+    // Clear the emptied pane's highlight NOW: focusSlot's stamp-all
+    // covers the transfer case below, but when no slot remains (or
+    // the next slot is hidden and refuses focus) nothing else would
+    // remove it — the stale-class leak behind the "both panes look
+    // focused" field bug (2026-07-28).
+    slot.paneEl.classList.remove('pmd-pane-focused');
     for (const id of SLOT_IDS) {
       if (this.slots[id].stack.length > 0) {
         this.focusSlot(this.slots[id]);

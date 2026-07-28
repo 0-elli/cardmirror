@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.26 — 2026-07-27
+## 0.1.0-beta.26 — 2026-07-28
 
 - **Automatic update checks flip to opt-OUT** (`settings.ts` default +
   `migrateAutoUpdateOptOut`, boot call in `index.ts`, PRIVACY.md §7 +
@@ -147,6 +147,24 @@ in each release, see `CHANGELOG.md`.
   registration sweep) and the revised reconciler remain contingent on
   field feedback. Tests: showConfirm overlay/swallow/restore trio in
   dialog-key-capture.test.ts.
+
+- **Three-pane: focused highlight is derived, not transferred**
+  (`focusSlot` + `handleSlotEmptied` in `multi-pane-shell.ts`).
+  Pre-existing stale-class leak, unmasked by the focus-follows-
+  visibility guard: `handleSlotEmptied` nulls `focusedSlot` before
+  transferring, so focusSlot's remove-from-previous branch skipped
+  and the EMPTIED pane kept `pmd-pane-focused` — invisible while the
+  pane sat empty+hidden, but the next doc pushed into that slot
+  showed BOTH panes focused (field repro: expand, create doc behind,
+  un-expand; clicking the true-focused pane could never clear it
+  since bookkeeping already pointed there, only focusing the stale
+  pane and leaving healed it). The old code masked the leak by
+  accident: hidden slots could seize focus during creation and
+  re-normalize the class. Fix: focusSlot stamps the class across ALL
+  panes every time (`classList.toggle(..., s === slot)`), and
+  handleSlotEmptied explicitly clears the emptied pane's class for
+  the no-successor / hidden-successor branches. No shell unit
+  harness exists (recorded gap) — verified manually.
 
 - **Three-pane focus follows visibility** (`focusSlot` guard +
   `createNewDoc`/`createNewSpeechDocument` in `multi-pane-shell.ts`).

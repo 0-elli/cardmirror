@@ -5,7 +5,7 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## 0.1.0-beta.26 — 2026-07-27
+## 0.1.0-beta.26 — 2026-07-28
 
 ### Changed
 
@@ -75,6 +75,14 @@ see `DETAILED_CHANGELOG.md`.
   the Save As and confirmation dialogs got the same keyboard
   hardening as the rest of the dialogs (Save As also returns focus to
   the editor when closed instead of leaving it stranded).
+
+- **Three-pane: a pane can no longer show as focused when it isn't.**
+  Closing a focused pane's last document left its "focused" highlight
+  latched on the now-empty pane, invisibly — the next document to
+  land in that slot then appeared focused alongside the actually
+  focused pane (most visibly: expand a pane, create a document
+  behind it, un-expand — both panes look focused). The highlight is
+  now recomputed across all panes on every focus change.
 
 - **Three-pane: an expanded pane now always keeps the keyboard.**
   Creating a new document routed to a slot hidden behind an expanded
