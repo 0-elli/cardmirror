@@ -28,6 +28,21 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **Read mode: bare editing keys swallowed at the DOM level**
+  (`read-mode-plugin.ts` keydown). Follow-up to the read-mode
+  alignment below: with the view editable in read mode, a bare
+  keystroke let the browser mutate the DOM before the transaction
+  filter rejected it — a parse-reject-redraw round trip per key, and
+  the first such mutation trips PM's once-per-session checkCSS
+  console warning (single-pane read mode deliberately resets
+  white-space to `normal` for chunk-separator collapsing; field
+  report of exactly this warning, 2026-07-27). The plugin now
+  preventDefaults bare printable keys + Enter/Backspace/Delete
+  (Shift allowed — shifted letters are typing) after the Space/Enter
+  marker branch; chords, navigation, and F-keys pass. Restores the
+  old contenteditable=false keystroke inertness without giving up
+  the placeable caret. 3 tests (read-mode-keys.test.ts).
+
 - **Focus-audit follow-through: chord guard, read-only modals, read-mode
   alignment** (the audit's two bonus CONFIRMED bugs + slim Phase 2).
   (1) The global ribbon chord handler (`index.ts` window keydown) now

@@ -133,6 +133,28 @@ export const readModePlugin: Plugin<ReadModeState> = new Plugin<ReadModeState>({
             return true;
           }
         }
+        // Swallow bare editing keys at the DOM level. `filterTransaction`
+        // already guarantees no doc change, but the view is EDITABLE in
+        // read mode (both layouts since 2026-07-27 — the caret must be
+        // placeable), so without this the browser would mutate the DOM,
+        // PM would parse the mutation, the filter would reject it, and
+        // PM would redraw to revert — wasted churn per keystroke, and
+        // the first such mutation trips PM's checkCSS console warning
+        // (single-pane read mode deliberately resets white-space to
+        // `normal` for chunk-separator collapsing). Shift is allowed
+        // (shifted letters are still typing); real chords, navigation
+        // keys, and F-keys all pass through untouched.
+        const noChord = !event.ctrlKey && !event.metaKey && !event.altKey;
+        if (
+          noChord &&
+          (event.key.length === 1 ||
+            event.key === 'Enter' ||
+            event.key === 'Backspace' ||
+            event.key === 'Delete')
+        ) {
+          event.preventDefault();
+          return true;
+        }
         return false;
       },
     },
