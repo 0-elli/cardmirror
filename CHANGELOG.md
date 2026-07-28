@@ -18,7 +18,12 @@ see `DETAILED_CHANGELOG.md`.
   uncompressed JSON. Built for AI assistants and screen-reader
   pipelines that can't open the app's formats; it reuses CardMirror's
   real parsers, so it reads exactly what the editor reads. The
-  original file is never modified.
+  original file is never modified. Two automation modes for AI
+  assistants: an **MCP server** (`--mcp --root <folder>`) exposing
+  list/read tools scoped strictly to the folders you configure, and a
+  **mirror** (`--mirror <folder> --out-dir <folder>`) that keeps an
+  always-current plain-text shadow of chosen folders for assistants
+  that can only read files (e.g. through a Dropbox integration).
 
 ## 0.1.0-beta.26 — 2026-07-28
 

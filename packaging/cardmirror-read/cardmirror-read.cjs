@@ -2110,9 +2110,9 @@ var require_fxp = __commonJS({
 });
 
 // src/tools/cardmirror-read-cli.ts
-var import_node_fs = require("node:fs");
+var import_node_fs3 = require("node:fs");
 var import_node_os = require("node:os");
-var import_node_path = require("node:path");
+var import_node_path3 = require("node:path");
 
 // node_modules/orderedmap/dist/index.js
 function OrderedMap(content) {
@@ -4532,17 +4532,17 @@ var Schema = class {
 function gatherMarks(schema2, marks2) {
   let found2 = [];
   for (let i = 0; i < marks2.length; i++) {
-    let name = marks2[i], mark = schema2.marks[name], ok = mark;
+    let name = marks2[i], mark = schema2.marks[name], ok2 = mark;
     if (mark) {
       found2.push(mark);
     } else {
       for (let prop in schema2.marks) {
         let mark2 = schema2.marks[prop];
         if (name == "_" || mark2.spec.group && mark2.spec.group.split(" ").indexOf(name) > -1)
-          found2.push(ok = mark2);
+          found2.push(ok2 = mark2);
       }
     }
-    if (!ok)
+    if (!ok2)
       throw new SyntaxError("Unknown mark type: '" + marks2[i] + "'");
   }
   return found2;
@@ -7218,8 +7218,8 @@ function tripwireForSave(doc) {
   try {
     doc.check();
     return doc;
-  } catch (err2) {
-    const error = err2 instanceof Error ? err2.message : String(err2);
+  } catch (err3) {
+    const error = err3 instanceof Error ? err3.message : String(err3);
     const healedDoc = healTables(healCards(healAnalyticUnits(doc)));
     let healed = false;
     let out = doc;
@@ -7270,9 +7270,9 @@ function parseNativeImpl(bytes, salvage) {
     const raw = isGzip(bytes) ? gunzip(bytes) : bytes;
     const text = new TextDecoder().decode(raw);
     parsed = JSON.parse(text);
-  } catch (err2) {
+  } catch (err3) {
     throw new Error(
-      `Not a CardMirror file: failed to parse JSON (${err2 instanceof Error ? err2.message : err2}).`
+      `Not a CardMirror file: failed to parse JSON (${err3 instanceof Error ? err3.message : err3}).`
     );
   }
   if (typeof parsed !== "object" || parsed === null) {
@@ -7323,9 +7323,9 @@ function parseNativeImpl(bytes, salvage) {
       doc = salvaged.doc;
       dropped = salvaged.dropped;
     }
-  } catch (err2) {
+  } catch (err3) {
     throw new NativeDamagedError(
-      `This CardMirror file is damaged and can\u2019t be opened (${err2 instanceof Error ? err2.message : String(err2)}).`
+      `This CardMirror file is damaged and can\u2019t be opened (${err3 instanceof Error ? err3.message : String(err3)}).`
     );
   }
   return {
@@ -9291,9 +9291,9 @@ Step.jsonID("docAttr", DocAttrStep);
 var TransformError = class extends Error {
 };
 TransformError = function TransformError2(message) {
-  let err2 = Error.call(this, message);
-  err2.__proto__ = TransformError2.prototype;
-  return err2;
+  let err3 = Error.call(this, message);
+  err3.__proto__ = TransformError2.prototype;
+  return err3;
 };
 TransformError.prototype = Object.create(Error.prototype);
 TransformError.prototype.constructor = TransformError;
@@ -11930,20 +11930,20 @@ function parseStyles(stylesXml) {
     raw.set(id, { ownOutline, ownBold, basedOn });
   }
   const memo = /* @__PURE__ */ new Map();
-  const resolve2 = (id, stack) => {
+  const resolve4 = (id, stack) => {
     const cached = memo.get(id);
     if (cached) return cached;
     const r = raw.get(id);
     if (!r || stack.has(id)) return { outline: null, bold: null };
     stack.add(id);
-    const parent = r.basedOn ? resolve2(r.basedOn, stack) : { outline: null, bold: null };
+    const parent = r.basedOn ? resolve4(r.basedOn, stack) : { outline: null, bold: null };
     stack.delete(id);
     const out = { outline: r.ownOutline ?? parent.outline, bold: r.ownBold ?? parent.bold };
     memo.set(id, out);
     return out;
   };
   for (const [id, info] of map) {
-    const eff = resolve2(id, /* @__PURE__ */ new Set());
+    const eff = resolve4(id, /* @__PURE__ */ new Set());
     info.outlineLevel = eff.outline;
     info.bold = eff.bold;
   }
@@ -13052,9 +13052,9 @@ function inferContentType(path) {
 function checkImportedDoc(doc) {
   try {
     doc.check();
-  } catch (err2) {
+  } catch (err3) {
     throw new Error(
-      `This Word document imported into an invalid structure \u2014 please report this file (${err2 instanceof Error ? err2.message : String(err2)}).`
+      `This Word document imported into an invalid structure \u2014 please report this file (${err3 instanceof Error ? err3.message : String(err3)}).`
     );
   }
   return doc;
@@ -13241,10 +13241,345 @@ function renderPlainText(doc, sourceName) {
   return collapsed.join("\n").trimEnd() + "\n";
 }
 
+// src/tools/cardmirror-read-mirror.ts
+var import_node_fs = require("node:fs");
+var import_node_path = require("node:path");
+var CONVERTIBLE = /* @__PURE__ */ new Set([".cmir", ".docx"]);
+function planSources(roots) {
+  if (roots.length === 1) return [{ root: roots[0], prefix: "" }];
+  const used = /* @__PURE__ */ new Map();
+  return roots.map((root) => {
+    const base2 = (0, import_node_path.basename)(root) || "root";
+    const n = used.get(base2) ?? 0;
+    used.set(base2, n + 1);
+    return { root, prefix: n === 0 ? base2 : `${base2}-${n + 1}` };
+  });
+}
+function shadowPathFor(src, outDir, filePath) {
+  const ext = (0, import_node_path.extname)(filePath).toLowerCase();
+  if (!CONVERTIBLE.has(ext)) return null;
+  const rel = (0, import_node_path.relative)(src.root, filePath);
+  if (rel.startsWith("..")) return null;
+  const relTxt = rel.slice(0, rel.length - ext.length) + ".txt";
+  return (0, import_node_path.join)(outDir, src.prefix, relTxt);
+}
+function isRenderable(name) {
+  if (name.startsWith(".") || name.startsWith("~$")) return false;
+  return CONVERTIBLE.has((0, import_node_path.extname)(name).toLowerCase());
+}
+async function renderOne(filePath, target) {
+  const ext = (0, import_node_path.extname)(filePath).toLowerCase();
+  const kind = ext === ".docx" ? "docx" : "cmir";
+  const bytes = new Uint8Array((0, import_node_fs.readFileSync)(filePath));
+  const doc = await parseToDoc(bytes, kind);
+  const text = renderPlainText(doc, (0, import_node_path.basename)(filePath));
+  (0, import_node_fs.mkdirSync)((0, import_node_path.dirname)(target), { recursive: true });
+  if ((0, import_node_fs.existsSync)(target)) (0, import_node_fs.chmodSync)(target, 420);
+  (0, import_node_fs.writeFileSync)(target, text);
+  (0, import_node_fs.chmodSync)(target, 292);
+}
+function* walkFiles(dir) {
+  let entries;
+  try {
+    entries = (0, import_node_fs.readdirSync)(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const ent of entries) {
+    if (ent.name.startsWith(".")) continue;
+    const full = (0, import_node_path.join)(dir, ent.name);
+    if (ent.isDirectory()) yield* walkFiles(full);
+    else if (ent.isFile() && isRenderable(ent.name)) yield full;
+  }
+}
+async function sweepSource(src, outDir, log) {
+  let rendered = 0;
+  let skipped = 0;
+  let removed = 0;
+  let failed = 0;
+  const liveShadows = /* @__PURE__ */ new Set();
+  for (const file of walkFiles(src.root)) {
+    const target = shadowPathFor(src, outDir, file);
+    if (!target) continue;
+    liveShadows.add((0, import_node_path.resolve)(target));
+    try {
+      const srcM = (0, import_node_fs.statSync)(file).mtimeMs;
+      const outM = (0, import_node_fs.existsSync)(target) ? (0, import_node_fs.statSync)(target).mtimeMs : -1;
+      if (outM >= srcM) {
+        skipped++;
+        continue;
+      }
+      await renderOne(file, target);
+      rendered++;
+      log(`rendered ${(0, import_node_path.relative)(src.root, file)}`);
+    } catch (err3) {
+      failed++;
+      log(`FAILED ${(0, import_node_path.relative)(src.root, file)}: ${err3 instanceof Error ? err3.message : err3}`);
+    }
+  }
+  const shadowRoot = (0, import_node_path.join)(outDir, src.prefix);
+  for (const shadow of walkTxt(shadowRoot)) {
+    if (!liveShadows.has((0, import_node_path.resolve)(shadow))) {
+      try {
+        (0, import_node_fs.chmodSync)(shadow, 420);
+        (0, import_node_fs.rmSync)(shadow);
+        removed++;
+        log(`removed orphan ${(0, import_node_path.relative)(outDir, shadow)}`);
+      } catch {
+      }
+    }
+  }
+  return { rendered, skipped, removed, failed };
+}
+function* walkTxt(dir) {
+  let entries;
+  try {
+    entries = (0, import_node_fs.readdirSync)(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const ent of entries) {
+    const full = (0, import_node_path.join)(dir, ent.name);
+    if (ent.isDirectory()) yield* walkTxt(full);
+    else if (ent.isFile() && ent.name.toLowerCase().endsWith(".txt")) yield full;
+  }
+}
+async function runMirror(roots, outDir) {
+  const sources = planSources(roots.map((r) => (0, import_node_path.resolve)(r)));
+  const out = (0, import_node_path.resolve)(outDir);
+  (0, import_node_fs.mkdirSync)(out, { recursive: true });
+  const log = (line) => {
+    process.stdout.write(`[${(/* @__PURE__ */ new Date()).toISOString()}] ${line}
+`);
+  };
+  log(`mirroring ${sources.length} source(s) \u2192 ${out}`);
+  for (const src of sources) {
+    const r = await sweepSource(src, out, log);
+    log(
+      `${src.root}: ${r.rendered} rendered, ${r.skipped} current, ${r.removed} orphans removed` + (r.failed ? `, ${r.failed} FAILED` : "")
+    );
+  }
+  const watchers = [];
+  const timers = /* @__PURE__ */ new Map();
+  for (const src of sources) {
+    const schedule = () => {
+      const prev = timers.get(src.root);
+      if (prev) clearTimeout(prev);
+      timers.set(
+        src.root,
+        setTimeout(() => {
+          void sweepSource(src, out, log);
+        }, 1500)
+      );
+    };
+    try {
+      watchers.push((0, import_node_fs.watch)(src.root, { recursive: true }, schedule));
+      log(`watching ${src.root}`);
+    } catch (err3) {
+      log(`WATCH FAILED for ${src.root} (${err3 instanceof Error ? err3.message : err3}) \u2014 falling back to 60s polling`);
+      setInterval(schedule, 6e4);
+    }
+  }
+  process.on("SIGINT", () => {
+    for (const w of watchers) w.close();
+    process.exit(0);
+  });
+  return new Promise(() => {
+  });
+}
+
+// src/tools/cardmirror-read-mcp.ts
+var import_node_fs2 = require("node:fs");
+var import_node_path2 = require("node:path");
+var PROTOCOL_VERSION = "2025-06-18";
+var SERVER_INFO = { name: "cardmirror-read", version: "1.0.0" };
+var TEXT_CAP = 4e5;
+var JSON_CAP = 2e6;
+var CONVERTIBLE2 = /* @__PURE__ */ new Set([".cmir", ".docx"]);
+function ok(id, result) {
+  return JSON.stringify({ jsonrpc: "2.0", id, result });
+}
+function err2(id, code, message) {
+  return JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } });
+}
+function toolText(id, text, isError = false) {
+  return ok(id, { content: [{ type: "text", text }], isError });
+}
+var TOOLS = [
+  {
+    name: "list_debate_files",
+    description: "List CardMirror (.cmir) and Word (.docx) debate files under the configured folders. Returns relative paths usable with read_debate_file. Optional substring filter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Case-insensitive substring to filter paths (optional)."
+        }
+      }
+    }
+  },
+  {
+    name: "read_debate_file",
+    description: "Read one debate file as text. `path` is a path returned by list_debate_files (or an absolute path inside a configured folder). `form` is 'text' (default: legible markdown-flavored rendering \u2014 ==highlighted== is the read-aloud layer) or 'json' (full-fidelity uncompressed CardMirror envelope; can be very large).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File to read." },
+        form: { type: "string", enum: ["text", "json"], description: "Output form (default 'text')." }
+      },
+      required: ["path"]
+    }
+  }
+];
+function resolveWithinRoots(roots, p) {
+  const candidates = p.startsWith("/") ? [p] : roots.map((r) => (0, import_node_path2.join)(r, p));
+  for (const cand of candidates) {
+    let real;
+    try {
+      real = (0, import_node_fs2.realpathSync)((0, import_node_path2.resolve)(cand));
+    } catch {
+      continue;
+    }
+    for (const root of roots) {
+      let realRoot;
+      try {
+        realRoot = (0, import_node_fs2.realpathSync)(root);
+      } catch {
+        continue;
+      }
+      if (real === realRoot || real.startsWith(realRoot + import_node_path2.sep)) return real;
+    }
+  }
+  return null;
+}
+function* walkFiles2(dir) {
+  let entries;
+  try {
+    entries = (0, import_node_fs2.readdirSync)(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const ent of entries) {
+    if (ent.name.startsWith(".") || ent.name.startsWith("~$")) continue;
+    const full = (0, import_node_path2.join)(dir, ent.name);
+    if (ent.isDirectory()) yield* walkFiles2(full);
+    else if (ent.isFile() && CONVERTIBLE2.has((0, import_node_path2.extname)(ent.name).toLowerCase())) yield full;
+  }
+}
+async function callTool(roots, id, name, args) {
+  if (name === "list_debate_files") {
+    const query = typeof args["query"] === "string" ? args["query"].toLowerCase() : null;
+    const lines = [];
+    for (const root of roots) {
+      for (const file of walkFiles2(root)) {
+        const rel = roots.length === 1 ? (0, import_node_path2.relative)(root, file) : (0, import_node_path2.join)((0, import_node_path2.basename)(root), (0, import_node_path2.relative)(root, file));
+        if (query && !rel.toLowerCase().includes(query)) continue;
+        lines.push(rel);
+        if (lines.length >= 2e3) break;
+      }
+    }
+    return toolText(
+      id,
+      lines.length === 0 ? "No matching .cmir/.docx files found." : lines.join("\n") + (lines.length >= 2e3 ? "\n\u2026 (truncated at 2000 entries \u2014 use query)" : "")
+    );
+  }
+  if (name === "read_debate_file") {
+    const p = args["path"];
+    if (typeof p !== "string" || !p) return toolText(id, "read_debate_file: `path` is required.", true);
+    let rel = p;
+    if (roots.length > 1 && !p.startsWith("/")) {
+      const first = p.split(import_node_path2.sep)[0];
+      const match = roots.find((r) => (0, import_node_path2.basename)(r) === first);
+      if (match) rel = (0, import_node_path2.join)(match, p.slice(first.length + 1));
+    }
+    const real = resolveWithinRoots(roots, rel);
+    if (!real) return toolText(id, `read_debate_file: "${p}" not found inside the configured folders.`, true);
+    const ext = (0, import_node_path2.extname)(real).toLowerCase();
+    if (!CONVERTIBLE2.has(ext)) return toolText(id, `read_debate_file: "${p}" is not a .cmir or .docx file.`, true);
+    const kind = ext === ".docx" ? "docx" : "cmir";
+    const form = args["form"] === "json" ? "json" : "text";
+    const bytes = new Uint8Array((0, import_node_fs2.readFileSync)(real));
+    try {
+      if (form === "json") {
+        const json = await toUncompressedJson(bytes, kind);
+        if (json.length > JSON_CAP) {
+          return toolText(
+            id,
+            `read_debate_file: the JSON form of "${p}" is ${(json.length / 1e6).toFixed(1)} MB \u2014 too large to return. Use form:"text".`,
+            true
+          );
+        }
+        return toolText(id, json);
+      }
+      const doc = await parseToDoc(bytes, kind);
+      let text = renderPlainText(doc, (0, import_node_path2.basename)(real));
+      if (text.length > TEXT_CAP) {
+        text = text.slice(0, TEXT_CAP) + `
+
+[\u2026truncated: rendering is ${text.length.toLocaleString()} chars; showing the first ${TEXT_CAP.toLocaleString()}]`;
+      }
+      return toolText(id, text);
+    } catch (e) {
+      return toolText(id, `read_debate_file: couldn't convert "${p}": ${e instanceof Error ? e.message : e}`, true);
+    }
+  }
+  return err2(id, -32602, `unknown tool "${name}"`);
+}
+async function handleMcpMessage(roots, raw) {
+  let msg;
+  try {
+    msg = JSON.parse(raw);
+  } catch {
+    return err2(null, -32700, "parse error");
+  }
+  const id = msg.id ?? null;
+  const isNotification = msg.id === void 0;
+  switch (msg.method) {
+    case "initialize":
+      return ok(id, {
+        protocolVersion: typeof msg.params?.["protocolVersion"] === "string" ? msg.params["protocolVersion"] : PROTOCOL_VERSION,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: SERVER_INFO
+      });
+    case "ping":
+      return ok(id, {});
+    case "tools/list":
+      return ok(id, { tools: TOOLS });
+    case "tools/call": {
+      const name = msg.params?.["name"];
+      const args = msg.params?.["arguments"] ?? {};
+      if (typeof name !== "string") return err2(id, -32602, "tools/call needs params.name");
+      return callTool(roots, id, name, args);
+    }
+    default:
+      if (isNotification) return null;
+      return err2(id, -32601, `method not found: ${msg.method}`);
+  }
+}
+function runMcpServer(roots) {
+  const resolved = roots.map((r) => (0, import_node_path2.resolve)(r));
+  let buffer = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      void handleMcpMessage(resolved, line).then((reply) => {
+        if (reply !== null) process.stdout.write(reply + "\n");
+      });
+    }
+  });
+  process.stdin.on("end", () => process.exit(0));
+}
+
 // src/tools/cardmirror-read-cli.ts
-process.stdout.on("error", (err2) => {
-  if (err2.code === "EPIPE") process.exit(0);
-  throw err2;
+process.stdout.on("error", (err3) => {
+  if (err3.code === "EPIPE") process.exit(0);
+  throw err3;
 });
 function fail(msg) {
   process.stderr.write(`cardmirror-read: ${msg}
@@ -13253,7 +13588,7 @@ function fail(msg) {
 }
 function usage() {
   process.stderr.write(
-    "Usage: cardmirror-read <file.cmir|file.docx> [--form text|json] [--stdout] [--out PATH]\n"
+    "Usage:\n  cardmirror-read <file.cmir|file.docx> [--form text|json] [--stdout] [--out PATH]\n  cardmirror-read --mirror DIR [--mirror DIR \u2026] --out-dir DIR\n  cardmirror-read --mcp --root DIR [--root DIR \u2026]\n"
   );
   process.exit(1);
 }
@@ -13263,9 +13598,25 @@ async function main() {
   let form = "text";
   let stdout = false;
   let outPath = null;
+  const mirrors = [];
+  let outDir = null;
+  let mcp = false;
+  const roots = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--form") {
+    if (a === "--mirror") {
+      const v = args[++i];
+      if (!v) fail("--mirror needs a folder");
+      mirrors.push(v);
+    } else if (a === "--out-dir") {
+      outDir = args[++i] ?? null;
+      if (!outDir) fail("--out-dir needs a folder");
+    } else if (a === "--mcp") mcp = true;
+    else if (a === "--root") {
+      const v = args[++i];
+      if (!v) fail("--root needs a folder");
+      roots.push(v);
+    } else if (a === "--form") {
       const v = args[++i];
       if (v !== "text" && v !== "json") fail(`--form must be "text" or "json", got "${v}"`);
       form = v;
@@ -13278,14 +13629,26 @@ async function main() {
     else if (file) fail("only one input file is supported");
     else file = a;
   }
+  if (mcp) {
+    if (mirrors.length || file) fail("--mcp cannot be combined with --mirror or a file argument");
+    if (roots.length === 0) fail("--mcp needs at least one --root folder to serve");
+    runMcpServer(roots);
+    return;
+  }
+  if (mirrors.length > 0) {
+    if (file) fail("--mirror cannot be combined with a file argument");
+    if (!outDir) fail("--mirror needs --out-dir");
+    await runMirror(mirrors, outDir);
+    return;
+  }
   if (!file) usage();
   let bytes;
   try {
-    bytes = new Uint8Array((0, import_node_fs.readFileSync)((0, import_node_path.resolve)(file)));
-  } catch (err2) {
-    fail(`can't read "${file}": ${err2 instanceof Error ? err2.message : err2}`);
+    bytes = new Uint8Array((0, import_node_fs3.readFileSync)((0, import_node_path3.resolve)(file)));
+  } catch (err3) {
+    fail(`can't read "${file}": ${err3 instanceof Error ? err3.message : err3}`);
   }
-  const ext = (0, import_node_path.extname)(file).toLowerCase();
+  const ext = (0, import_node_path3.extname)(file).toLowerCase();
   const kind = ext === ".docx" ? "docx" : ext === ".cmir" || looksLikeNative(bytes) ? "cmir" : fail(
     `unsupported file type "${ext || "(none)"}" \u2014 expected .cmir or .docx`
   );
@@ -13295,26 +13658,26 @@ async function main() {
       content = await toUncompressedJson(bytes, kind);
     } else {
       const doc = await parseToDoc(bytes, kind);
-      content = renderPlainText(doc, (0, import_node_path.basename)(file));
+      content = renderPlainText(doc, (0, import_node_path3.basename)(file));
     }
-  } catch (err2) {
-    if (err2 instanceof NativeDamagedError) {
+  } catch (err3) {
+    if (err3 instanceof NativeDamagedError) {
       fail(
-        `this .cmir is damaged beyond the automatic repairs (${err2.message}); try --form json for the raw (uncompressed) envelope`
+        `this .cmir is damaged beyond the automatic repairs (${err3.message}); try --form json for the raw (uncompressed) envelope`
       );
     }
-    fail(`couldn't convert "${file}": ${err2 instanceof Error ? err2.message : err2}`);
+    fail(`couldn't convert "${file}": ${err3 instanceof Error ? err3.message : err3}`);
   }
   if (stdout) {
     process.stdout.write(content);
     return;
   }
-  const target = outPath ?? (0, import_node_path.join)(
-    (0, import_node_fs.mkdtempSync)((0, import_node_path.join)((0, import_node_os.tmpdir)(), "cardmirror-read-")),
-    `${(0, import_node_path.basename)(file, (0, import_node_path.extname)(file))}.${form === "json" ? "json" : "txt"}`
+  const target = outPath ?? (0, import_node_path3.join)(
+    (0, import_node_fs3.mkdtempSync)((0, import_node_path3.join)((0, import_node_os.tmpdir)(), "cardmirror-read-")),
+    `${(0, import_node_path3.basename)(file, (0, import_node_path3.extname)(file))}.${form === "json" ? "json" : "txt"}`
   );
-  (0, import_node_fs.writeFileSync)(target, content);
-  (0, import_node_fs.chmodSync)(target, 292);
-  process.stdout.write((0, import_node_path.resolve)(target) + "\n");
+  (0, import_node_fs3.writeFileSync)(target, content);
+  (0, import_node_fs3.chmodSync)(target, 292);
+  process.stdout.write((0, import_node_path3.resolve)(target) + "\n");
 }
 void main();

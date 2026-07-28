@@ -27,7 +27,28 @@ in each release, see `CHANGELOG.md`.
   --form json; unsupported types exit 1. Tests: renderer + serialize
   round-trip (tests/tools/). Verified against real backfiles: Space
   Aff Demo .cmir (52 MB pretty JSON — README warns text is the
-  reading form) and a real cut .docx.
+  reading form) and a real cut .docx. FOLLOW-UP (same day): two
+  automation modes, both in the same single file. `--mcp --root …`
+  (repeatable): a hand-rolled tools-only MCP stdio server
+  (newline-delimited JSON-RPC; initialize/ping/tools list+call;
+  notifications get no reply) exposing `list_debate_files` (substring
+  filter, 2000-entry cap) and `read_debate_file` (text/json;
+  400KB-text truncation + 2MB-json refusal so a result can't blow an
+  assistant's context) — dependency-free by design to keep the
+  one-file curl story; path resolution realpaths against the
+  configured roots so `..`/symlink escapes are refused (tested).
+  `--mirror … --out-dir …` (repeatable): initial mtime-skipped sweep +
+  recursive fs.watch with 1.5s coalesce (Dropbox sync bursts) →
+  always-current .txt shadow tree; multi-source maps into
+  de-duplicated basename subfolders; orphan shadows removed
+  per-source; 60s-polling fallback if the watch fails; no feedback
+  loops by construction (inputs .cmir/.docx, outputs .txt). README:
+  MCP client config snippet + launchd KeepAlive template. Live-tested
+  end-to-end: scripted MCP session (handshake/list/read/escape
+  attempts) and a real mirror run (sweep, live add, live
+  orphan-removal). Motivation: the requesting user's assistant
+  (Littlebird) has a no-node/no-network sandbox but reads Dropbox and
+  reportedly supports MCP — both integration shapes are now covered.
 
 ## 0.1.0-beta.26 — 2026-07-28
 

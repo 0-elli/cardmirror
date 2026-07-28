@@ -56,6 +56,85 @@ Notes for AI assistants:
   password-protected `.docx`, a `.cmir` damaged beyond repair — the
   last still works with `--form json`).
 
+## MCP server mode (for AI assistants with MCP support)
+
+If your assistant supports the Model Context Protocol, point it at
+this file as a local (stdio) MCP server and it can browse and read
+your debate files **on demand** — no pre-converted copies:
+
+```sh
+node cardmirror-read.cjs --mcp --root ~/Dropbox/Debate
+```
+
+Typical client configuration (the JSON shape most MCP clients use):
+
+```json
+{
+  "mcpServers": {
+    "cardmirror-read": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/cardmirror-read.cjs",
+        "--mcp",
+        "--root", "/Users/you/Dropbox/Debate"
+      ]
+    }
+  }
+}
+```
+
+The server exposes two tools — `list_debate_files` (with an optional
+substring filter) and `read_debate_file` (text or JSON form) — and it
+only ever reads inside the `--root` folders you configured: requests
+for anything outside them (including via symlinks or `..`) are
+refused. `--root` is repeatable. Large results are capped so a single
+file can't blow out the assistant's context.
+
+## Mirror mode (for assistants that can only read files)
+
+If your assistant can't run MCP servers but can read a folder (say,
+through a Dropbox integration), mirror mode maintains an
+always-current plain-text shadow of your files:
+
+```sh
+node cardmirror-read.cjs \
+  --mirror ~/Dropbox/Debate/Backfiles \
+  --mirror ~/Dropbox/Debate/2026-2027 \
+  --out-dir ~/Dropbox/Debate\ Text\ Exports
+```
+
+It sweeps once (skipping anything already current), then watches for
+changes: new and edited `.cmir`/`.docx` files re-render within a couple
+of seconds, and shadows of deleted files are removed. With several
+`--mirror` folders, each mirrors into its own subfolder of the
+out-dir. Point it at the specific folders you want readable — not the
+whole Dropbox.
+
+To keep it running across logins on macOS, save this as
+`~/Library/LaunchAgents/com.cardmirror.read-mirror.plist` (adjust the
+three paths), then `launchctl load` it:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.cardmirror.read-mirror</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/you/cardmirror-read.cjs</string>
+    <string>--mirror</string><string>/Users/you/Dropbox/Debate</string>
+    <string>--out-dir</string><string>/Users/you/Dropbox/Debate Text Exports</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/cardmirror-read-mirror.log</string>
+  <key>StandardErrorPath</key><string>/tmp/cardmirror-read-mirror.log</string>
+</dict></plist>
+```
+
+(`which node` tells you the right node path for the first entry.)
+
 ## Rebuilding from source
 
 From the CardMirror repo root:

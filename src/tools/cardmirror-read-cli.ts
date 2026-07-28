@@ -29,6 +29,8 @@ import {
   type ReadForm,
   type FileKind,
 } from './cardmirror-read-lib.js';
+import { runMirror } from './cardmirror-read-mirror.js';
+import { runMcpServer } from './cardmirror-read-mcp.js';
 
 // A closed read end (e.g. `cardmirror-read … --stdout | head`) must be
 // a clean exit, not an unhandled-EPIPE crash dump — agents pipe.
@@ -44,7 +46,10 @@ function fail(msg: string): never {
 
 function usage(): never {
   process.stderr.write(
-    'Usage: cardmirror-read <file.cmir|file.docx> [--form text|json] [--stdout] [--out PATH]\n',
+    'Usage:\n' +
+      '  cardmirror-read <file.cmir|file.docx> [--form text|json] [--stdout] [--out PATH]\n' +
+      '  cardmirror-read --mirror DIR [--mirror DIR …] --out-dir DIR\n' +
+      '  cardmirror-read --mcp --root DIR [--root DIR …]\n',
   );
   process.exit(1);
 }
@@ -55,10 +60,26 @@ async function main(): Promise<void> {
   let form: ReadForm = 'text';
   let stdout = false;
   let outPath: string | null = null;
+  const mirrors: string[] = [];
+  let outDir: string | null = null;
+  let mcp = false;
+  const roots: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
-    if (a === '--form') {
+    if (a === '--mirror') {
+      const v = args[++i];
+      if (!v) fail('--mirror needs a folder');
+      mirrors.push(v);
+    } else if (a === '--out-dir') {
+      outDir = args[++i] ?? null;
+      if (!outDir) fail('--out-dir needs a folder');
+    } else if (a === '--mcp') mcp = true;
+    else if (a === '--root') {
+      const v = args[++i];
+      if (!v) fail('--root needs a folder');
+      roots.push(v);
+    } else if (a === '--form') {
       const v = args[++i];
       if (v !== 'text' && v !== 'json') fail(`--form must be "text" or "json", got "${v}"`);
       form = v;
@@ -71,6 +92,21 @@ async function main(): Promise<void> {
     else if (file) fail('only one input file is supported');
     else file = a;
   }
+
+  // Long-running modes.
+  if (mcp) {
+    if (mirrors.length || file) fail('--mcp cannot be combined with --mirror or a file argument');
+    if (roots.length === 0) fail('--mcp needs at least one --root folder to serve');
+    runMcpServer(roots);
+    return; // stdin loop keeps the process alive
+  }
+  if (mirrors.length > 0) {
+    if (file) fail('--mirror cannot be combined with a file argument');
+    if (!outDir) fail('--mirror needs --out-dir');
+    await runMirror(mirrors, outDir);
+    return;
+  }
+
   if (!file) usage();
 
   let bytes: Uint8Array;
