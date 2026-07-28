@@ -83,12 +83,26 @@ Typical client configuration (the JSON shape most MCP clients use):
 }
 ```
 
-The server exposes two tools — `list_debate_files` (with an optional
-substring filter) and `read_debate_file` (text or JSON form) — and it
-only ever reads inside the `--root` folders you configured: requests
-for anything outside them (including via symlinks or `..`) are
-refused. `--root` is repeatable. Large results are capped so a single
-file can't blow out the assistant's context.
+**If your assistant's custom-MCP setup asks for a URL instead of a
+command** (some only take URLs), run the HTTP variant and paste the
+URL it prints:
+
+```sh
+node cardmirror-read.cjs --mcp-http --root ~/Dropbox/Debate
+# → cardmirror-read MCP server listening on http://127.0.0.1:3323/mcp
+```
+
+(`--port N` to change the port. The server must be left running for
+the assistant to reach it — see the launchd template below to make it
+start at login.) It binds to 127.0.0.1 only — it is never reachable
+from your network — and browser-origin requests are rejected.
+
+Either way, the server exposes two tools — `list_debate_files` (with
+an optional substring filter) and `read_debate_file` (text or JSON
+form) — and it only ever reads inside the `--root` folders you
+configured: requests for anything outside them (including via
+symlinks or `..`) are refused. `--root` is repeatable. Large results
+are capped so a single file can't blow out the assistant's context.
 
 ## Mirror mode (for assistants that can only read files)
 
@@ -110,7 +124,8 @@ of seconds, and shadows of deleted files are removed. With several
 out-dir. Point it at the specific folders you want readable — not the
 whole Dropbox.
 
-To keep it running across logins on macOS, save this as
+To keep a long-running mode (`--mirror` or `--mcp-http`) running
+across logins on macOS, save this as
 `~/Library/LaunchAgents/com.cardmirror.read-mirror.plist` (adjust the
 three paths), then `launchctl load` it:
 
@@ -125,6 +140,9 @@ three paths), then `launchctl load` it:
     <string>/Users/you/cardmirror-read.cjs</string>
     <string>--mirror</string><string>/Users/you/Dropbox/Debate</string>
     <string>--out-dir</string><string>/Users/you/Dropbox/Debate Text Exports</string>
+    <!-- for the MCP URL server instead, replace the two lines above with:
+    <string>--mcp-http</string>
+    <string>--root</string><string>/Users/you/Dropbox/Debate</string> -->
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

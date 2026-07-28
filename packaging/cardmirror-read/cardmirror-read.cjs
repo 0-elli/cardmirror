@@ -13390,6 +13390,7 @@ async function runMirror(roots, outDir) {
 
 // src/tools/cardmirror-read-mcp.ts
 var import_node_fs2 = require("node:fs");
+var import_node_http = require("node:http");
 var import_node_path2 = require("node:path");
 var PROTOCOL_VERSION = "2025-06-18";
 var SERVER_INFO = { name: "cardmirror-read", version: "1.0.0" };
@@ -13557,6 +13558,47 @@ async function handleMcpMessage(roots, raw) {
       return err2(id, -32601, `method not found: ${msg.method}`);
   }
 }
+function runMcpHttpServer(roots, port) {
+  const resolved = roots.map((r) => (0, import_node_path2.resolve)(r));
+  const server = (0, import_node_http.createServer)((req, res) => {
+    const origin = req.headers.origin;
+    if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end();
+      return;
+    }
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (c) => {
+      body += c;
+      if (body.length > 1e7) req.destroy();
+    });
+    req.on("end", () => {
+      void handleMcpMessage(resolved, body).then((reply) => {
+        if (reply === null) {
+          res.writeHead(202);
+          res.end();
+        } else {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(reply);
+        }
+      });
+    });
+  });
+  server.listen(port, "127.0.0.1", () => {
+    process.stdout.write(
+      `cardmirror-read MCP server listening on http://127.0.0.1:${port}/mcp
+(serving ${resolved.length} folder(s): ${resolved.join(", ")})
+Paste that URL into your assistant's custom MCP server field. Keep this running.
+`
+    );
+  });
+}
 function runMcpServer(roots) {
   const resolved = roots.map((r) => (0, import_node_path2.resolve)(r));
   let buffer = "";
@@ -13588,7 +13630,7 @@ function fail(msg) {
 }
 function usage() {
   process.stderr.write(
-    "Usage:\n  cardmirror-read <file.cmir|file.docx> [--form text|json] [--stdout] [--out PATH]\n  cardmirror-read --mirror DIR [--mirror DIR \u2026] --out-dir DIR\n  cardmirror-read --mcp --root DIR [--root DIR \u2026]\n"
+    "Usage:\n  cardmirror-read <file.cmir|file.docx> [--form text|json] [--stdout] [--out PATH]\n  cardmirror-read --mirror DIR [--mirror DIR \u2026] --out-dir DIR\n  cardmirror-read --mcp --root DIR [--root DIR \u2026]\n  cardmirror-read --mcp-http [--port N] --root DIR [--root DIR \u2026]\n"
   );
   process.exit(1);
 }
@@ -13601,6 +13643,8 @@ async function main() {
   const mirrors = [];
   let outDir = null;
   let mcp = false;
+  let mcpHttp = false;
+  let port = 3323;
   const roots = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -13612,7 +13656,12 @@ async function main() {
       outDir = args[++i] ?? null;
       if (!outDir) fail("--out-dir needs a folder");
     } else if (a === "--mcp") mcp = true;
-    else if (a === "--root") {
+    else if (a === "--mcp-http") mcpHttp = true;
+    else if (a === "--port") {
+      const v = Number(args[++i]);
+      if (!Number.isInteger(v) || v < 1 || v > 65535) fail("--port needs a port number");
+      port = v;
+    } else if (a === "--root") {
       const v = args[++i];
       if (!v) fail("--root needs a folder");
       roots.push(v);
@@ -13629,10 +13678,11 @@ async function main() {
     else if (file) fail("only one input file is supported");
     else file = a;
   }
-  if (mcp) {
+  if (mcp || mcpHttp) {
     if (mirrors.length || file) fail("--mcp cannot be combined with --mirror or a file argument");
     if (roots.length === 0) fail("--mcp needs at least one --root folder to serve");
-    runMcpServer(roots);
+    if (mcpHttp) runMcpHttpServer(roots, port);
+    else runMcpServer(roots);
     return;
   }
   if (mirrors.length > 0) {

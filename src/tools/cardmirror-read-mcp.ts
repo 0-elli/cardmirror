@@ -14,6 +14,7 @@
  */
 
 import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { join, resolve, extname, relative, sep, basename } from 'node:path';
 import {
   parseToDoc,
@@ -230,6 +231,57 @@ export async function handleMcpMessage(roots: string[], raw: string): Promise<st
       if (isNotification) return null; // notifications/initialized etc.
       return err(id, -32601, `method not found: ${msg.method}`);
   }
+}
+
+/** HTTP transport (MCP "Streamable HTTP"): for clients whose custom-
+ *  server UI takes only a URL. The client POSTs one JSON-RPC message
+ *  per request to the endpoint; we answer with JSON (or 202 for
+ *  notifications). Stateless — no sessions, no server-push stream
+ *  (GET answers 405, which spec-compliant clients treat as "server
+ *  doesn't offer one").
+ *
+ *  Security: binds 127.0.0.1 ONLY (this serves file contents — it
+ *  must never be reachable from the LAN), and any browser-ish Origin
+ *  header that isn't localhost is rejected to block DNS-rebinding. */
+export function runMcpHttpServer(roots: string[], port: number): void {
+  const resolved = roots.map((r) => resolve(r));
+  const server = createServer((req, res) => {
+    const origin = req.headers.origin;
+    if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' });
+      res.end();
+      return;
+    }
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (c: string) => {
+      body += c;
+      if (body.length > 10_000_000) req.destroy();
+    });
+    req.on('end', () => {
+      void handleMcpMessage(resolved, body).then((reply) => {
+        if (reply === null) {
+          res.writeHead(202);
+          res.end();
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(reply);
+        }
+      });
+    });
+  });
+  server.listen(port, '127.0.0.1', () => {
+    process.stdout.write(
+      `cardmirror-read MCP server listening on http://127.0.0.1:${port}/mcp\n` +
+        `(serving ${resolved.length} folder(s): ${resolved.join(', ')})\n` +
+        `Paste that URL into your assistant's custom MCP server field. Keep this running.\n`,
+    );
+  });
 }
 
 /** stdio loop: newline-delimited JSON-RPC on stdin/stdout. */

@@ -49,6 +49,15 @@ in each release, see `CHANGELOG.md`.
   orphan-removal). Motivation: the requesting user's assistant
   (Littlebird) has a no-node/no-network sandbox but reads Dropbox and
   reportedly supports MCP — both integration shapes are now covered.
+  SECOND FOLLOW-UP: the assistant's custom-MCP UI turned out to take
+  ONLY a server URL → added `--mcp-http [--port N]` (default 3323):
+  the same dispatch behind MCP Streamable HTTP — stateless POST →
+  JSON (202 for notifications, 405 for GET). Binds 127.0.0.1 ONLY
+  (serves file contents; must never be LAN-reachable) and rejects
+  non-localhost Origin headers (DNS-rebinding guard). Live-verified:
+  handshake/read over HTTP, 403 on foreign Origin, 405 on GET,
+  connection refused on the LAN address. launchd template in the
+  README covers both long-running modes.
 
 ## 0.1.0-beta.26 — 2026-07-28
 
