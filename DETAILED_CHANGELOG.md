@@ -28,6 +28,21 @@ in each release, see `CHANGELOG.md`.
   the launch and daily checks, web edition untouched. 4 migration
   tests.
 
+- **Nav pane: empty-outline drop targets** (`renderDropIndicators` /
+  `removeDropIndicators` in `nav-panel.ts`). The empty state hides
+  `listEl` behind the "No headings." placeholder — but the drop
+  indicators, including the always-valid end-of-doc slot, are
+  appended INTO `listEl`, so an empty pane's nav had zero hittable
+  drop targets (field report 2026-07-27, three-pane; the editor-
+  surface drop into the empty doc worked, only the nav path was
+  dead). During a drag session the panel now surfaces the
+  (zero-height) list so the end slot has a real rect — the
+  extreme-snap fall-through in `hitTestDropIndicators` then makes the
+  entire section droppable — and `removeDropIndicators` restores the
+  empty state when the outline is still headingless (a successful
+  drop re-renders with headings via the normal path). Placeholder
+  stays visible during the drag. 2 tests.
+
 - **Read mode: bare editing keys swallowed at the DOM level**
   (`read-mode-plugin.ts` keydown). Follow-up to the read-mode
   alignment below: with the view editable in read mode, a bare

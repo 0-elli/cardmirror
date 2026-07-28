@@ -252,6 +252,10 @@ export class NavigationPanel {
   private dragHandlersAttached = false;
   private pickupPill: HTMLElement | null = null;
   private dropIndicators: HTMLElement[] = [];
+  /** True while `renderDropIndicators` un-hid an empty outline's
+   *  `listEl` so its end-of-doc slot could hit-test; restored by
+   *  `removeDropIndicators`. */
+  private listShownForDrag = false;
   /** Heading IDs we expanded automatically during the active drag.
    *  Restored on drag-off / cancel. */
   private autoExpanded: Set<string> = new Set();
@@ -1664,6 +1668,21 @@ export class NavigationPanel {
     if (!this.view) return;
     const doc = this.view.state.doc;
 
+    // An empty outline hides `listEl` in favor of the "No headings."
+    // placeholder — which also hid the always-valid end-of-doc drop
+    // slot appended below, so an empty pane's nav offered NO drop
+    // targets at all (field bug 2026-07-27, three-pane: dragging onto
+    // an empty doc's nav section showed only the placeholder). Surface
+    // the (zero-height) list for the drag's duration so the end slot
+    // has a real hit-test rect — the extreme-snap fall-through in
+    // hitTestDropIndicators then makes the whole section droppable.
+    // The placeholder stays visible alongside; removeDropIndicators
+    // restores the empty state (a successful drop re-renders anyway).
+    if (this.listEl.style.display === 'none') {
+      this.listEl.style.display = '';
+      this.listShownForDrag = true;
+    }
+
     const items = Array.from(this.listEl.children).filter(
       (el): el is HTMLLIElement => el instanceof HTMLLIElement,
     );
@@ -1731,6 +1750,13 @@ export class NavigationPanel {
   private removeDropIndicators(): void {
     for (const el of this.dropIndicators) el.remove();
     this.dropIndicators = [];
+    if (this.listShownForDrag) {
+      this.listShownForDrag = false;
+      // Still no headings (drag aborted or dropped elsewhere) → put
+      // the empty state back. A drop INTO this doc re-renders with
+      // headings, so the list stays visible via the normal path.
+      if (!this.listEl.querySelector('li')) this.listEl.style.display = 'none';
+    }
   }
 
   private maybeAutoExpand(hoveredEntry: HeadingEntry | null): void {

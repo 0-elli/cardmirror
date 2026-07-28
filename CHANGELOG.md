@@ -26,6 +26,13 @@ see `DETAILED_CHANGELOG.md`.
   the GitHub mark. (Web only — the desktop app doesn't have this
   button.)
 
+- **Three-pane: you can now drag into an empty pane's navigation
+  section.** Dragging a card or heading onto the nav section of an
+  empty document showed only "No headings." with nowhere to drop —
+  the end-of-document drop slot was hidden along with the empty
+  outline. The whole section now accepts the drop, landing the
+  content in the empty document.
+
 - **Formatting shortcuts typed into text boxes stay in the text box.**
   Pressing a formatting shortcut (bold, highlight, …) while typing in
   a small text field — the font-size box, a search filter — used to
