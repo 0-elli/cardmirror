@@ -2394,7 +2394,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'accessibilityTreeEnabled',
     label: 'Screen reader support',
     description:
-      'Let screen readers and other assistive technology read CardMirror. Off by default because of a Chromium crash that took down the whole window (white screen, lost work) while building the accessibility tree. CardMirror now starts with the Chromium code responsible for that crash switched off, routing assistive technology through the older, long-established path instead — so turning this on should be far safer than it used to be. It is still the less-tested configuration: if you rely on a screen reader, please turn it on and tell us how it goes. Takes effect after restarting CardMirror.',
+      'Let screen readers and other assistive technology read CardMirror. OFF by default: a current Chromium bug crashes the whole window (white screen, lost work) while building the accessibility tree, so we disable it to keep CardMirror stable. Turn this on only if you rely on a screen reader — it re-activates the known crash. Takes effect after restarting CardMirror.',
     kind: 'accessibilityRenderer',
     category: 'accessibility',
     electronOnly: true,
