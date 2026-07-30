@@ -204,6 +204,26 @@ async function parseFileDoc(
   return parseNative(bytes).doc;
 }
 
+/** Text of the heading node carrying `headingId` at (or inside) the node
+ *  at `pos`. For a tag/analytic row the range starts at the enclosing
+ *  card / analytic_unit — its textContent is the WHOLE card, which would
+ *  fail the docx anchor's paragraph-text cross-check; the anchor needs
+ *  the heading paragraph's own text. */
+function headingTextAt(doc: PMNode, pos: number, headingId: string): string {
+  const node = doc.nodeAt(pos);
+  if (!node) return '';
+  if (node.attrs['id'] === headingId) return node.textContent;
+  let text = node.textContent; // fallback: the old (wrapper) behavior
+  node.descendants((n) => {
+    if (n.attrs['id'] === headingId) {
+      text = n.textContent;
+      return false;
+    }
+    return true;
+  });
+  return text;
+}
+
 // ── Off-thread parsing (warm-parse-worker.ts) ───────────────────────
 // Parse + extract run in a Web Worker so a multi-hundred-ms parse of a
 // big pinned file can never stall the renderer thread (the boot-window
@@ -2048,11 +2068,13 @@ class QuickCardSearchUI {
     // captured locals lets the zone still land after OK.
     const docPath = this.docPath;
     const rePickTarget = this.rePickTarget;
-    const headingNode = inFile.doc.nodeAt(result.fileRange.from);
     // A tag/analytic source's outline range starts at the enclosing card /
     // analytic_unit, whose id lives on its heading child — resolveHeadingIdAt
-    // digs it out (nodeAt().attrs.id alone fails for single-card sources).
+    // digs it out (nodeAt().attrs.id alone fails for single-card sources),
+    // and the anchor cross-check needs that heading PARAGRAPH's text, not
+    // the wrapper's whole-card textContent.
     const headingId = resolveHeadingIdAt(inFile.doc, result.fileRange.from);
+    const headingText = headingTextAt(inFile.doc, result.fileRange.from, headingId);
     const roots = (settings.get('fileSearchRoots') as string[] | undefined) ?? [];
     const outcome = buildLiveZoneAttrs(
       schema,
@@ -2075,7 +2097,7 @@ class QuickCardSearchUI {
       const ready = await this.ensureDocxSourceAnchor(
         result.fileRange.from,
         headingId,
-        headingNode?.textContent ?? '',
+        headingText,
         outcome.attrs,
         roots,
         docPath,
@@ -2146,9 +2168,12 @@ class QuickCardSearchUI {
       showToast('Couldn’t read the Word source file.');
       return false;
     }
-    const freshHeading = freshDoc.nodeAt(headingPos);
-    const freshId =
-      freshHeading && typeof freshHeading.attrs['id'] === 'string' ? freshHeading.attrs['id'] : '';
+    // Same wrapper-vs-heading trap as the caller: for a card-by-tag or
+    // analytic source, `headingPos` is the WRAPPER's position, whose node
+    // carries no id — resolveHeadingIdAt digs out the heading child's.
+    // (The naive nodeAt().attrs.id here is what made "transclude a card
+    // by its tag" fail for .docx sources while working from .cmir.)
+    const freshId = resolveHeadingIdAt(freshDoc, headingPos);
     const srcPara = freshId ? prov.get(freshId) : undefined;
     if (srcPara == null) {
       showToast('This Word heading can’t be tracked for live updates — save the source as .cmir.');

@@ -136,3 +136,67 @@ describe('ensureHeadingAnchor', () => {
     expect(pocketId(after, 'Bravo')).toBe(NEW_ID);
   });
 });
+
+describe('card-by-tag anchoring (transclude a single card from .docx)', () => {
+  const TAG_ID = 'dddddddd-1111-2222-3333-444444444444';
+  const CARD_ANCHOR_ID = 'eeeeeeee-9999-8888-7777-666666666666';
+
+  /** doc: pocket "Alpha" · card (tag "Heg good" + body) — the shape the
+   *  palette's tag row transcludes: the RANGE starts at the card wrapper,
+   *  but the anchor must target the tag PARAGRAPH with the tag's own text. */
+  function cardDoc(): PMNode {
+    return schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['pocket']!.create({ id: ALPHA_ID }, schema.text('Alpha')),
+      schema.nodes['card']!.create(null, [
+        schema.nodes['tag']!.create({ id: TAG_ID }, schema.text('Heg good')),
+        schema.nodes['card_body']!.create(null, schema.text('long card body text here')),
+      ]),
+    ]);
+  }
+
+  /** id of the tag whose text is `text` in an imported doc, or null. */
+  function tagId(doc: PMNode, text: string): string | null {
+    let found: string | null = null;
+    doc.descendants((n) => {
+      if (n.type.name === 'tag' && n.textContent === text) {
+        found = (n.attrs as { id: string }).id;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
+  it('anchors the TAG paragraph and the id survives reimport on the tag', async () => {
+    const raw = await stripBookmarks(await toDocx(cardDoc()));
+    // Raw file: the tag gets a fresh id per import (un-refreshable).
+    expect(tagId(await fromDocx(raw), 'Heg good')).not.toBe(TAG_ID);
+
+    // The palette resolves the tag's srcPara via provenance; here the tag
+    // is body-paragraph 1 (after the pocket) — cross-checked by TEXT, so
+    // the anchor must be handed the tag paragraph's text, not the card's.
+    const srcPara = await srcParaOf(raw, 'Heg good');
+    expect(srcPara).toBe(1);
+    const out = await ensureHeadingAnchor(raw, srcPara, CARD_ANCHOR_ID, 'Heg good');
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+
+    // Reimport: the bookmark id lands on the TAG node — which is what
+    // refresh extraction resolves to re-find the enclosing card.
+    expect(tagId(await fromDocx(out.bytes), 'Heg good')).toBe(CARD_ANCHOR_ID);
+  });
+
+  it('whole-card text fails the cross-check (the pre-fix failure mode)', async () => {
+    const raw = await stripBookmarks(await toDocx(cardDoc()));
+    const srcPara = await srcParaOf(raw, 'Heg good');
+    // Passing the wrapper's textContent (tag + body concatenated) — what
+    // the palette used to hand over — must abort, not bookmark blindly.
+    const out = await ensureHeadingAnchor(
+      raw,
+      srcPara,
+      CARD_ANCHOR_ID,
+      'Heg goodlong card body text here',
+    );
+    expect(out.ok).toBe(false);
+  });
+});
