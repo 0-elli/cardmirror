@@ -18,6 +18,42 @@ import {
   type FileObject,
   type FileObjectKind,
 } from '../../src/editor/file-search.js';
+import { isPathExcluded, filterExcludedFiles } from '../../src/editor/file-search.js';
+
+describe('exclusions', () => {
+  it('matches an excluded file exactly', () => {
+    expect(isPathExcluded('/a/b/File.cmir', ['/a/b/File.cmir'])).toBe(true);
+    expect(isPathExcluded('/a/b/File.cmir', ['/a/b/Other.cmir'])).toBe(false);
+    expect(isPathExcluded('/a/b/File.cmir', [])).toBe(false);
+  });
+
+  it('an excluded folder covers its subtree, separator-aware', () => {
+    expect(isPathExcluded('/a/b/x.cmir', ['/a/b'])).toBe(true);
+    expect(isPathExcluded('/a/b/deep/x.cmir', ['/a/b'])).toBe(true);
+    // Prefix of the NAME, not a path boundary — must not match.
+    expect(isPathExcluded('/a/bc/x.cmir', ['/a/b'])).toBe(false);
+  });
+
+  it('tolerates a trailing separator on the exclusion entry', () => {
+    expect(isPathExcluded('/a/b/x.cmir', ['/a/b/'])).toBe(true);
+  });
+
+  it('handles Windows separators both ways', () => {
+    expect(isPathExcluded('C:\\camp\\b\\x.cmir', ['C:\\camp\\b'])).toBe(true);
+    expect(isPathExcluded('C:\\camp\\b\\x.cmir', ['C:\\camp\\b\\'])).toBe(true);
+    expect(isPathExcluded('C:\\camp\\bc\\x.cmir', ['C:\\camp\\b'])).toBe(false);
+  });
+
+  it('filterExcludedFiles drops excluded entries and keeps the rest', () => {
+    const files = [
+      makeFileEntry('/r/keep.cmir', 'keep.cmir', 1),
+      makeFileEntry('/r/gone.cmir', 'gone.cmir', 2),
+      makeFileEntry('/r/sub/gone-too.cmir', 'sub/gone-too.cmir', 3),
+    ];
+    const out = filterExcludedFiles(files, ['/r/gone.cmir', '/r/sub']);
+    expect(out.map((f) => f.path)).toEqual(['/r/keep.cmir']);
+  });
+});
 
 describe('path helpers', () => {
   it('baseName takes the last segment', () => {

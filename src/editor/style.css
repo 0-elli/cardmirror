@@ -8853,6 +8853,12 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
   flex: 1 1 100%;
   min-width: 0;
 }
+/* The pathList "+ Add folder" / "+ Add file" pair sits in one row. */
+.pmd-settings-pathlist-add {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+}
 .pmd-settings-folderlist .pmd-readers-add {
   align-self: flex-start;
 }
@@ -8907,6 +8913,12 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Truncate the LEFT side: the tail of a path (the actual file/folder
+     name) is the part worth keeping visible. RTL direction puts the
+     ellipsis at the left edge; the JS side (setPathCell) adds LRM
+     guards so bidi can't reorder leading separators. */
+  direction: rtl;
+  text-align: left;
 }
 .pmd-settings-folder-path.pmd-settings-folder-empty {
   color: var(--pmd-c-text-muted);
@@ -9844,6 +9856,17 @@ body.pmd-recovery-active.pmd-multi-doc #app {
 }
 .pmd-qcs-star-on:hover {
   color: var(--pmd-c-accent);
+}
+.pmd-qcs-exclude {
+  flex: 0 0 auto;
+  margin-left: 0.3rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--pmd-c-border);
+}
+.pmd-qcs-exclude:hover {
+  color: var(--pmd-c-text-secondary);
 }
 .pmd-qcs-row-name {
   font-size: 0.92rem;

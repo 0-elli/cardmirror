@@ -28,6 +28,16 @@ function card(id: string, tagText: string, bodyText = 'body words'): PMNode {
     n['card_body']!.create(null, schema.text(bodyText)),
   ]);
 }
+/** A card whose body carries cite-marked text (what collectCiteText reads). */
+function citeCard(id: string, tagText: string, citeText: string): PMNode {
+  return n['card']!.create(null, [
+    n['tag']!.create({ id }, schema.text(tagText)),
+    n['card_body']!.create(null, [
+      schema.text(citeText, [schema.marks['cite_mark']!.create()]),
+      schema.text(' — the full paragraph continues here.'),
+    ]),
+  ]);
+}
 function zone(children: PMNode[]): PMNode {
   return n['transclusion_ref']!.create({ source_ref: 'other.cmir' }, children);
 }
@@ -209,6 +219,48 @@ describe('self-ref picker: collapse + filter + keyboard', () => {
     ]);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(res.pickedIds).toEqual(['T7-2']);
+    res.view.destroy();
+  });
+
+  it('filter tokens match out of order (palette parity, not whole-string)', () => {
+    const doc = bigDoc(40);
+    const res = openPicker(doc, 1);
+    const filter = document.querySelector<HTMLInputElement>('.pmd-selfref-picker-filter')!;
+    // Reversed word order — the old whole-string `includes` matched nothing.
+    filter.value = 'card 2 needle7';
+    filter.dispatchEvent(new Event('input'));
+    const visible = res.rows.filter((r) => !r.hidden);
+    expect(visible.map((r) => r.querySelector('.pmd-selfref-picker-label')!.textContent)).toEqual([
+      'THE POCKET',
+      'BLOCK 7',
+      'NEEDLE7 CARD 2',
+    ]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(res.pickedIds).toEqual(['T7-2']);
+    res.view.destroy();
+  });
+
+  it('a tag matches by its card cite (dive parity); Enter picks it', () => {
+    const doc = n['doc']!.create(null, [
+      pocket('P', 'THE POCKET'),
+      block('B', 'HEG BLOCK'),
+      citeCard('T1', 'Heg good', 'Brooks 24'),
+      citeCard('T2', 'Heg bad', 'Mearsheimer 24'),
+    ]);
+    // Guard on the pocket heading: the pocket is ineligible but shows as
+    // an ancestor; both cards stay pickable.
+    const res = openPicker(doc, 1);
+    const filter = document.querySelector<HTMLInputElement>('.pmd-selfref-picker-filter')!;
+    filter.value = 'brooks'; // Only in the cite, not any heading text.
+    filter.dispatchEvent(new Event('input'));
+    const visible = res.rows.filter((r) => !r.hidden);
+    expect(visible.map((r) => r.querySelector('.pmd-selfref-picker-label')!.textContent)).toEqual([
+      'THE POCKET',
+      'HEG BLOCK',
+      'Heg good',
+    ]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(res.pickedIds).toEqual(['T1']);
     res.view.destroy();
   });
 

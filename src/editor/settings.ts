@@ -954,6 +954,12 @@ export interface Settings {
    *  overlap are fine — a file found under more than one is searched once.
    *  Empty list disables file search. Electron only. */
   fileSearchRoots: string[];
+  /** Folders and files the file search must never list, no matter which
+   *  root they live under. A folder excludes everything beneath it.
+   *  Absolute paths; applied to the listing before matching, so excluded
+   *  entries never reach results, pins, or the background warm pass.
+   *  Electron only. */
+  fileSearchExclusions: string[];
   /** Which file formats appear in the command-palette file search:
    *  'both' (default), 'cmir' only, or 'docx' only. */
   fileSearchFormats: 'both' | 'cmir' | 'docx';
@@ -1659,6 +1665,7 @@ const DEFAULTS: Settings = {
   showDropzonePill: false,
   showQuickCardButtons: false,
   fileSearchRoots: [],
+  fileSearchExclusions: [],
   fileSearchFormats: 'both',
   fileSearchObjectTypes: ['block', 'tag'],
   fileSearchOutlineDepth: 3,
@@ -1864,6 +1871,7 @@ export interface SettingMeta {
     | 'text'
     | 'folder'
     | 'folderList'
+    | 'pathList'
     | 'fileSearchFormats'
     | 'fileSearchObjectTypes'
     | 'fileSearchOutlineDepth'
@@ -2251,6 +2259,18 @@ export const SETTING_METADATA: SettingMeta[] = [
     description:
       'Folders for the command-palette file search (type "f " in the search bar). Each is scanned recursively for .cmir and .docx files. Add as many as you like — overlapping folders are fine; a file found under more than one is searched only once. Leave the list empty to disable file search.',
     kind: 'folderList',
+    category: 'files',
+    section: 'File search',
+    electronOnly: true,
+  },
+  {
+    key: 'fileSearchExclusions',
+    label: 'File search: exclusions',
+    description:
+      'Folders and files the file search never shows, even inside a search folder above. '
+      + 'An excluded folder hides everything under it. Add entries here, or use the '
+      + 'exclude button (⊘) on a file result in the search bar.',
+    kind: 'pathList',
     category: 'files',
     section: 'File search',
     electronOnly: true,
@@ -4176,6 +4196,9 @@ function sanitize(s: Settings): Settings {
     showDropzonePill: s.showDropzonePill === true,
     showQuickCardButtons: s.showQuickCardButtons === true,
     fileSearchRoots: sanitizeFileSearchRoots(s),
+    fileSearchExclusions: sanitizeStringList(
+      (s as { fileSearchExclusions?: unknown }).fileSearchExclusions,
+    ),
     fileSearchFormats:
       s.fileSearchFormats === 'cmir'
         ? 'cmir'
@@ -4468,6 +4491,23 @@ function sanitize(s: Settings): Settings {
         )
       : [],
   };
+}
+
+/** Coerce an arbitrary value into a clean string list: strings only,
+ *  trimmed, empties dropped, de-duplicated. Non-arrays become []. */
+function sanitizeStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const t = item.trim();
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  }
+  return out;
 }
 
 /** Coerce the file-search folders, migrating the pre-multi-folder single

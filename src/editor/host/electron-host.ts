@@ -151,6 +151,15 @@ interface ElectronAPI {
     defaultPath?: string;
     title?: string;
   }): Promise<string | null>;
+  /** Native file picker returning the chosen PATH only (nothing is read
+   *  and no read scope is granted — used for the file-search exclusion
+   *  list). Optional so a renderer against an older packaged shell
+   *  degrades gracefully (the settings UI hides its button). */
+  pickFile?(opts?: {
+    defaultPath?: string;
+    title?: string;
+    filters?: FileFilter[];
+  }): Promise<string | null>;
   openFile(opts: { filters: FileFilter[] }): Promise<{
     name: string;
     bytes: Uint8Array;
@@ -540,6 +549,14 @@ export class ElectronHost implements Host {
     title?: string;
   }): Promise<string | null> {
     return api().pickDirectory(opts);
+  }
+
+  async pickFile(opts?: {
+    defaultPath?: string;
+    title?: string;
+    filters?: FileFilter[];
+  }): Promise<string | null> {
+    return (await api().pickFile?.(opts)) ?? null;
   }
 
   /** Verbatim Flow bridge (Windows COM → Excel). Resolve a "windows-only"

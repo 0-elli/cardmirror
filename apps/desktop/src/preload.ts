@@ -181,6 +181,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickDirectory: (opts?: { defaultPath?: string; title?: string }) =>
     ipcRenderer.invoke('host:pick-directory', opts),
 
+  /** Native file-picker returning the chosen PATH only — no read, no
+   *  read-scope grant (the file-search exclusion list needs a path to
+   *  block, never content). */
+  pickFile: (opts?: { defaultPath?: string; title?: string; filters?: FileFilter[] }) =>
+    ipcRenderer.invoke('host:pick-file', opts),
+
   openFile: (opts: { filters: FileFilter[] }) =>
     ipcRenderer.invoke('host:open-file', opts),
 

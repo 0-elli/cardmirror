@@ -13,7 +13,12 @@
  *
  * UI: a collapsible leveled outline (disclosure triangles, like the search
  * palette's file peek) with a type-to-filter box and keyboard navigation,
- * in the route-dialog vocabulary. Ineligible headings render DISABLED rather
+ * in the route-dialog vocabulary. The filter matches the way the palette
+ * does — order-independent multi-token substring AND (`matchesAllTokens`),
+ * over heading text plus, for tags, the card's cite — not an exact
+ * whole-string test, so out-of-order / partial queries land. Rows keep
+ * outline order (no relevance ranking — this is a tree, not a result
+ * list). Ineligible headings render DISABLED rather
  * than hidden so the hierarchy stays readable (and a disabled pocket can be
  * expanded to reach a pickable block inside it); live-zone innards are
  * omitted entirely (a zone is opaque and never pickable).
@@ -30,6 +35,7 @@
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { collectHeadings, type HeadingEntry } from './headings.js';
+import { matchesAllTokens, tokenizeQuery } from './file-search.js';
 import { captureFocusForDialog } from './text-prompt.js';
 import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 
@@ -42,6 +48,10 @@ interface PickerRow {
   /** Eligible to actually pick (id + text + non-empty + not the guard's own
    *  section). Ineligible rows render disabled, for hierarchy. */
   pickable: boolean;
+  /** Lowercased match fields, precomputed once — the filter re-runs over
+   *  every row per keystroke. `citeLower` is '' for non-tag rows. */
+  textLower: string;
+  citeLower: string;
   /** Indexes (into the rows array) of this row's outline ancestors. */
   ancestors: number[];
   hasChildren: boolean;
@@ -99,7 +109,10 @@ export function openSelfRefPicker(
   onPick: (headingId: string) => void,
 ): void {
   const doc = view.state.doc;
-  const entries = collectHeadings(doc, { skipCite: true }); // the ONE pass
+  // The ONE pass. Cites are collected (no skipCite) because the filter
+  // matches a tag by its card's cite, like the palette's in-file dive —
+  // the same O(doc) walk the nav pane already pays on every refresh.
+  const entries = collectHeadings(doc);
   const boundaries = computeBoundaries(entries, doc.content.size);
 
   // ---- Build the row model (zone innards omitted; everything else shown) ----
@@ -124,6 +137,8 @@ export function openSelfRefPicker(
       from: geo.from,
       to: geo.to,
       pickable,
+      textLower: entry.text.trim().toLowerCase(),
+      citeLower: entry.cite?.toLowerCase() ?? '',
       ancestors: [...ancestorStack],
       hasChildren: false, // filled below
       collapsed: false,
@@ -237,13 +252,15 @@ export function openSelfRefPicker(
 
   /** Recompute every row's `hidden` from collapse state + the filter. While a
    *  filter is active, collapse is ignored (matches + ancestors all show) and
-   *  the toggles render inert (spec §4.5). O(rows) per call. */
+   *  the toggles render inert (spec §4.5). O(rows) per call. Matching is the
+   *  palette's tokenized AND-match over heading text + tag cite, so inexact /
+   *  out-of-order queries land (2026-07-29; was whole-string `includes`). */
   function refreshVisibility(): void {
-    const q = filter.value.trim().toLowerCase();
-    if (q) {
+    const tokens = tokenizeQuery(filter.value);
+    if (tokens.length > 0) {
       const visible = new Set<number>();
       for (let i = 0; i < rows.length; i++) {
-        if (rows[i]!.entry.text.trim().toLowerCase().includes(q)) {
+        if (matchesAllTokens(rows[i]!.textLower, rows[i]!.citeLower, tokens)) {
           visible.add(i);
           for (const a of rows[i]!.ancestors) visible.add(a);
         }
@@ -317,11 +334,13 @@ export function openSelfRefPicker(
         pick(rows[activeIdx]!);
         return;
       }
-      const q = filter.value.trim().toLowerCase();
-      if (q) {
+      const tokens = tokenizeQuery(filter.value);
+      if (tokens.length > 0) {
         // First pickable MATCH — ancestors shown for context don't count.
         const first = visibleIndexes().find(
-          (i) => rows[i]!.pickable && rows[i]!.entry.text.trim().toLowerCase().includes(q),
+          (i) =>
+            rows[i]!.pickable &&
+            matchesAllTokens(rows[i]!.textLower, rows[i]!.citeLower, tokens),
         );
         if (first !== undefined) pick(rows[first]!);
       }

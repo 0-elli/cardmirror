@@ -199,6 +199,16 @@ function registerRowCleanup(_el: Element, callback: () => void): () => void {
  *  nearer side. Avoids `el.scrollIntoView` because that scrolls
  *  the WHOLE page (including the editor surface behind the modal)
  *  when the container itself is fully on-screen. */
+/** Fill a `.pmd-settings-folder-path` cell. The cell truncates on the
+ *  LEFT (CSS `direction: rtl`) so the informative tail of a long path —
+ *  the file/folder name — stays visible; the LRM guards pin the string's
+ *  leading separator in place, which bidi would otherwise float to the
+ *  visual right end. Full text goes in the tooltip. */
+function setPathCell(el: HTMLElement, text: string): void {
+  el.textContent = `\u{200e}${text}\u{200e}`;
+  el.title = text;
+}
+
 function scrollTabIntoView(tab: HTMLElement, container: HTMLElement): void {
   const tr = tab.getBoundingClientRect();
   const cr = container.getBoundingClientRect();
@@ -1020,7 +1030,7 @@ class SettingsModal {
       pathEl.className = 'pmd-settings-folder-path';
       const refreshPath = (): void => {
         const value = settings.get(meta.key) as string;
-        pathEl.textContent = value || '(not set)';
+        setPathCell(pathEl, value || '(not set)');
         pathEl.classList.toggle('pmd-settings-folder-empty', !value);
       };
       refreshPath();
@@ -1079,8 +1089,7 @@ class SettingsModal {
             rowEl.className = 'pmd-settings-folder';
             const pathEl = document.createElement('span');
             pathEl.className = 'pmd-settings-folder-path';
-            pathEl.textContent = rootPath;
-            pathEl.title = rootPath;
+            setPathCell(pathEl, rootPath);
             // Same Browse… affordance as the single-folder settings, so a
             // folder that moved can be repointed instead of removed and
             // re-added. (The delete button says "Remove", not "Clear" —
@@ -1142,6 +1151,120 @@ class SettingsModal {
       row.appendChild(text);
       row.appendChild(wrap);
       return row;
+    } else if (meta.kind === 'pathList') {
+      // Like folderList, but entries can be FOLDERS or FILES (the file-search
+      // exclusion list). Two add buttons; a row's Browse… reopens the picker
+      // kind that plausibly created it (file extension → file picker).
+      // electronOnly, so the folder picker host is present; the file picker
+      // is a newer preload method, so its button hides on older shells.
+      const wrap = document.createElement('div');
+      wrap.className = 'pmd-settings-folderlist';
+      const getPaths = (): string[] => (settings.get(meta.key) as string[]) ?? [];
+      const looksLikeFile = (p: string): boolean => /\.(cmir|docx)$/i.test(p);
+      const render = (): void => {
+        wrap.innerHTML = '';
+        const paths = getPaths();
+        if (paths.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'pmd-settings-folderlist-empty';
+          empty.textContent = '(none)';
+          wrap.appendChild(empty);
+        } else {
+          paths.forEach((entryPath, i) => {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'pmd-settings-folder';
+            const pathEl = document.createElement('span');
+            pathEl.className = 'pmd-settings-folder-path';
+            setPathCell(pathEl, entryPath);
+            const browseBtn = document.createElement('button');
+            browseBtn.type = 'button';
+            browseBtn.className = 'pmd-settings-btn';
+            browseBtn.textContent = 'Browse…';
+            browseBtn.addEventListener('click', () => {
+              void (async (): Promise<void> => {
+                const electron = getElectronHost();
+                if (!electron) return;
+                const picked = looksLikeFile(entryPath)
+                  ? await electron.pickFile?.({
+                      defaultPath: entryPath,
+                      title: meta.label,
+                      filters: [{ name: 'Documents', extensions: ['cmir', 'docx'] }],
+                    })
+                  : await electron.pickDirectory({
+                      defaultPath: entryPath,
+                      title: meta.label,
+                    });
+                if (picked == null) return;
+                // Resolved by VALUE, not the render-time index — the list
+                // can change under an open picker (see folder-list-repoint).
+                const next = repointFolderRoot(getPaths(), entryPath, picked);
+                if (next === null) return;
+                settings.set(meta.key, next as never);
+                render();
+              })();
+            });
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'pmd-settings-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.title = 'Remove entry';
+            removeBtn.addEventListener('click', () => {
+              settings.set(meta.key, getPaths().filter((_, j) => j !== i) as never);
+              render();
+            });
+            rowEl.append(pathEl, browseBtn, removeBtn);
+            wrap.appendChild(rowEl);
+          });
+        }
+        const addTo = (picked: string | null | undefined): void => {
+          if (picked == null) return;
+          const paths = getPaths();
+          if (!paths.includes(picked)) {
+            settings.set(meta.key, [...paths, picked] as never);
+            render();
+          }
+        };
+        // Side by side (the list container is a column flex): folder
+        // first, then file.
+        const addRow = document.createElement('div');
+        addRow.className = 'pmd-settings-pathlist-add';
+        const addFolderBtn = document.createElement('button');
+        addFolderBtn.type = 'button';
+        addFolderBtn.className = 'pmd-readers-add';
+        addFolderBtn.textContent = '+ Add folder';
+        addFolderBtn.addEventListener('click', () => {
+          void (async (): Promise<void> => {
+            const electron = getElectronHost();
+            if (!electron) return;
+            addTo(await electron.pickDirectory({ title: meta.label }));
+          })();
+        });
+        addRow.appendChild(addFolderBtn);
+        if (getElectronHost()?.pickFile) {
+          const addFileBtn = document.createElement('button');
+          addFileBtn.type = 'button';
+          addFileBtn.className = 'pmd-readers-add';
+          addFileBtn.textContent = '+ Add file';
+          addFileBtn.addEventListener('click', () => {
+            void (async (): Promise<void> => {
+              const electron = getElectronHost();
+              if (!electron?.pickFile) return;
+              addTo(
+                await electron.pickFile({
+                  title: meta.label,
+                  filters: [{ name: 'Documents', extensions: ['cmir', 'docx'] }],
+                }),
+              );
+            })();
+          });
+          addRow.appendChild(addFileBtn);
+        }
+        wrap.appendChild(addRow);
+      };
+      render();
+      row.appendChild(text);
+      row.appendChild(wrap);
+      return row;
     } else if (meta.kind === 'cardCutterEnginePath') {
       // Like `folder`, but picks a FILE (the engine bundle) via the
       // native file dialog. electronOnly, so the host is always present.
@@ -1151,7 +1274,7 @@ class SettingsModal {
       pathEl.className = 'pmd-settings-folder-path';
       const refreshPath = (): void => {
         const value = settings.get(meta.key) as string;
-        pathEl.textContent = value || '(default location)';
+        setPathCell(pathEl, value || '(default location)');
         pathEl.classList.toggle('pmd-settings-folder-empty', !value);
       };
       refreshPath();

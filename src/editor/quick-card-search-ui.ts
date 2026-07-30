@@ -77,6 +77,7 @@ import {
   makeFileEntry,
   dirName,
   fileFormat,
+  filterExcludedFiles,
   FILE_OBJECT_KIND_BADGES,
   type FileEntry,
   type FileObject,
@@ -278,7 +279,12 @@ export function prewarmQuickCardFiles(): void {
   scheduleIdle(() => {
     void (async () => {
       try {
-        await runWarmPass(electron, mergeFileLists(await lists), () => true);
+        // Exclusions apply here too: an excluded pin must not warm.
+        await runWarmPass(
+          electron,
+          filterExcludedFiles(mergeFileLists(await lists), settings.get('fileSearchExclusions')),
+          () => true,
+        );
       } catch {
         /* ignore */
       }
@@ -1282,6 +1288,30 @@ class QuickCardSearchUI {
     void this.warmPins();
   }
 
+  /** Confirm, then add a file to the exclusion setting and drop it from
+   *  the live results. A pin on the file is deliberately left in place —
+   *  exclusion beats pins everywhere they could surface (results AND the
+   *  warm pass, both fed by mergedVisibleFiles), so the pin just goes
+   *  dormant until the entry is removed in Settings. */
+  private async excludeFile(path: string, displayName: string): Promise<void> {
+    const confirmed = await showConfirm({
+      title: `Exclude “${displayName}” from file search?`,
+      message:
+        'It will stop appearing in file search results everywhere. To undo, '
+        + 'remove it under Settings → Files → File search: exclusions.',
+      confirmLabel: 'Exclude',
+      cancelLabel: 'Cancel',
+    });
+    if (!confirmed) return;
+    const current = settings.get('fileSearchExclusions');
+    if (!current.includes(path)) {
+      settings.set('fileSearchExclusions', [...current, path]);
+    }
+    if (!this.root) return; // palette closed while the dialog sat open
+    this.fileList = this.mergedVisibleFiles();
+    if (!this.inFile) this.runSearch();
+  }
+
   /** Kick off the (cached, once-per-session) file scan if it hasn't run
    *  yet — used by the no-prefix everything search, which folds files in
    *  once the scan completes. No-op without an Electron host + a root. */
@@ -1291,6 +1321,16 @@ class QuickCardSearchUI {
     const roots = settings.get('fileSearchRoots');
     if (!electron || !roots.length) return;
     this.loadFileList(roots, electron);
+  }
+
+  /** The merged, de-duplicated listing with the exclusion setting applied —
+   *  the only path by which raw per-root listings become searchable rows
+   *  (so an excluded file can't reach results, ranking, or the warm pass). */
+  private mergedVisibleFiles(): FileEntry[] {
+    return filterExcludedFiles(
+      mergeFileLists(this.rootLists.values()),
+      settings.get('fileSearchExclusions'),
+    );
   }
 
   /** Recursively list openable files under every search folder once per
@@ -1311,7 +1351,7 @@ class QuickCardSearchUI {
       .then((perRoot) => {
         if (token !== this.asyncToken || !this.root) return;
         this.rootLists = new Map(perRoot);
-        this.fileList = mergeFileLists(this.rootLists.values());
+        this.fileList = this.mergedVisibleFiles();
         this.fileListLoading = false;
         if (!this.inFile) this.runSearch();
         void this.warmPins(); // pre-warm pinned files in the background
@@ -1343,7 +1383,7 @@ class QuickCardSearchUI {
     if (!this.root) return; // closed — the next open reloads from main
     if (!settings.get('fileSearchRoots').includes(payload.root)) return; // not one of our roots
     this.rootLists.set(payload.root, toFileEntries(payload.entries));
-    this.fileList = mergeFileLists(this.rootLists.values());
+    this.fileList = this.mergedVisibleFiles();
     this.fileListLoading = false;
     void this.warmPins(); // re-warm pins against the new mtimes
     // In-file mode shows a file's objects, not the listing — leave the
@@ -1495,6 +1535,47 @@ class QuickCardSearchUI {
     this.renderResults();
   }
 
+  /** Right-click on an in-file SEARCH result: clear the query and reveal
+   *  the same object in the outline browse, ancestors expanded and its
+   *  row selected — the hit shown in the file's structure instead of a
+   *  flat list. The row itself keeps its collapsed state; only what's
+   *  ABOVE it needs opening for it to be visible. */
+  private jumpToOutline(range: { from: number; to: number }): void {
+    if (!this.inFile) return;
+    const { outline, collapsedIdx } = this.inFile;
+    // The object's outline row shares its `from` (a cite result carries
+    // its tag's card range, so it lands on the tag row — cites aren't
+    // outline rows). Fall back to the DEEPEST row whose span contains
+    // the range start, for object kinds the outline doesn't list.
+    let target = outline.findIndex((e) => e.from === range.from);
+    if (target === -1) {
+      for (let i = 0; i < outline.length; i++) {
+        const e = outline[i]!;
+        if (e.from <= range.from && range.from < e.to) target = i; // deepest wins
+      }
+    }
+    if (target === -1) return;
+    // Expand every ancestor (the nearest shallower entry, walking up).
+    let level = outline[target]!.level;
+    for (let i = target - 1; i >= 0 && level > 1; i--) {
+      if (outline[i]!.level < level) {
+        collapsedIdx.delete(i);
+        level = outline[i]!.level;
+      }
+    }
+    this.input.value = '';
+    this.runSearch(); // empty in-file query → the outline browse
+    const at = this.results.findIndex((row) => row.outlineIndex === target);
+    if (at >= 0) {
+      this.setSelected(at);
+      // A jump is a navigation, not a keyboard step: pin the revealed
+      // row to the TOP of the results viewport (setSelected's 'nearest'
+      // leaves it hugging the bottom edge after the downward scroll).
+      this.rowEls[at]?.scrollIntoView({ block: 'start' });
+    }
+    this.input.focus();
+  }
+
   /** Esc from in-file mode → back to the file list, restoring the query. */
   private exitInFile(): void {
     if (!this.inFile) return;
@@ -1604,6 +1685,15 @@ class QuickCardSearchUI {
             this.toggleOutlineCollapse(r.outlineIndex);
           }
         });
+      } else if (this.inFile && r.source === 'fileobject' && r.fileRange) {
+        // Flat in-file SEARCH result (left-click inserts): right-click
+        // clears the query and reveals this hit in the outline browse —
+        // "show me where this lives in the file".
+        const range = r.fileRange;
+        row.addEventListener('contextmenu', (ev) => {
+          ev.preventDefault();
+          this.jumpToOutline(range);
+        });
       }
       const badge = document.createElement('span');
       badge.className = `pmd-qcs-row-badge pmd-qcs-badge-${r.source}`;
@@ -1643,6 +1733,18 @@ class QuickCardSearchUI {
           this.togglePinPath(path);
         });
         top.appendChild(star);
+        // Exclude button beside the star: adds the file to the
+        // file-search exclusion list (confirmed first — it's one click
+        // away from vanishing from every search).
+        const exclude = document.createElement('span');
+        exclude.className = 'pmd-qcs-exclude';
+        exclude.textContent = '⊘';
+        exclude.title = 'Exclude from file search';
+        exclude.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          void this.excludeFile(path, r.name);
+        });
+        top.appendChild(exclude);
         // Right-click dives into the file — same as Tab. Pinning has its own
         // star, so the context menu is free for the more useful action.
         row.addEventListener('contextmenu', (ev) => {

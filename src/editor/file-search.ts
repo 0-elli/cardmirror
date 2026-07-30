@@ -115,6 +115,40 @@ export interface OutlineEntry {
   to: number;
 }
 
+/** True when `path` IS an excluded entry or lives under an excluded
+ *  folder. Separator-aware prefixing: excluding `/a/b` covers
+ *  `/a/b/x.cmir` but never `/a/bc/x.cmir` (both `/` and `\`). Exact
+ *  string compare — exclusions and listings come from the same native
+ *  pickers/scans, so their casing and shape agree. */
+export function isPathExcluded(path: string, exclusions: readonly string[]): boolean {
+  for (const raw of exclusions) {
+    const ex = raw.replace(/[\\/]+$/, ''); // tolerate a trailing separator
+    if (!ex) continue;
+    if (path === ex) return true;
+    if (
+      path.length > ex.length &&
+      path.startsWith(ex) &&
+      (path[ex.length] === '/' || path[ex.length] === '\\')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Drop excluded entries from a listing. The ONE choke point for the
+ *  exclusion setting: it runs where listings become the palette's file
+ *  list, so excluded files never reach results, ranking, or the warm
+ *  pass (which only warms paths present in the list — an excluded pin
+ *  goes dormant rather than being unpinned). */
+export function filterExcludedFiles(
+  files: readonly FileEntry[],
+  exclusions: readonly string[],
+): FileEntry[] {
+  if (exclusions.length === 0) return [...files];
+  return files.filter((f) => !isPathExcluded(f.path, exclusions));
+}
+
 /** Bare filename from a path/relPath (handles `/` and `\`). */
 export function baseName(p: string): string {
   const m = p.split(/[\\/]/);
@@ -149,6 +183,25 @@ function startsAtWordBoundary(text: string, tok: string): boolean {
   return false;
 }
 
+/** Lowercased whitespace-split query tokens — the palette's shared
+ *  tokenization, exported (with `matchesAllTokens`) for filter-style
+ *  surfaces like the live-view picker that share the matching but keep
+ *  their own ordering. */
+export function tokenizeQuery(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Order-independent multi-token AND-match: every token must land in the
+ *  primary field or (when non-empty) the secondary field. Both fields
+ *  must already be lowercase. This is the predicate `matchTier` builds
+ *  its relevance tiers on. */
+export function matchesAllTokens(p: string, s: string, tokens: readonly string[]): boolean {
+  for (const tok of tokens) {
+    if (!p.includes(tok) && !(s !== '' && s.includes(tok))) return false;
+  }
+  return true;
+}
+
 /** Relevance tier for a candidate, or null when it doesn't match every token.
  *  Lower is better. Tiers key off the PRIMARY field (a heading's label, a
  *  file's name); a match that only lands in the SECONDARY field (a card's cite,
@@ -166,9 +219,7 @@ function matchTier(
   q: string,
   t0: string,
 ): number | null {
-  for (const tok of tokens) {
-    if (!p.includes(tok) && !(s !== '' && s.includes(tok))) return null;
-  }
+  if (!matchesAllTokens(p, s, tokens)) return null;
   if (p === q) return 0;
   if (p.startsWith(q)) return 1;
   if (tokens.every((tok) => p.includes(tok))) return startsAtWordBoundary(p, t0) ? 2 : 3;
@@ -188,7 +239,7 @@ function rank<T>(
   secondary: (t: T) => string,
   tiebreak: (a: T, b: T) => number,
 ): T[] {
-  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = tokenizeQuery(query);
   if (tokens.length === 0) return [...items].sort(tiebreak);
   const q = tokens.join(' ');
   const t0 = tokens[0]!;
