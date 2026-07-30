@@ -58,7 +58,13 @@ import { NavigationPanel, installNavResizeHandle } from './nav-panel.js';
 import { EditorDragSurface } from './drag-editor-surface.js';
 import { dragController, rewriteHeadingIds } from './drag-controller.js';
 import { isBenchmarkActive } from './benchmark-state.js';
-import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
+import {
+  countReadAloudSplit,
+  totalWords,
+  formatReadTimeFor,
+  formatNumber,
+  type ReadAloudCounts,
+} from './word-count.js';
 import { liveContainerSegment } from './live-read-time.js';
 import { openWordCount } from './word-count-ui.js';
 import { isAutosaveOnForPath, setAutosaveForPath } from './autosave-prefs-store.js';
@@ -1144,7 +1150,7 @@ class Slot {
    *  refreshes `liveContainerReadTime` triggers don't re-walk the doc
    *  (single-pane's `lastWholeDocWords` equivalent — one slot per pane
    *  suffices; the doc reference distinguishes stacked docs too). */
-  private wcDocCache: { doc: PMNode; words: number } | null = null;
+  private wcDocCache: { doc: PMNode; counts: ReadAloudCounts } | null = null;
 
   /** Recompute and display the visible doc's word count + read times
    *  for the first two configured readers. */
@@ -1160,15 +1166,16 @@ class Slot {
     // regardless of any selection (the Σ button covers selection counts
     // on demand).
     const hasSel = settings.get('liveSelectionWordCount') && !sel.empty;
-    let words: number;
+    let counts: ReadAloudCounts;
     if (hasSel) {
-      words = countReadAloudWords(rec.view.state.doc, sel.from, sel.to);
+      counts = countReadAloudSplit(rec.view.state.doc, sel.from, sel.to);
     } else if (this.wcDocCache && this.wcDocCache.doc === rec.view.state.doc) {
-      words = this.wcDocCache.words;
+      counts = this.wcDocCache.counts;
     } else {
-      words = countReadAloudWords(rec.view.state.doc);
-      this.wcDocCache = { doc: rec.view.state.doc, words };
+      counts = countReadAloudSplit(rec.view.state.doc);
+      this.wcDocCache = { doc: rec.view.state.doc, counts };
     }
+    const words = totalWords(counts);
     const readers = settings.get('readers').slice(0, 2);
     // "Doc:" label while the container segment is enabled, mirroring
     // single-pane; bare number when off (the pre-feature look).
@@ -1179,7 +1186,7 @@ class Slot {
         : formatNumber(words);
     const parts = [head];
     for (const r of readers) {
-      parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);
+      parts.push(`${r.name}: ${formatReadTimeFor(counts, r)}`);
     }
     const container = liveContainerSegment(rec.view.state);
     this.wcEl.textContent = container

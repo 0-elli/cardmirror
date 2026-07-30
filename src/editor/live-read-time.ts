@@ -25,7 +25,13 @@
 import type { EditorState } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { settings } from './settings.js';
-import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
+import {
+  countReadAloudSplit,
+  totalWords,
+  formatReadTimeFor,
+  formatNumber,
+  type ReadAloudCounts,
+} from './word-count.js';
 import { TYPE_TO_LEVEL, sectionEndFromHeading } from './headings.js';
 
 export interface EnclosingContainer {
@@ -79,15 +85,15 @@ export function findEnclosingContainer(state: EditorState): EnclosingContainer |
   return null;
 }
 
-let cache: { doc: PMNode; from: number; to: number; words: number } | null = null;
+let cache: { doc: PMNode; from: number; to: number; counts: ReadAloudCounts } | null = null;
 
-function countCached(doc: PMNode, from: number, to: number): number {
+function countCached(doc: PMNode, from: number, to: number): ReadAloudCounts {
   if (cache && cache.doc === doc && cache.from === from && cache.to === to) {
-    return cache.words;
+    return cache.counts;
   }
-  const words = countReadAloudWords(doc, from, to);
-  cache = { doc, from, to, words };
-  return words;
+  const counts = countReadAloudSplit(doc, from, to);
+  cache = { doc, from, to, counts };
+  return counts;
 }
 
 /** The readout tail ("Card: 42 · Amy: 0:31 · Ben: 0:34"), or null when
@@ -98,22 +104,22 @@ export function liveContainerSegment(state: EditorState): string | null {
   if (!settings.get('liveContainerReadTime')) return null;
   const sel = state.selection;
   let label: string;
-  let words: number;
+  let counts: ReadAloudCounts;
   if (!sel.empty) {
     // Primary readout already shows the selection when
     // liveSelectionWordCount is on — no duplicate segment.
     if (settings.get('liveSelectionWordCount')) return null;
     label = 'Sel';
-    words = countReadAloudWords(state.doc, sel.from, sel.to);
+    counts = countReadAloudSplit(state.doc, sel.from, sel.to);
   } else {
     const container = findEnclosingContainer(state);
     if (!container) return null;
     label = container.label;
-    words = countCached(state.doc, container.from, container.to);
+    counts = countCached(state.doc, container.from, container.to);
   }
-  const parts = [`${label}: ${formatNumber(words)}`];
+  const parts = [`${label}: ${formatNumber(totalWords(counts))}`];
   for (const r of settings.get('readers').slice(0, 2)) {
-    parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);
+    parts.push(`${r.name}: ${formatReadTimeFor(counts, r)}`);
   }
   return parts.join(' · ');
 }

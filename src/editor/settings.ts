@@ -74,10 +74,15 @@ const SECRET_SETTING_KEYS = new Set<string>([
   'myMemoryEmail',
 ]);
 
-/** Reader profile for read-time estimates: name + words-per-minute. */
+/** Reader profile for read-time estimates: name + words-per-minute.
+ *  `tagWpm` is the optional SECOND speed most readers actually have —
+ *  the rate for tags, analytics, and cites (the structural read), with
+ *  `wpm` then covering just highlighted card bodies. Absent → `wpm`
+ *  covers everything. */
 export interface ReaderConfig {
   name: string;
   wpm: number;
+  tagWpm?: number;
 }
 
 /** A paired machine you can send cards to. `code` is that machine's
@@ -2036,7 +2041,11 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'readers',
     label: 'Readers for read-time estimates',
     description:
-      'Each reader has a name and a words-per-minute rate. The first two are displayed live in the bottom bar; all show up in the Word Count Selection dialog.',
+      'Each reader has a name and a words-per-minute rate, plus an optional second rate '
+      + 'for tags, analytics, and cites — most people read those faster than highlighted '
+      + 'card bodies. Leave the second rate blank and the main rate covers everything. '
+      + 'The first two readers are displayed live in the bottom bar; all show up in the '
+      + 'Word Count Selection dialog.',
     kind: 'readers',
     category: 'general',
     section: 'Word counts',
@@ -5142,7 +5151,12 @@ function sanitizeReaders(raw: unknown): ReaderConfig[] {
     const name = String((r as ReaderConfig).name ?? '').trim();
     const wpm = Number((r as ReaderConfig).wpm);
     if (!name || !Number.isFinite(wpm) || wpm <= 0) continue;
-    out.push({ name, wpm: Math.round(wpm) });
+    const reader: ReaderConfig = { name, wpm: Math.round(wpm) };
+    // Optional tags/analytics/cites rate: keep only a usable value —
+    // anything else reads as blank ("main rate covers everything").
+    const tagWpm = Number((r as ReaderConfig).tagWpm);
+    if (Number.isFinite(tagWpm) && tagWpm > 0) reader.tagWpm = Math.round(tagWpm);
+    out.push(reader);
   }
   return out.length > 0 ? out : [...DEFAULTS.readers];
 }

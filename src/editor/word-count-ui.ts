@@ -8,7 +8,7 @@
 
 import type { EditorView } from 'prosemirror-view';
 import { settings } from './settings.js';
-import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
+import { countReadAloudSplit, totalWords, formatReadTimeFor, formatNumber } from './word-count.js';
 import { setIcon } from './icons';
 import { pushOverlay, popOverlay } from './overlay-stack.js';
 import {
@@ -96,9 +96,10 @@ class WordCountModal {
 
     const sel = view.state.selection;
     const hasSelection = !sel.empty;
-    const words = hasSelection
-      ? countReadAloudWords(view.state.doc, sel.from, sel.to)
-      : countReadAloudWords(view.state.doc);
+    const counts = hasSelection
+      ? countReadAloudSplit(view.state.doc, sel.from, sel.to)
+      : countReadAloudSplit(view.state.doc);
+    const words = totalWords(counts);
 
     const scope = document.createElement('p');
     scope.className = 'pmd-wc-scope';
@@ -134,11 +135,13 @@ class WordCountModal {
       tdName.textContent = r.name;
       tr.appendChild(tdName);
       const tdWpm = document.createElement('td');
-      tdWpm.textContent = String(r.wpm);
+      // Two-rate readers show both: "200 / 260" = body / tags·cites.
+      tdWpm.textContent = r.tagWpm != null ? `${r.wpm} / ${r.tagWpm}` : String(r.wpm);
+      if (r.tagWpm != null) tdWpm.title = 'card bodies / tags, analytics & cites';
       tdWpm.className = 'pmd-wc-numeric';
       tr.appendChild(tdWpm);
       const tdTime = document.createElement('td');
-      tdTime.textContent = formatReadTime(words, r.wpm);
+      tdTime.textContent = formatReadTimeFor(counts, r);
       tdTime.className = 'pmd-wc-numeric';
       tr.appendChild(tdTime);
       tbody.appendChild(tr);

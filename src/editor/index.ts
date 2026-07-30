@@ -286,7 +286,14 @@ import {
 } from './ribbon-commands.js';
 import { openWordCount } from './word-count-ui.js';
 import { wireColorPanel } from './color-panel.js';
-import { countReadAloudWords, formatReadTime, formatNumber } from './word-count.js';
+import {
+  countReadAloudWords,
+  countReadAloudSplit,
+  totalWords,
+  formatReadTimeFor,
+  formatNumber,
+  type ReadAloudCounts,
+} from './word-count.js';
 import { liveContainerSegment } from './live-read-time.js';
 import { getHost, getElectronHost, isWindowsHost, isSameOpenHandle, type OpenedFile, type JournalEntry } from './host/index.js';
 import {
@@ -4572,7 +4579,7 @@ function effectiveFontSizeForDisplay(state: EditorState): FontSizeInfo {
  *  doc changes (the O(doc) walk); reused when the selection collapses
  *  back to a cursor so a selection change never re-walks the whole doc
  *  just to restore the whole-doc readout. */
-let lastWholeDocWords: number | null = null;
+let lastWholeDocWords: ReadAloudCounts | null = null;
 
 function refreshWordCount(opts?: { selectionOnly?: boolean }): void {
   // In multi-doc mode the shared status-bar word counter is hidden
@@ -4589,20 +4596,21 @@ function refreshWordCount(opts?: { selectionOnly?: boolean }): void {
   // off, the bar always shows the whole-doc count regardless of any
   // selection — the Word Count button covers selection counts on demand.
   const hasSelection = settings.get('liveSelectionWordCount') && !sel.empty;
-  let words: number;
+  let counts: ReadAloudCounts;
   if (hasSelection) {
     // Selection read time: count only the selected range (O(range)).
     // Leaves the cached whole-doc count untouched.
-    words = countReadAloudWords(view.state.doc, sel.from, sel.to);
+    counts = countReadAloudSplit(view.state.doc, sel.from, sel.to);
   } else if (opts?.selectionOnly && lastWholeDocWords !== null) {
     // Selection just collapsed to a cursor on a selection-only
     // transaction: the whole-doc count can't have changed, so reuse the
     // cache instead of re-walking the doc on every cursor move.
-    words = lastWholeDocWords;
+    counts = lastWholeDocWords;
   } else {
-    words = countReadAloudWords(view.state.doc);
-    lastWholeDocWords = words;
+    counts = countReadAloudSplit(view.state.doc);
+    lastWholeDocWords = counts;
   }
+  const words = totalWords(counts);
 
   const readers = settings.get('readers').slice(0, 2);
   // With the container segment enabled the whole-doc side gets a "Doc:"
@@ -4615,7 +4623,7 @@ function refreshWordCount(opts?: { selectionOnly?: boolean }): void {
       : formatNumber(words);
   const parts = [head];
   for (const r of readers) {
-    parts.push(`${r.name}: ${formatReadTime(words, r.wpm)}`);
+    parts.push(`${r.name}: ${formatReadTimeFor(counts, r)}`);
   }
   const container = liveContainerSegment(view.state);
   wordCountText.textContent = container

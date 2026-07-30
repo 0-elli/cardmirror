@@ -1,0 +1,85 @@
+/**
+ * Read-aloud word counting — the body/structure split and the two-rate
+ * read-time math (2026-07-29). The split's contract: tags + analytics +
+ * cite-marked text form the `other` bucket (a reader's optional second
+ * speed); highlighted non-shaded body text forms `body`; everything
+ * else counts nowhere. Blank second rate must reproduce the single-rate
+ * arithmetic exactly.
+ */
+
+import { describe, expect, it } from 'vitest';
+import type { Node as PMNode } from 'prosemirror-model';
+import { schema } from '../../src/schema/index.js';
+import {
+  countReadAloudSplit,
+  countReadAloudWords,
+  totalWords,
+  readTimeSeconds,
+  formatReadTimeFor,
+  formatReadTime,
+} from '../../src/editor/word-count.js';
+
+const n = schema.nodes;
+const m = schema.marks;
+
+function fixtureDoc(): PMNode {
+  return n['doc']!.create(null, [
+    n['card']!.create(null, [
+      // 3 words at the tags/cites rate.
+      n['tag']!.create({ id: 'T' }, schema.text('HEG SOLVES WAR')),
+      // 2 cite-marked words at the tags/cites rate; the rest of the
+      // cite paragraph is silent.
+      n['cite_paragraph']!.create(null, [
+        schema.text('Brooks 24', [m['cite_mark']!.create()]),
+        schema.text(' — professor of things, quals quals quals'),
+      ]),
+      n['card_body']!.create(null, [
+        // 4 highlighted words at the body rate.
+        schema.text('read these four words', [m['highlight']!.create()]),
+        // Unhighlighted body text is not read.
+        schema.text(' and lots of unread argument text here'),
+        // Shaded highlight = reference-style, not read.
+        schema.text(' shaded skip', [m['highlight']!.create(), m['shading']!.create()]),
+      ]),
+    ]),
+    // 5 words at the tags/cites rate.
+    n['analytic']!.create({ id: 'A' }, schema.text('extend this analytic every time')),
+  ]);
+}
+
+describe('countReadAloudSplit', () => {
+  it('buckets tags, analytics, and cites as `other`; highlighted body as `body`', () => {
+    const counts = countReadAloudSplit(fixtureDoc());
+    expect(counts).toEqual({ body: 4, other: 10 }); // 3 tag + 2 cite + 5 analytic
+    expect(totalWords(counts)).toBe(14);
+    expect(countReadAloudWords(fixtureDoc())).toBe(14); // total wrapper agrees
+  });
+
+  it('empty range counts nothing', () => {
+    expect(countReadAloudSplit(fixtureDoc(), 3, 3)).toEqual({ body: 0, other: 0 });
+  });
+});
+
+describe('two-rate read time', () => {
+  const counts = { body: 100, other: 50 };
+
+  it('blank second rate reproduces the single-rate arithmetic exactly', () => {
+    expect(readTimeSeconds(counts, { wpm: 200 })).toBe(45); // 150 words @ 200
+    expect(formatReadTimeFor(counts, { wpm: 200 })).toBe(formatReadTime(150, 200));
+  });
+
+  it('with tagWpm set, body reads at wpm and the rest at tagWpm', () => {
+    // 100 @ 200 = 30s, 50 @ 300 = 10s.
+    expect(readTimeSeconds(counts, { wpm: 200, tagWpm: 300 })).toBe(40);
+    expect(formatReadTimeFor(counts, { wpm: 200, tagWpm: 300 })).toBe('0:40');
+  });
+
+  it('an unusable tagWpm falls back to the main rate', () => {
+    expect(readTimeSeconds(counts, { wpm: 200, tagWpm: 0 })).toBe(45);
+    expect(readTimeSeconds(counts, { wpm: 200, tagWpm: -5 })).toBe(45);
+  });
+
+  it('an unusable main rate renders as a dash', () => {
+    expect(formatReadTimeFor(counts, { wpm: 0 })).toBe('—');
+  });
+});

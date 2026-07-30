@@ -2362,6 +2362,41 @@ function buildReadersEditor(): HTMLElement {
       wpmLabel.textContent = 'wpm';
       row.appendChild(wpmLabel);
 
+      // Optional SECOND rate: tags, analytics, and cites (the structural
+      // read). Blank = the main rate covers everything.
+      const tagWpmInput = document.createElement('input');
+      tagWpmInput.type = 'number';
+      tagWpmInput.className = 'pmd-reader-wpm pmd-reader-tagwpm';
+      tagWpmInput.min = '1';
+      tagWpmInput.step = '1';
+      tagWpmInput.value = reader.tagWpm != null ? String(reader.tagWpm) : '';
+      tagWpmInput.placeholder = 'same';
+      tagWpmInput.title =
+        'Optional separate rate for tags, analytics, and cites. '
+        + 'Blank: the main rate covers everything.';
+      tagWpmInput.addEventListener('change', () => {
+        const trimmed = tagWpmInput.value.trim();
+        const clear = trimmed === '';
+        const v = parseInt(trimmed, 10);
+        if (!clear && (!Number.isFinite(v) || v <= 0)) {
+          tagWpmInput.value = reader.tagWpm != null ? String(reader.tagWpm) : '';
+          return;
+        }
+        const next = settings.get('readers').map((r, i) => {
+          if (i !== idx) return r;
+          const { tagWpm: _prev, ...rest } = r;
+          return clear ? rest : { ...rest, tagWpm: v };
+        });
+        commit(next);
+      });
+      row.appendChild(tagWpmInput);
+
+      const tagWpmLabel = document.createElement('span');
+      tagWpmLabel.className = 'pmd-reader-wpm-label';
+      tagWpmLabel.textContent = 'tags/cites wpm';
+      tagWpmLabel.title = tagWpmInput.title;
+      row.appendChild(tagWpmLabel);
+
       const upBtn = document.createElement('button');
       upBtn.type = 'button';
       upBtn.className = 'pmd-reader-move';

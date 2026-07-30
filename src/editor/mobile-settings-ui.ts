@@ -417,6 +417,28 @@ function buildReadersEditor(): HTMLElement {
         next[i] = { ...next[i]!, wpm: Math.round(n) };
         settings.set('readers', next);
       });
+      // Optional second rate for tags/analytics/cites — blank = the
+      // main rate covers everything (parity with the desktop editor).
+      const tagWpm = document.createElement('input');
+      tagWpm.type = 'number';
+      tagWpm.value = r.tagWpm != null ? String(r.tagWpm) : '';
+      tagWpm.placeholder = 'same';
+      tagWpm.setAttribute('aria-label', `${r.name} tags/cites words per minute`);
+      tagWpm.addEventListener('change', () => {
+        const trimmed = tagWpm.value.trim();
+        const n = Number(trimmed);
+        const next = settings.get('readers').slice();
+        if (trimmed === '') {
+          const { tagWpm: _drop, ...rest } = next[i]!;
+          next[i] = rest;
+        } else if (!Number.isFinite(n) || n <= 0) {
+          tagWpm.value = r.tagWpm != null ? String(r.tagWpm) : '';
+          return;
+        } else {
+          next[i] = { ...next[i]!, tagWpm: Math.round(n) };
+        }
+        settings.set('readers', next);
+      });
       const del = document.createElement('button');
       del.type = 'button';
       del.textContent = '✕';
@@ -429,6 +451,7 @@ function buildReadersEditor(): HTMLElement {
       });
       row.appendChild(name);
       row.appendChild(wpm);
+      row.appendChild(tagWpm);
       row.appendChild(del);
       wrap.appendChild(row);
     });
