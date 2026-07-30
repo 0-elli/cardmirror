@@ -82,6 +82,7 @@ import {
   captureFocusForDialog,
 } from './text-prompt.js';
 import { showToast } from './toast.js';
+import { recordRecent } from './recents-store.js';
 import { maybeDecryptForOpen, OpenCancelledError } from './open-encrypted.js';
 import {
   buildEditorPlugins,
@@ -2644,6 +2645,17 @@ class MultiPaneShell {
       threads,
     });
     slot.push(record);
+    // Multi-pane opens are recents too — this is the one funnel every
+    // slot open passes through (Open dialog, palette, drag-drop, OS
+    // association, spawn payloads, show-in-context). String-handle only:
+    // recovered journals and mode-switch respawns of unsaved docs have
+    // no reopenable path, and recording them would render dead rows
+    // (mirrors the single-doc mount's recordAsRecent guard). The home
+    // screen never mounts in this window; the entry surfaces in other
+    // windows' home screens and on the next launch.
+    if (typeof opened.handle === 'string') {
+      recordRecent({ handle: opened.handle, filename: opened.name, format });
+    }
     // DOM focus into the just-opened doc so keyboard chords work with
     // no extra click (2026-07-27 focus audit: this path never focused
     // — push only moves the bookkeeping). Skipped for a pane hidden

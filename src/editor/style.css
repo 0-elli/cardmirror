@@ -4216,6 +4216,9 @@ html.pmd-home-active #speech-doc-banner {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* No inner scroll (unlike the sessions list): up to 10 rows just take
+     the space — the user's call, 2026-07-29; the page scrolls as a whole
+     if it must. */
 }
 
 /* Collaboration sessions — dedicated section below Recent. Scrolls
@@ -4349,6 +4352,12 @@ html.pmd-home-active #speech-doc-banner {
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: right;
+  /* Truncate the LEFT side (ellipsis at the line's end edge = left
+     under rtl): a long path keeps its tail visible. Text still sits
+     right (explicit text-align above). The JS side wraps the path in
+     LRM guards. NOTE: session rows reuse this class for their "saved
+     2h ago" meta — short, never overflows, LTR-safe under rtl. */
+  direction: rtl;
 }
 
 /* Hide the dropzone pill from the chrome when the user has

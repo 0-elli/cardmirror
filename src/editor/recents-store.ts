@@ -21,7 +21,7 @@
  */
 
 const STORAGE_KEY = 'pmd-recent-files';
-const MAX_RECENTS = 6;
+const MAX_RECENTS = 10;
 
 export interface RecentFile {
   /** Absolute path on Electron; null on web (unserializable
@@ -110,4 +110,20 @@ export function clearRecents(): void {
 export function subscribeRecents(fn: Listener): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
+}
+
+// Cross-window sync: a write from ANOTHER window arrives as a DOM
+// `storage` event (it never fires in the writing window, which already
+// notified its own listeners in write()) — the same mechanism settings
+// rely on to sync across windows. Without this, a home screen sitting
+// visible while a second window opens files shows a stale list until
+// re-shown. A null key is a wholesale localStorage.clear(): recents
+// were part of it, so re-read then too.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY || e.key === null) {
+      const items = read();
+      for (const fn of listeners) fn(items);
+    }
+  });
 }

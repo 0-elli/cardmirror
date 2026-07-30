@@ -655,7 +655,11 @@ class HomeScreen {
 
     const path = document.createElement('span');
     path.className = 'pmd-home-recent-path';
-    path.textContent = recent.handle ?? '';
+    // The cell truncates on the LEFT (CSS direction: rtl) so the tail —
+    // the folders that actually distinguish the file — stays visible;
+    // LRM guards pin the leading separator, which bidi would otherwise
+    // float to the visual right end. Full path in the row tooltip above.
+    path.textContent = recent.handle ? `\u{200e}${recent.handle}\u{200e}` : '';
     row.appendChild(path);
 
     if (reopenable) {
