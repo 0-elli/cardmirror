@@ -239,6 +239,9 @@ interface ElectronAPI {
   listCmirFiles(
     root: string,
   ): Promise<Array<{ path: string; relPath: string; mtimeMs: number; size: number }>>;
+  /** Report the FULL current search-root set so main's persisted index
+   *  can drop removed roots. Optional: older packaged shells lack it. */
+  pruneCmirIndex?(roots: string[]): Promise<void>;
   /** Fires when main's background revalidation finds the `.cmir`
    *  listing for `root` changed, so an open command palette can swap in
    *  the fresh listing live instead of waiting for the next open. */
@@ -807,6 +810,10 @@ export class ElectronHost implements Host {
     root: string,
   ): Promise<Array<{ path: string; relPath: string; mtimeMs: number; size: number }>> {
     return api().listCmirFiles(root);
+  }
+
+  async pruneCmirIndex(roots: string[]): Promise<void> {
+    await api().pruneCmirIndex?.(roots);
   }
 
   onCmirFileIndexUpdated(

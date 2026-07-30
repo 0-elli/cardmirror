@@ -36,6 +36,7 @@ import {
   readAccessibilityTreeEnabled,
   writeAccessibilityTreeEnabled,
 } from './accessibility-pref.js';
+import { pruneIndexRoots } from './cmir-index-prune.js';
 import { installMacAccessibilitySuppression } from './ax-suppress-mac.js';
 import { resolveCmirCandidates, isWithin } from './transclusion-path.js';
 import {
@@ -1335,6 +1336,22 @@ function revalidateCmirIndex(root: string): void {
     })
     .catch(() => cmirRevalidating.delete(root));
 }
+
+// The renderer reports the FULL current search-root set (it owns the
+// settings) so the index can forget removed roots — without this,
+// entries for a root removed from settings persisted in every rewrite
+// forever, only ever growing the file. Runs before/alongside the
+// per-root listing calls at boot and on every palette load, so a
+// mid-session settings change is pruned by the next palette open.
+ipcMain.handle('host:cmir-prune-index', async (_event, roots: unknown): Promise<void> => {
+  if (!Array.isArray(roots) || !roots.every((r): r is string => typeof r === 'string')) {
+    return;
+  }
+  await ensureCmirIndexLoaded();
+  if (pruneIndexRoots(cmirIndexMem, roots)) {
+    await persistCmirIndex();
+  }
+});
 
 ipcMain.handle('host:list-cmir-files', async (_event, root: string): Promise<CmirFileEntry[]> => {
   if (typeof root !== 'string' || !root) return [];

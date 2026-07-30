@@ -306,6 +306,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('host:list-cmir-files', root) as Promise<
       Array<{ path: string; relPath: string; mtimeMs: number; size: number }>
     >,
+  /** Report the FULL current search-root set so the persisted index can
+   *  forget removed roots (they otherwise live in the file forever). */
+  pruneCmirIndex: (roots: string[]) =>
+    ipcRenderer.invoke('host:cmir-prune-index', roots) as Promise<void>,
   /** Background revalidation of the `.cmir` listing finished and the
    *  tree changed — carries the fresh listing so an open palette can
    *  swap it in live. Broadcast to every window. */

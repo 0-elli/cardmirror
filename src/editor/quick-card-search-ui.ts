@@ -264,6 +264,11 @@ export function prewarmQuickCardFiles(): void {
   const electron = getElectronHost();
   if (!electron) return;
   const roots = settings.get('fileSearchRoots');
+  // Housekeeping BEFORE the roots-length gate: reporting the full
+  // current-roots set (even an empty one) lets main drop removed roots
+  // from the persisted index, which otherwise carries them forever.
+  // (`?.` — test hosts and older shells may lack the method.)
+  void electron.pruneCmirIndex?.(roots).catch(() => {});
   if (!roots.length) return;
   // Layer 1 — the file LIST. Kick the per-root scan off in main immediately,
   // not on renderer-idle: `listCmirFiles` is only async IPC (the recursive walk
@@ -1338,6 +1343,10 @@ class QuickCardSearchUI {
    *  (if still open + still in file mode). A folder that fails to list resolves
    *  to empty rather than failing the whole load. */
   private loadFileList(roots: string[], electron: NonNullable<ReturnType<typeof getElectronHost>>): void {
+    // Re-report the current-roots set so a mid-session settings change
+    // prunes the persisted index at the next palette open (boot-time
+    // prewarm covers launches).
+    void electron.pruneCmirIndex?.(roots).catch(() => {});
     this.fileListLoading = true;
     const token = ++this.asyncToken;
     void Promise.all(
