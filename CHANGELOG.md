@@ -64,14 +64,15 @@ see `DETAILED_CHANGELOG.md`.
   and out-of-order words land, and a card's tag row also matches on
   its cite. Rows keep their outline order.
 
-- **Recent files, rounded out.** The home screen's Recent list now
-  remembers files opened in the three-pane workspace, updates live
-  when another window opens or saves a file, holds ten entries instead
-  of six, and trims long paths from the left so the file and folder
-  names stay readable (the full path is in the tooltip). Settings'
-  folder-path fields trim the same way.
-
 ### Fixed
+
+- **The Recent list missed files and went stale.** Files opened in the
+  three-pane workspace were never recorded on the home screen's Recent
+  list, and a home screen left visible didn't refresh when another
+  window opened or saved a file — both fixed. While in there: the list
+  now holds ten entries instead of six, and long paths trim from the
+  left so the file and folder names stay readable (the full path is in
+  the tooltip); Settings' folder-path fields trim the same way.
 
 - **Linked copies of a single card from Word files.** Transcluding a
   card by its tag from a `.docx` source failed with "This Word heading
@@ -90,8 +91,7 @@ see `DETAILED_CHANGELOG.md`.
 
 - **Removed search folders no longer haunt the file index.** Folders
   taken out of the file-search settings stayed in the on-disk index
-  cache forever, growing it without bound (one real-world index had
-  shrunk from 130 MB to 20 MB after the fix). The index now forgets
+  cache forever, growing it without bound. The index now forgets
   roots the moment they leave settings.
 
 ## 0.1.0-beta.26 — 2026-07-28

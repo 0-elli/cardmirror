@@ -28,7 +28,7 @@ in each release, see `CHANGELOG.md`.
 
 - **Index prunes removed roots** (`host:cmir-prune-index` era, now
   `configure`): removed search folders persisted in the on-disk index
-  forever (found: 129.7 MB, mostly corpses; 19.8 MB after). The
+  forever, growing the file without bound. The
   renderer reports the full current-roots set at boot and palette open;
   the service drops the rest and rewrites only when something changed.
 
