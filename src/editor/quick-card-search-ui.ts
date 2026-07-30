@@ -96,11 +96,26 @@ import { scheduleIdle } from './idle-scheduler.js';
 interface WarmEntry {
   mtimeMs: number;
   enabledSig: string;
-  doc: PMNode;
+  /** Exactly one of `doc`/`docJson` is set: the worker warm path stores
+   *  ProseMirror JSON (a PMNode can't cross the worker boundary) and a
+   *  real dive materializes it once via `warmDocOf`; a dive-time parse
+   *  stores the live doc directly. */
+  doc: PMNode | null;
+  docJson: unknown | null;
   objects: FileObject[];
   outline: OutlineEntry[];
 }
 const warmCache = new Map<string, WarmEntry>();
+
+/** The entry's live doc, materializing (and caching) from JSON on first
+ *  need — the only fromJSON cost, paid on an actual dive. */
+function warmDocOf(entry: WarmEntry): PMNode {
+  if (!entry.doc) {
+    entry.doc = schema.nodeFromJSON(entry.docJson);
+    entry.docJson = null;
+  }
+  return entry.doc;
+}
 import {
   DEFAULT_RIBBON_KEYS,
   formatKeyForDisplay,
@@ -189,6 +204,94 @@ async function parseFileDoc(
   return parseNative(bytes).doc;
 }
 
+// ── Off-thread parsing (warm-parse-worker.ts) ───────────────────────
+// Parse + extract run in a Web Worker so a multi-hundred-ms parse of a
+// big pinned file can never stall the renderer thread (the boot-window
+// resize-freeze symptom). Lazy: constructed on first use, and hosts
+// without Worker (jsdom tests) fall back to the inline parse.
+
+let parseWorker: Worker | null | undefined;
+let parseWorkerNextId = 1;
+const parseWorkerPending = new Map<
+  number,
+  {
+    resolve: (r: { docJson: unknown; objects: FileObject[]; outline: OutlineEntry[] }) => void;
+    reject: (e: Error) => void;
+  }
+>();
+
+function getParseWorker(): Worker | null {
+  if (parseWorker !== undefined) return parseWorker;
+  try {
+    if (typeof Worker === 'undefined') throw new Error('no Worker in this host');
+    parseWorker = new Worker(new URL('./warm-parse-worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    parseWorker.onmessage = (e: MessageEvent): void => {
+      const msg = e.data as
+        | { id: number; ok: true; docJson: unknown; objects: FileObject[]; outline: OutlineEntry[] }
+        | { id: number; ok: false; error: string };
+      const pending = parseWorkerPending.get(msg.id);
+      if (!pending) return;
+      parseWorkerPending.delete(msg.id);
+      if (msg.ok) pending.resolve(msg);
+      else pending.reject(new Error(msg.error));
+    };
+    parseWorker.onerror = (): void => {
+      for (const [, pending] of parseWorkerPending) {
+        pending.reject(new Error('parse worker failed'));
+      }
+      parseWorkerPending.clear();
+    };
+  } catch {
+    parseWorker = null;
+  }
+  return parseWorker;
+}
+
+interface ParsedFile {
+  /** Live doc when the caller asked for one (or the inline fallback
+   *  ran); otherwise null with `docJson` set for lazy materialization. */
+  doc: PMNode | null;
+  docJson: unknown | null;
+  objects: FileObject[];
+  outline: OutlineEntry[];
+}
+
+/** Parse + extract, off-thread when possible. `wantLiveDoc` pays the
+ *  one fromJSON immediately (dive); warming skips it and stores JSON. */
+async function parseAndExtract(
+  bytes: Uint8Array,
+  format: 'cmir' | 'docx',
+  wantLiveDoc: boolean,
+): Promise<ParsedFile> {
+  const worker = getParseWorker();
+  if (worker) {
+    try {
+      const res = await new Promise<{
+        docJson: unknown;
+        objects: FileObject[];
+        outline: OutlineEntry[];
+      }>((resolve, reject) => {
+        const id = parseWorkerNextId++;
+        parseWorkerPending.set(id, { resolve, reject });
+        worker.postMessage({ id, bytes, format, kinds: [...enabledSet()] });
+      });
+      return {
+        doc: wantLiveDoc ? schema.nodeFromJSON(res.docJson) : null,
+        docJson: wantLiveDoc ? null : res.docJson,
+        objects: res.objects,
+        outline: res.outline,
+      };
+    } catch {
+      /* worker died / parse failed there — retry inline below */
+    }
+  }
+  const doc = await parseFileDoc(bytes, format);
+  const { objects, outline } = extractFile(doc, enabledSet());
+  return { doc, docJson: null, objects, outline };
+}
+
 /** Parse the pinned/recent files that aren't warm yet (or are stale by
  *  mtime), one at a time, waiting for an idle frame AND a pause in
  *  typing before each parse so it never blocks a keystroke. Prunes
@@ -215,11 +318,21 @@ async function runWarmPass(
       try {
         const file = await electron.readFileAtPath(path);
         if (!file) continue;
+        // The parse itself runs off-thread (parseAndExtract → worker),
+        // but the idle gate stays: the worker competes for CPU cores,
+        // and the result's structured-clone receive lands on this
+        // thread — neither belongs in a typing burst.
         await waitForParseWindow();
         if (!keepGoing()) break;
-        const doc = await parseFileDoc(file.bytes, file.format);
-        const { objects, outline } = extractFile(doc, enabledSet());
-        warmCache.set(path, { mtimeMs: entry.mtimeMs, enabledSig: enabledSig(), doc, objects, outline });
+        const parsed = await parseAndExtract(file.bytes, file.format, /* wantLiveDoc */ false);
+        warmCache.set(path, {
+          mtimeMs: entry.mtimeMs,
+          enabledSig: enabledSig(),
+          doc: parsed.doc,
+          docJson: parsed.docJson,
+          objects: parsed.objects,
+          outline: parsed.outline,
+        });
       } catch {
         /* unreadable / not a valid .cmir — skip */
       }
@@ -1430,21 +1543,24 @@ class QuickCardSearchUI {
     const savedQuery = this.input.value;
     recordUsage(path);
 
-    // Warm hit — no read/parse. Re-extract from the cached doc only if
-    // the searchable-object set changed since it was warmed.
+    // Warm hit — no read/parse; at most one fromJSON (warmDocOf) when
+    // the entry came from the worker warm path. Re-extract from the doc
+    // only if the searchable-object set changed since it was warmed.
     const warm = warmCache.get(path);
     if (warm && warm.mtimeMs === mtimeMs) {
+      const warmDoc = warmDocOf(warm);
       if (warm.enabledSig !== enabledSig()) {
-        const re = extractFile(warm.doc, enabledSet());
+        const re = extractFile(warmDoc, enabledSet());
         warm.objects = re.objects;
         warm.outline = re.outline;
         warm.enabledSig = enabledSig();
       }
-      this.mountInFile(path, name, warm.doc, warm.objects, warm.outline, savedQuery);
+      this.mountInFile(path, name, warmDoc, warm.objects, warm.outline, savedQuery);
       return;
     }
 
-    // Cold — read + parse + extract.
+    // Cold — read, then parse + extract off-thread (worker; inline
+    // fallback), materializing the live doc for the mount.
     this.results = [];
     this.emptyText = `Opening "${name}"…`;
     this.finishSearch();
@@ -1455,8 +1571,10 @@ class QuickCardSearchUI {
     try {
       const file = await electron.readFileAtPath(path);
       if (!file) throw new Error('read failed');
-      doc = await parseFileDoc(file.bytes, file.format);
-      ({ objects, outline } = extractFile(doc, enabledSet()));
+      const parsed = await parseAndExtract(file.bytes, file.format, /* wantLiveDoc */ true);
+      doc = parsed.doc!;
+      objects = parsed.objects;
+      outline = parsed.outline;
     } catch {
       if (token !== this.asyncToken || !this.root) return;
       showToast(`Couldn't read "${name}".`);
@@ -1466,7 +1584,7 @@ class QuickCardSearchUI {
     if (token !== this.asyncToken || !this.root) return;
     // Keep it warm if this file is pinned.
     if (mtimeMs && effectivePinPaths().has(path)) {
-      warmCache.set(path, { mtimeMs, enabledSig: enabledSig(), doc, objects, outline });
+      warmCache.set(path, { mtimeMs, enabledSig: enabledSig(), doc, docJson: null, objects, outline });
       pruneWarm(effectivePinPaths());
     }
     this.mountInFile(path, name, doc, objects, outline, savedQuery);
