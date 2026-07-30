@@ -236,21 +236,10 @@ interface ElectronAPI {
     bytes: Uint8Array,
   ): Promise<{ name: string; handle: string } | 'collision' | null>;
   listFilesRecursive(dir: string, ext: string): Promise<Array<{ path: string; relPath: string }>>;
-  listCmirFiles(
-    root: string,
-  ): Promise<Array<{ path: string; relPath: string; mtimeMs: number; size: number }>>;
-  /** Report the FULL current search-root set so main's persisted index
-   *  can drop removed roots. Optional: older packaged shells lack it. */
-  pruneCmirIndex?(roots: string[]): Promise<void>;
-  /** Fires when main's background revalidation finds the `.cmir`
-   *  listing for `root` changed, so an open command palette can swap in
-   *  the fresh listing live instead of waiting for the next open. */
-  onCmirFileIndexUpdated(
-    handler: (payload: {
-      root: string;
-      entries: Array<{ path: string; relPath: string; mtimeMs: number; size: number }>;
-    }) => void,
-  ): () => void;
+  /** Ask main for a direct MessagePort to the file-index service; it
+   *  arrives via the `cardmirror:file-index-port` window message (see
+   *  file-search-client.ts). Optional: older shells lack the service. */
+  requestFileIndexPort?: () => void;
   writeFileAtPath(
     filePath: string,
     bytes: Uint8Array,
@@ -802,30 +791,14 @@ export class ElectronHost implements Host {
     return api().listFilesRecursive(dir, ext);
   }
 
-  /** Cached, persisted recursive `.cmir` listing for the file-search
-   *  palette — returns instantly from main's in-memory / on-disk cache
-   *  and revalidates in the background, avoiding a fresh directory walk
-   *  on every palette open. */
-  async listCmirFiles(
-    root: string,
-  ): Promise<Array<{ path: string; relPath: string; mtimeMs: number; size: number }>> {
-    return api().listCmirFiles(root);
-  }
-
-  async pruneCmirIndex(roots: string[]): Promise<void> {
-    await api().pruneCmirIndex?.(roots);
-  }
-
-  onCmirFileIndexUpdated(
-    handler: (payload: {
-      root: string;
-      entries: Array<{ path: string; relPath: string; mtimeMs: number; size: number }>;
-    }) => void,
-  ): () => void {
-    // Tolerate an older preload that predates this channel — no live
-    // refresh, but everything else still works (next open reloads fresh).
-    const fn = api().onCmirFileIndexUpdated;
-    return typeof fn === 'function' ? fn(handler) : () => {};
+  /** Kick the file-index-port hand-off. Returns whether the shell
+   *  supports the service (older preloads don't — file search then
+   *  reads as unavailable, like an empty roots list). */
+  requestFileIndexPort(): boolean {
+    const fn = api().requestFileIndexPort;
+    if (typeof fn !== 'function') return false;
+    fn();
+    return true;
   }
 
   async writeFileAtPath(

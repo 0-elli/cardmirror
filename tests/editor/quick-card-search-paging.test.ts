@@ -20,10 +20,18 @@ vi.mock('../../src/editor/host/index.js', async (importOriginal) => {
     // Only the Electron host is faked (file listing); everything else —
     // notably getHost(), which ribbon-commands reads at import — stays real.
     getElectronHost: () => ({
-      listCmirFiles: async () => hostState.files,
-      onCmirFileIndexUpdated: () => () => {},
       readFileAtPath: async () => null,
     }),
+  };
+});
+
+// The palette talks to the file-index service via this client — the
+// fake runs the REAL matcher over hostState.files (see _fake-file-index).
+vi.mock('../../src/editor/file-search-client.js', async () => {
+  const { makeFakeFileIndexClient } = await import('./_fake-file-index.js');
+  return {
+    getFileIndexClient: async () => makeFakeFileIndexClient(hostState),
+    setFileIndexClientForTests: () => {},
   };
 });
 
@@ -71,16 +79,19 @@ describe('palette file paging', () => {
     openPalette();
     await settle(); // open() kicks the file-list load immediately
     type('f '); // file prefix, empty query = browse everything
+    await settle(); // ranked rows arrive async from the (fake) service
     expect(rowCount()).toBe(50);
     expect(moreEl()?.textContent).toContain('Showing 50 of 120');
 
     const firstRowText = document.querySelector('.pmd-qcs-row')?.textContent;
     moreEl()!.click();
+    await settle(); // show-more refetches a bigger window from the service
     expect(rowCount()).toBe(100);
     // Earlier rows keep their identity/order as the window grows.
     expect(document.querySelector('.pmd-qcs-row')?.textContent).toBe(firstRowText);
 
     moreEl()!.click();
+    await settle();
     expect(rowCount()).toBe(120);
     expect(moreEl()).toBeNull(); // everything shown — no overflow row
   });
@@ -89,15 +100,17 @@ describe('palette file paging', () => {
     openPalette();
     await settle();
     type('warming'); // no prefix — matches all 120 files by name
+    await settle();
     expect(rowCount()).toBe(50);
     const more = moreEl();
     expect(more?.textContent).toMatch(/Showing 50 of \d+ — show more/);
   });
 
-  it('file list is requested at open, so the first keystroke searches it synchronously', async () => {
+  it('the first keystroke gets file rows within one service round-trip', async () => {
     openPalette();
-    await settle(); // list arrives while the bar is still empty
-    type('warming 7'); // first "keystroke": files must already be searchable
+    await settle(); // the service connection is warmed at open
+    type('warming 7'); // first "keystroke"
+    await settle(); // one query round-trip — no full-corpus transfer anywhere
     expect(rowCount()).toBeGreaterThan(0);
     expect(
       [...document.querySelectorAll('.pmd-qcs-row-name')].some(

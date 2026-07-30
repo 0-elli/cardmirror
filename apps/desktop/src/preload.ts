@@ -299,35 +299,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('host:list-files-recursive', dir, ext) as Promise<
       Array<{ path: string; relPath: string }>
     >,
-  /** Cached + persisted recursive `.cmir` listing for the command-palette
-   *  file search (returns instantly from main's cache, revalidates in
-   *  the background). */
-  listCmirFiles: (root: string) =>
-    ipcRenderer.invoke('host:list-cmir-files', root) as Promise<
-      Array<{ path: string; relPath: string; mtimeMs: number; size: number }>
-    >,
-  /** Report the FULL current search-root set so the persisted index can
-   *  forget removed roots (they otherwise live in the file forever). */
-  pruneCmirIndex: (roots: string[]) =>
-    ipcRenderer.invoke('host:cmir-prune-index', roots) as Promise<void>,
-  /** Background revalidation of the `.cmir` listing finished and the
-   *  tree changed — carries the fresh listing so an open palette can
-   *  swap it in live. Broadcast to every window. */
-  onCmirFileIndexUpdated(
-    handler: (payload: {
-      root: string;
-      entries: Array<{ path: string; relPath: string; mtimeMs: number; size: number }>;
-    }) => void,
-  ): () => void {
-    const listener = (
-      _evt: unknown,
-      payload: {
-        root: string;
-        entries: Array<{ path: string; relPath: string; mtimeMs: number; size: number }>;
-      },
-    ): void => handler(payload);
-    ipcRenderer.on('host:cmir-files-updated', listener);
-    return () => ipcRenderer.removeListener('host:cmir-files-updated', listener);
+  /** Ask main for a direct MessagePort to the file-index service. The
+   *  port arrives via the `cardmirror:file-index-port` window message
+   *  (see the forwarding listener below) — invoke-style IPC can't carry
+   *  a transferable. */
+  requestFileIndexPort: () => {
+    ipcRenderer.send('host:file-index-port');
   },
   writeFileAtPath: (
     filePath: string,
@@ -1023,4 +1000,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return { ok: false, error: String(e) };
     }
   },
+});
+
+// File-index service port hand-off. `ipcRenderer.invoke` can't carry a
+// transferable, so main replies to `host:file-index-port` with a
+// WebContents.postMessage whose port lands here — and the preload's
+// `window.postMessage(…, transfer)` is the one documented bridge for
+// moving a MessagePort from the isolated world into the page's world.
+// (Local declaration: this tsconfig has no DOM lib, but the preload
+// runs in the renderer where `window` exists.)
+declare const window: {
+  postMessage(message: unknown, targetOrigin: string, transfer?: unknown[]): void;
+};
+ipcRenderer.on('host:file-index-port', (event) => {
+  window.postMessage({ type: 'cardmirror:file-index-port' }, '*', event.ports);
 });

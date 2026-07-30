@@ -20,12 +20,14 @@ import {
   BrowserWindow,
   Menu,
   MenuItemConstructorOptions,
+  MessageChannelMain,
   clipboard,
   crashReporter,
   dialog,
   ipcMain,
   screen,
   shell,
+  utilityProcess,
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { bundlePathFromExe, launchSwapHelper, macBundleSelfUpdatable } from './mac-swap-update.js';
@@ -36,7 +38,6 @@ import {
   readAccessibilityTreeEnabled,
   writeAccessibilityTreeEnabled,
 } from './accessibility-pref.js';
-import { pruneIndexRoots } from './cmir-index-prune.js';
 import { installMacAccessibilitySuppression } from './ax-suppress-mac.js';
 import { resolveCmirCandidates, isWithin } from './transclusion-path.js';
 import {
@@ -1216,157 +1217,34 @@ ipcMain.handle(
   },
 );
 
-// ── Cached .cmir file index (command-palette file search) ───────────
-// The search-root listing — with per-file mtime + size, which a future
-// content index can use to reparse only changed files — is cached in
-// memory and on disk (`{userData}/cmir-file-index.json`): reads return
-// instantly from cache and revalidate in the background. Persists
-// across launches.
+// ── File-index service (command-palette file search) ────────────────
+// The index + search live in a utilityProcess (file-index-service.ts —
+// see file-index-core.ts for the why): the browser process only forks
+// the service and forwards one MessagePort per renderer, then stays out
+// of the loop. Lazy: forked on the first port request, respawned on the
+// next request if it dies.
+let fileIndexService: Electron.UtilityProcess | null = null;
 
-interface CmirFileEntry {
-  path: string;
-  relPath: string;
-  mtimeMs: number;
-  size: number;
-}
-
-const cmirIndexMem = new Map<string, CmirFileEntry[]>(); // search root → entries
-const cmirRevalidating = new Set<string>();
-let cmirIndexDiskLoaded = false;
-
-function cmirIndexPath(): string {
-  return path.join(app.getPath('userData'), 'cmir-file-index.json');
-}
-
-async function ensureCmirIndexLoaded(): Promise<void> {
-  if (cmirIndexDiskLoaded) return;
-  cmirIndexDiskLoaded = true;
-  try {
-    const text = await fs.readFile(cmirIndexPath(), 'utf8');
-    const parsed = JSON.parse(text);
-    if (parsed && parsed.roots && typeof parsed.roots === 'object') {
-      for (const [root, entries] of Object.entries(parsed.roots)) {
-        if (Array.isArray(entries)) cmirIndexMem.set(root, entries as CmirFileEntry[]);
-      }
-    }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn('Failed to read cmir-file-index.json:', err);
-    }
-  }
-}
-
-let cmirIndexWriteTail: Promise<void> = Promise.resolve();
-function persistCmirIndex(): Promise<void> {
-  const snapshot = Object.fromEntries(cmirIndexMem);
-  cmirIndexWriteTail = cmirIndexWriteTail.catch(() => {}).then(async () => {
-    const finalPath = cmirIndexPath();
-    const tmpPath = `${finalPath}.tmp`;
-    await fs.writeFile(tmpPath, JSON.stringify({ version: 1, roots: snapshot }));
-    await fs.rename(tmpPath, finalPath);
+function ensureFileIndexService(): Electron.UtilityProcess {
+  if (fileIndexService) return fileIndexService;
+  const svc = utilityProcess.fork(path.join(__dirname, 'file-index-service.cjs'), [], {
+    serviceName: 'cardmirror-file-index',
+    env: { ...process.env, CM_INDEX_DATA_DIR: app.getPath('userData') },
   });
-  return cmirIndexWriteTail;
+  svc.on('exit', () => {
+    if (fileIndexService === svc) fileIndexService = null;
+  });
+  fileIndexService = svc;
+  return svc;
 }
 
-/** Walk `root` recursively for openable files (`.cmir` + `.docx`),
- *  recording mtime + size. */
-async function scanCmirFiles(root: string): Promise<CmirFileEntry[]> {
-  const out: CmirFileEntry[] = [];
-  const isOpenable = (name: string): boolean => {
-    // Skip Word's `~$…docx` owner/lock files — not real documents.
-    if (name.startsWith('~$')) return false;
-    const lower = name.toLowerCase();
-    return lower.endsWith('.cmir') || lower.endsWith('.docx');
-  };
-  async function walk(cur: string): Promise<void> {
-    let entries;
-    try {
-      entries = await fs.readdir(cur, { withFileTypes: true });
-    } catch {
-      return; // unreadable dir — skip
-    }
-    for (const ent of entries) {
-      const full = path.join(cur, ent.name);
-      if (ent.isDirectory()) await walk(full);
-      else if (ent.isFile() && isOpenable(ent.name)) {
-        try {
-          const st = await fs.stat(full);
-          out.push({ path: full, relPath: path.relative(root, full), mtimeMs: st.mtimeMs, size: st.size });
-        } catch {
-          /* vanished between readdir and stat — skip */
-        }
-      }
-    }
-  }
-  await walk(root);
-  return out;
-}
-
-/** Added / removed / mtime-changed since the cached listing? */
-function cmirListingsDiffer(a: CmirFileEntry[], b: CmirFileEntry[]): boolean {
-  if (a.length !== b.length) return true;
-  const prev = new Map(a.map((e) => [e.path, e.mtimeMs]));
-  return b.some((e) => prev.get(e.path) !== e.mtimeMs);
-}
-
-/** Push a freshly-revalidated listing to every window so an open
- *  command palette can swap it in live (it filters by `root`). */
-function broadcastCmirIndexUpdated(root: string, entries: CmirFileEntry[]): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (!w.isDestroyed()) w.webContents.send('host:cmir-files-updated', { root, entries });
-  }
-}
-
-/** Background refresh — updates the cache (+ disk) only if the tree
- *  changed, then broadcasts the fresh listing so any open palette
- *  refreshes live (and it's also ready for the next open). Coalesced
- *  per-root so concurrent searches don't pile up walks. */
-function revalidateCmirIndex(root: string): void {
-  if (cmirRevalidating.has(root)) return;
-  cmirRevalidating.add(root);
-  void scanCmirFiles(root)
-    .then((fresh) => {
-      cmirRevalidating.delete(root);
-      const prev = cmirIndexMem.get(root);
-      if (!prev || cmirListingsDiffer(prev, fresh)) {
-        cmirIndexMem.set(root, fresh);
-        void persistCmirIndex();
-        broadcastCmirIndexUpdated(root, fresh);
-      }
-    })
-    .catch(() => cmirRevalidating.delete(root));
-}
-
-// The renderer reports the FULL current search-root set (it owns the
-// settings) so the index can forget removed roots — without this,
-// entries for a root removed from settings persisted in every rewrite
-// forever, only ever growing the file. Runs before/alongside the
-// per-root listing calls at boot and on every palette load, so a
-// mid-session settings change is pruned by the next palette open.
-ipcMain.handle('host:cmir-prune-index', async (_event, roots: unknown): Promise<void> => {
-  if (!Array.isArray(roots) || !roots.every((r): r is string => typeof r === 'string')) {
-    return;
-  }
-  await ensureCmirIndexLoaded();
-  if (pruneIndexRoots(cmirIndexMem, roots)) {
-    await persistCmirIndex();
-  }
-});
-
-ipcMain.handle('host:list-cmir-files', async (_event, root: string): Promise<CmirFileEntry[]> => {
-  if (typeof root !== 'string' || !root) return [];
-  await ensureCmirIndexLoaded();
-  const cached = cmirIndexMem.get(root);
-  if (cached) {
-    // Instant from cache; refresh in the background for next time.
-    revalidateCmirIndex(root);
-    return cached;
-  }
-  // Cold (first ever / new root): scan now, cache, persist.
-  const fresh = await scanCmirFiles(root);
-  cmirIndexMem.set(root, fresh);
-  void persistCmirIndex();
-  return fresh;
+// Renderer asks for its direct line to the service. A fresh channel per
+// request: port1 goes to the service, port2 back to the renderer (the
+// preload forwards it into the main world).
+ipcMain.on('host:file-index-port', (event) => {
+  const { port1, port2 } = new MessageChannelMain();
+  ensureFileIndexService().postMessage({ type: 'port' }, [port1]);
+  event.sender.postMessage('host:file-index-port', null, [port2]);
 });
 
 ipcMain.handle(

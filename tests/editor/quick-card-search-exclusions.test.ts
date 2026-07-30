@@ -18,10 +18,18 @@ vi.mock('../../src/editor/host/index.js', async (importOriginal) => {
   return {
     ...mod,
     getElectronHost: () => ({
-      listCmirFiles: async () => hostState.files,
-      onCmirFileIndexUpdated: () => () => {},
       readFileAtPath: async () => null,
     }),
+  };
+});
+
+// The palette talks to the file-index service via this client — the
+// fake runs the REAL matcher over hostState.files (see _fake-file-index).
+vi.mock('../../src/editor/file-search-client.js', async () => {
+  const { makeFakeFileIndexClient } = await import('./_fake-file-index.js');
+  return {
+    getFileIndexClient: async () => makeFakeFileIndexClient(hostState),
+    setFileIndexClientForTests: () => {},
   };
 });
 
@@ -46,7 +54,7 @@ function type(q: string): void {
 const rowNames = (): string[] =>
   [...document.querySelectorAll('.pmd-qcs-row-name')].map((el) => el.textContent ?? '');
 
-/** Let the open-time listCmirFiles round-trip + re-search settle. */
+/** Let the async service query round-trip + re-search settle. */
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
@@ -71,8 +79,10 @@ describe('palette file-search exclusions', () => {
     openPalette();
     await settle();
     type('f ');
+    await settle();
     expect(rowNames()).toEqual(['Warming Aff', 'Warming Prep']);
     type('warming'); // everything search folds files in — still excluded
+    await settle();
     expect(rowNames()).toContain('Warming Aff');
     expect(rowNames()).not.toContain('Warming Neg');
   });
@@ -82,6 +92,7 @@ describe('palette file-search exclusions', () => {
     openPalette();
     await settle();
     type('f ');
+    await settle();
     expect(rowNames()).toEqual(['Warming Aff', 'Warming Neg']);
   });
 
@@ -89,6 +100,7 @@ describe('palette file-search exclusions', () => {
     openPalette();
     await settle();
     type('f ');
+    await settle();
     expect(rowNames()).toHaveLength(3);
 
     const negRow = [...document.querySelectorAll('.pmd-qcs-row')].find((r) =>
@@ -116,6 +128,7 @@ describe('palette file-search exclusions', () => {
     openPalette();
     await settle();
     type('f ');
+    await settle();
     document.querySelector<HTMLElement>('.pmd-qcs-exclude')!.click();
     const cancelBtn = [...document.querySelectorAll('.pmd-confirm button')].find(
       (b) => b.textContent === 'Cancel',

@@ -72,18 +72,18 @@ import { fromDocx } from '../import/index.js';
 import { ensureHeadingAnchor } from '../anchor-docx.js';
 import {
   extractFile,
-  searchFiles,
   searchFileObjects,
-  makeFileEntry,
   dirName,
   fileFormat,
-  filterExcludedFiles,
   FILE_OBJECT_KIND_BADGES,
-  type FileEntry,
   type FileObject,
   type FileObjectKind,
   type OutlineEntry,
 } from './file-search.js';
+import {
+  getFileIndexClient,
+  type FileIndexRow,
+} from './file-search-client.js';
 import { toggleManualPin, recordUsage, effectivePins } from './pins-store.js';
 import { listRecents } from './recents-store.js';
 import { scheduleIdle } from './idle-scheduler.js';
@@ -134,14 +134,6 @@ function enabledSet(): Set<FileObjectKind> {
 
 function enabledSig(): string {
   return (settings.get('fileSearchObjectTypes') as string[]).slice().sort().join(',');
-}
-
-/** Filter the file list to the formats the user wants surfaced (the
- *  `fileSearchFormats` setting; 'both' shows everything). Applied at search
- *  time off the cached list, so toggling the setting needs no re-scan. */
-function filterFilesByFormatSetting(files: FileEntry[]): FileEntry[] {
-  const pref = settings.get('fileSearchFormats');
-  return pref === 'both' ? files : files.filter((f) => fileFormat(f.path) === pref);
 }
 
 /** Drop warm entries for files that are no longer pinned. */
@@ -205,7 +197,7 @@ async function parseFileDoc(
  *  lets a caller bail early (e.g. the palette closed). */
 async function runWarmPass(
   electron: NonNullable<ReturnType<typeof getElectronHost>>,
-  fileList: FileEntry[],
+  entries: ReadonlyArray<{ path: string; mtimeMs: number }>,
   keepGoing: () => boolean,
 ): Promise<void> {
   if (warmingFiles) return;
@@ -213,7 +205,7 @@ async function runWarmPass(
   try {
     const pins = effectivePinPaths();
     pruneWarm(pins);
-    const byPath = new Map(fileList.map((f) => [f.path, f]));
+    const byPath = new Map(entries.map((f) => [f.path, f]));
     for (const path of pins) {
       if (!keepGoing()) break;
       const entry = byPath.get(path);
@@ -237,24 +229,6 @@ async function runWarmPass(
   }
 }
 
-/** Map a main-process file listing to FileEntry rows (display name +
- *  precomputed lowercase match fields derived in `makeFileEntry`). */
-function toFileEntries(
-  list: ReadonlyArray<{ path: string; relPath: string; mtimeMs: number }>,
-): FileEntry[] {
-  return list.map((it) => makeFileEntry(it.path, it.relPath, it.mtimeMs));
-}
-
-/** Merge per-folder listings into one, de-duplicated by absolute path — so a
- *  file that lives under two overlapping search folders is searched once. */
-function mergeFileLists(lists: Iterable<FileEntry[]>): FileEntry[] {
-  const byPath = new Map<string, FileEntry>();
-  for (const list of lists) {
-    for (const f of list) if (!byPath.has(f.path)) byPath.set(f.path, f);
-  }
-  return [...byPath.values()];
-}
-
 /** Pre-warm pinned/recent files during idle, before the palette is ever
  *  opened, so the first search's file parse is already cached and
  *  never lands on a keystroke. No-op off Electron or with no search
@@ -264,37 +238,33 @@ export function prewarmQuickCardFiles(): void {
   const electron = getElectronHost();
   if (!electron) return;
   const roots = settings.get('fileSearchRoots');
-  // Housekeeping BEFORE the roots-length gate: reporting the full
-  // current-roots set (even an empty one) lets main drop removed roots
-  // from the persisted index, which otherwise carries them forever.
-  // (`?.` — test hosts and older shells may lack the method.)
-  void electron.pruneCmirIndex?.(roots).catch(() => {});
-  if (!roots.length) return;
-  // Layer 1 — the file LIST. Kick the per-root scan off in main immediately,
-  // not on renderer-idle: `listCmirFiles` is only async IPC (the recursive walk
-  // / disk-index load runs in the main process), so it doesn't compete with the
-  // renderer's launch render. Starting at t≈0, rather than up to ~2s later when
-  // the renderer first goes idle, keeps the index ready even when the command
-  // bar opens a second after launch.
-  const lists = Promise.all(
-    roots.map((r) => electron.listCmirFiles(r).then(toFileEntries).catch(() => [] as FileEntry[])),
-  );
-  // Layer 2 — the pin CONTENT parse is renderer CPU, so keep it on idle so it
-  // never janks the launch frame; it just consumes the already-in-flight lists.
-  scheduleIdle(() => {
-    void (async () => {
-      try {
-        // Exclusions apply here too: an excluded pin must not warm.
-        await runWarmPass(
-          electron,
-          filterExcludedFiles(mergeFileLists(await lists), settings.get('fileSearchExclusions')),
-          () => true,
-        );
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, 2000);
+  void getFileIndexClient().then(async (client) => {
+    if (!client) return;
+    // Configure BEFORE the roots-length gate: reporting the full
+    // current-roots set (even an empty one) lets the service drop
+    // removed roots from the persisted index, which otherwise carries
+    // them forever — and kicks its scans/revalidation off the renderer
+    // AND main-process threads entirely.
+    await client.configure(roots).catch(() => {});
+    if (!roots.length) return;
+    // The pin CONTENT parse is renderer CPU, so it waits for idle so it
+    // never janks the launch frame. Exclusions apply (the service omits
+    // excluded paths): an excluded pin must not warm.
+    scheduleIdle(() => {
+      void (async () => {
+        try {
+          const entries = await client.entriesForPaths({
+            paths: [...effectivePinPaths()],
+            roots,
+            exclusions: settings.get('fileSearchExclusions'),
+          });
+          await runWarmPass(electron, entries, () => true);
+        } catch {
+          /* ignore */
+        }
+      })();
+    }, 2000);
+  });
 }
 
 export interface QuickCardSearchOptions {
@@ -707,7 +677,7 @@ function searchSettingsSource(query: string): PaletteResult[] {
   return results;
 }
 
-function fileResult(f: FileEntry, pinned: boolean): PaletteResult {
+function fileResult(f: FileIndexRow): PaletteResult {
   return {
     source: 'file',
     name: f.name,
@@ -716,7 +686,7 @@ function fileResult(f: FileEntry, pinned: boolean): PaletteResult {
     snippet: null,
     filePath: f.path,
     fileMtimeMs: f.mtimeMs,
-    pinned,
+    pinned: f.pinned,
   };
 }
 
@@ -829,13 +799,13 @@ class QuickCardSearchUI {
    *  GC churn. Always ordered AFTER `fullResults`; both search paths
    *  that surface files put them last (file mode: everything is a
    *  file, the head is empty). */
-  private fileTail: FileEntry[] = [];
+  private fileTail: FileIndexRow[] = [];
+  /** The service's FULL match count behind `fileTail`'s fetched window —
+   *  drives "Showing N of M" and showMore's refetch decision. */
+  private fileTailTotal = 0;
   /** Memoized materialized prefix of `fileTail`, grown on demand by
    *  `windowResults` (keeps row identity stable across "show more"). */
   private materializedTail: PaletteResult[] = [];
-  /** Manual-pin set snapshotted when `fileTail` was ranked — drives the
-   *  ★ on rows materialized later. */
-  private tailPins: ReadonlySet<string> = new Set();
   private visibleCount = RESULT_PAGE_SIZE;
   private selected = 0;
   /** Row elements as last built by `renderResults`, index-aligned with
@@ -845,13 +815,25 @@ class QuickCardSearchUI {
   private emptyText = '';
 
   // ── File-search state (the `f` prefix) ──────────────────────────────
-  /** Recursive `.cmir` listing (merged + de-duplicated across every search
-   *  folder), cached for one palette session. */
-  private fileList: FileEntry[] | null = null;
-  /** Per-folder listings keyed by search root, so a per-root index-update can
-   *  be merged in incrementally; `fileList` is the merged, de-duplicated view. */
-  private rootLists: Map<string, FileEntry[]> = new Map();
-  private fileListLoading = false;
+  // The corpus lives in the file-index service; the palette only ever
+  // holds the fetched WINDOW of ranked rows for the current query.
+  /** Params key of the rows currently in `fileRows` (null = nothing
+   *  fetched / stale — the next runSearch re-queries). */
+  private fileQueryKey: string | null = null;
+  /** Params key of the LATEST query in flight, if any. */
+  private fileQueryPending: string | null = null;
+  /** Monotonic query generations: every kick gets one, and an arrival
+   *  applies only if newer than the last APPLIED one — so mid-typing
+   *  responses render progressively (latest-wins) instead of being
+   *  dropped for having been superseded, which read as a debounce. */
+  private fileQueryGen = 0;
+  private fileGenApplied = 0;
+  /** Fetched ranked window + the full match count behind it. */
+  private fileRows: FileIndexRow[] = [];
+  private fileTotal = 0;
+  /** Last file-bearing query params — lets showMore refetch a bigger
+   *  window without re-deriving the mode. */
+  private lastFileParams: { query: string; partitionPins: boolean } | null = null;
   /** Monotonic guard so a stale async (list / read) result from a
    *  prior query or a closed palette is ignored. */
   private asyncToken = 0;
@@ -886,9 +868,11 @@ class QuickCardSearchUI {
     this.rePickTarget = opts.rePickTarget ?? null;
     this.transcludeMode = (opts.transcludeMode ?? false) || this.rePickTarget != null;
     this.docPath = opts.docPath ?? null;
-    this.fileList = null;
-    this.rootLists = new Map();
-    this.fileListLoading = false;
+    this.fileQueryKey = null;
+    this.fileQueryPending = null;
+    this.fileRows = [];
+    this.fileTotal = 0;
+    this.lastFileParams = null;
     this.inFile = null;
     this.pinsCache = null;
     this.fileTail = [];
@@ -924,19 +908,17 @@ class QuickCardSearchUI {
     window.addEventListener('resize', this.onResize);
     this.unsubscribe = quickCardsStore.subscribe(() => this.runSearch());
 
-    // Listen for main's background index revalidation so the open palette
-    // refreshes live instead of waiting for the next open.
-    const electronHost = getElectronHost();
-    this.fileIndexUnsub = electronHost
-      ? electronHost.onCmirFileIndexUpdated((p) => this.onFileIndexUpdated(p))
-      : null;
-
     this.runSearch();
-    // Kick the file-list load NOW (main serves it from its disk-backed
-    // index, so it's ready in ms) instead of on the first keystroke —
-    // previously the list arrived mid-typing and re-ran the search
-    // between the user's first characters.
-    this.ensureFileList();
+    // Wake the file-index service NOW instead of on the first keystroke:
+    // configure kicks its revalidation (once per palette open, matching
+    // the old per-open cadence), the changed-subscription keeps the open
+    // palette live, and the warm pass refreshes pinned parses.
+    void getFileIndexClient().then((client) => {
+      if (!client || !this.root) return;
+      void client.configure(settings.get('fileSearchRoots')).catch(() => {});
+      this.fileIndexUnsub ??= client.onChanged(() => this.onIndexChanged());
+      void this.warmPins();
+    });
   }
 
   /** Center over the target pane and clamp the width to fit it, so the
@@ -962,9 +944,12 @@ class QuickCardSearchUI {
     this.unsubscribe = null;
     this.fileIndexUnsub?.();
     this.fileIndexUnsub = null;
-    this.asyncToken++; // invalidate any in-flight list / read
-    this.fileList = null;
-    this.rootLists.clear();
+    this.asyncToken++; // invalidate any in-flight query / read
+    this.fileQueryKey = null;
+    this.fileQueryPending = null;
+    this.fileRows = [];
+    this.fileTotal = 0;
+    this.lastFileParams = null;
     this.inFile = null;
     this.root.remove();
     this.root = null;
@@ -1144,12 +1129,12 @@ class QuickCardSearchUI {
       } · f files · q cards · s settings`;
     } else {
       // No prefix — search everything. Files (by filename) join the
-      // other sources; the recursive `.cmir` scan is kicked off lazily
-      // and cached, so the first everything-search after opening may
-      // show non-file results first and fold files in once the scan
-      // finishes (loadFileList re-runs the search on completion). The
-      // dropzone is included only when it's on.
-      this.ensureFileList();
+      // other sources; the ranked rows come from the file-index service
+      // asynchronously, so the first everything-search after opening may
+      // show non-file results first and fold files in when the query
+      // answer lands (the arrival re-runs this search). The dropzone is
+      // included only when it's on. No pin partition here — matching the
+      // pre-service ordering, where only `f`-mode floated pins.
       this.results = [
         ...searchQuickCardSource(query),
         ...(dropzoneOn() ? searchDropzoneSource(query) : []),
@@ -1159,17 +1144,10 @@ class QuickCardSearchUI {
         ...searchSettingsSource(query),
       ];
       this.emptyText = 'No matches.';
-      // Files join as the lazy tail — ranked in full, materialized only
-      // for the rendered window.
-      this.finishSearch(
-        this.fileList
-          ? searchFiles(
-              filterFilesByFormatSetting(this.fileList),
-              query,
-              settings.get('fileSearchTiebreak'),
-            )
-          : [],
-      );
+      // Files join as the lazy tail — the service ranks in full and
+      // returns the window; `fileTotal` keeps "Showing N of M" honest.
+      this.ensureFileQuery(query, /* partitionPins */ false);
+      this.finishSearch(this.fileRows, this.fileTotal);
       return;
     }
     this.finishSearch();
@@ -1178,21 +1156,23 @@ class QuickCardSearchUI {
   /** Clamp to the first page, reset selection, render — the shared tail
    *  of every search. `fileTail` is the ranked file matches (lazy;
    *  rendered after every materialized result). */
-  private finishSearch(fileTail: FileEntry[] = []): void {
+  private finishSearch(fileTail: FileIndexRow[] = [], fileTotal = fileTail.length): void {
     this.fullResults = this.results;
     this.fileTail = fileTail;
+    this.fileTailTotal = fileTotal;
     this.materializedTail = [];
-    this.tailPins = fileTail.length ? this.manualPinPaths() : this.tailPins;
     this.visibleCount = RESULT_PAGE_SIZE;
     this.results = this.windowResults();
     this.selected = 0;
     this.renderResults();
   }
 
-  /** Total result count across the materialized head and the lazy file
-   *  tail — what "Showing N of M" and the paging boundary report. */
+  /** Total result count across the materialized head and the file tail —
+   *  what "Showing N of M" and the paging boundary report. The tail's
+   *  count is the SERVICE's full match total, which can exceed the
+   *  fetched window (showMore refetches a bigger one). */
   private totalCount(): number {
-    return this.fullResults.length + this.fileTail.length;
+    return this.fullResults.length + this.fileTailTotal;
   }
 
   /** The first `visibleCount` results: the materialized head, then file
@@ -1206,16 +1186,21 @@ class QuickCardSearchUI {
     );
     while (this.materializedTail.length < needTail) {
       const f = this.fileTail[this.materializedTail.length]!;
-      this.materializedTail.push(fileResult(f, this.tailPins.has(f.path)));
+      this.materializedTail.push(fileResult(f));
     }
     return needTail > 0 ? head.concat(this.materializedTail.slice(0, needTail)) : head;
   }
 
   /** Extend the rendered window by one page (the "show more" row, or
    *  arrowing past the last rendered result). Selection is preserved —
-   *  the rebuilt rows re-read `this.selected`. */
+   *  the rebuilt rows re-read `this.selected`. When the fetched file
+   *  window runs out before the service's total, refetch a bigger one
+   *  (the arrival folds the extra rows in). */
   private showMore(): void {
     this.visibleCount += RESULT_PAGE_SIZE;
+    if (this.lastFileParams && this.fileTail.length < this.fileTailTotal) {
+      this.ensureFileQuery(this.lastFileParams.query, this.lastFileParams.partitionPins);
+    }
     this.results = this.windowResults();
     this.renderResults();
   }
@@ -1237,31 +1222,120 @@ class QuickCardSearchUI {
       this.finishSearch();
       return;
     }
-    if (this.fileList === null) {
-      if (!this.fileListLoading) this.loadFileList(roots, electron);
-      this.results = [];
-      this.emptyText = 'Searching files…';
-      this.finishSearch();
-      return;
-    }
     // ★ + top-sort reflect MANUAL pins (the user-controlled feature);
     // auto pins (recents/frequents) are warmed silently, not surfaced.
-    const pins = this.manualPinPaths();
-    const matched = searchFiles(
-      filterFilesByFormatSetting(this.fileList),
-      query,
-      settings.get('fileSearchTiebreak'),
-    );
-    const ordered = [
-      ...matched.filter((f) => pins.has(f.path)),
-      ...matched.filter((f) => !pins.has(f.path)),
-    ];
+    // The ranking, pin partition, exclusion + format filters all run in
+    // the file-index service; we hold only the returned window.
+    const state = this.ensureFileQuery(query, /* partitionPins */ true);
     this.results = [];
-    this.emptyText = this.fileList.length
-      ? 'No matching files.'
-      : 'No files in the search folder.';
+    this.emptyText =
+      state === 'loading' && this.fileQueryKey === null
+        ? 'Searching files…'
+        : query.trim() === '' && this.fileTotal === 0
+          ? 'No files in the search folder.'
+          : 'No matching files.';
     // Everything here is a file — the whole result set is the lazy tail.
-    this.finishSearch(ordered);
+    // While a fresh query is in flight the PREVIOUS rows stay up (no
+    // flicker); the arrival re-runs this search with the new window.
+    this.finishSearch(this.fileRows, this.fileTotal);
+  }
+
+  /** Params key for a file query — anything that changes the ranked
+   *  window invalidates the fetched rows. */
+  private fileParamsKey(query: string, partitionPins: boolean, limit: number): string {
+    return JSON.stringify([
+      query,
+      partitionPins,
+      limit,
+      settings.get('fileSearchRoots'),
+      settings.get('fileSearchExclusions'),
+      settings.get('fileSearchFormats'),
+      settings.get('fileSearchTiebreak'),
+      [...this.manualPinPaths()].sort(),
+    ]);
+  }
+
+  /** Ensure `fileRows`/`fileTotal` (eventually) reflect this query: kick
+   *  an async service query unless the fetched or in-flight rows already
+   *  match. The arrival re-runs the search, which finds 'ready'. */
+  private ensureFileQuery(query: string, partitionPins: boolean): 'ready' | 'loading' {
+    this.lastFileParams = { query, partitionPins };
+    const limit = Math.max(this.visibleCount, RESULT_PAGE_SIZE);
+    const key = this.fileParamsKey(query, partitionPins, limit);
+    if (this.fileQueryKey === key) return 'ready';
+    if (this.fileQueryPending === key) return 'loading';
+    this.fileQueryPending = key;
+    const gen = ++this.fileQueryGen;
+    const token = this.asyncToken;
+    void (async () => {
+      let rows: FileIndexRow[] = [];
+      let total = 0;
+      try {
+        const client = await getFileIndexClient();
+        if (client) {
+          const res = await client.query({
+            query,
+            roots: settings.get('fileSearchRoots'),
+            exclusions: settings.get('fileSearchExclusions'),
+            formats: settings.get('fileSearchFormats'),
+            tiebreak: settings.get('fileSearchTiebreak'),
+            pins: [...this.manualPinPaths()],
+            partitionPins,
+            limit,
+          });
+          rows = res.rows;
+          total = res.total;
+        }
+      } catch {
+        /* service down — treat as empty; the next keystroke retries */
+      }
+      if (token !== this.asyncToken || !this.root) return;
+      // Latest-wins, applied PROGRESSIVELY: a response older than the
+      // one already applied is dropped, but an in-order response is
+      // folded in even when a newer query is still in flight — during
+      // fast typing the rows keep moving instead of freezing until the
+      // final keystroke's answer.
+      if (gen <= this.fileGenApplied) return;
+      this.fileGenApplied = gen;
+      if (this.fileQueryPending === key) this.fileQueryPending = null;
+      this.fileQueryKey = key;
+      this.fileRows = rows;
+      this.fileTotal = total;
+      // Fold the fresh window in without disturbing the user's view.
+      this.rerunPreservingView();
+    })();
+    return 'loading';
+  }
+
+  /** Re-run the current search keeping the user's place: the expanded
+   *  "show more" window survives (finishSearch resets it) and the
+   *  selected row is re-found by key — an async arrival or background
+   *  index refresh must never yank the cursor or collapse the list. */
+  private rerunPreservingView(): void {
+    const keepVisible = this.visibleCount;
+    const sel = this.results[this.selected];
+    const prevKey = sel ? resultKey(sel) : null;
+    this.runSearch();
+    if (keepVisible > this.visibleCount) {
+      this.visibleCount = keepVisible;
+      this.results = this.windowResults();
+      this.renderResults();
+    }
+    this.restoreSelection(prevKey);
+  }
+
+  /** A scan/revalidation landed a fresh listing in the service: drop the
+   *  fetched window (stale) and, when a file view is showing, re-query
+   *  live. Pins re-warm against the new mtimes either way. */
+  private onIndexChanged(): void {
+    if (!this.root) return;
+    this.fileQueryKey = null;
+    void this.warmPins();
+    if (this.inFile) return;
+    const { prefix, query } = parsePrefix(this.input.value);
+    const fileVisible = prefix === 'f' || (prefix === null && query.trim() !== '');
+    if (!fileVisible) return;
+    this.rerunPreservingView();
   }
 
   /** Manually-pinned paths (★ + top-sort). `autoEnabled: false` makes
@@ -1274,13 +1348,29 @@ class QuickCardSearchUI {
     return (this.pinsCache ??= effectivePins([], false));
   }
 
-  /** Background pass while the palette is open: delegate to the shared
-   *  warm pass (which yields to idle before each parse), bailing if the
-   *  palette closes mid-flight. */
+  /** Background pass while the palette is open: fetch fresh mtimes for
+   *  the pinned paths from the service (exclusions honored there), then
+   *  delegate to the shared warm pass (which yields to idle before each
+   *  parse), bailing if the palette closes mid-flight. */
   private async warmPins(): Promise<void> {
     const electron = getElectronHost();
-    if (!electron || !this.fileList) return;
-    await runWarmPass(electron, this.fileList, () => !!this.root);
+    if (!electron) return;
+    const roots = settings.get('fileSearchRoots');
+    if (!roots.length) return;
+    const client = await getFileIndexClient();
+    if (!client || !this.root) return;
+    let entries: Array<{ path: string; mtimeMs: number }>;
+    try {
+      entries = await client.entriesForPaths({
+        paths: [...effectivePinPaths()],
+        roots,
+        exclusions: settings.get('fileSearchExclusions'),
+      });
+    } catch {
+      return; // service down — the next open retries
+    }
+    if (!this.root) return;
+    await runWarmPass(electron, entries, () => !!this.root);
   }
 
   /** Toggle a file's manual pin, keeping it selected and re-warming. */
@@ -1295,9 +1385,9 @@ class QuickCardSearchUI {
 
   /** Confirm, then add a file to the exclusion setting and drop it from
    *  the live results. A pin on the file is deliberately left in place —
-   *  exclusion beats pins everywhere they could surface (results AND the
-   *  warm pass, both fed by mergedVisibleFiles), so the pin just goes
-   *  dormant until the entry is removed in Settings. */
+   *  exclusion beats pins everywhere they could surface (the service
+   *  filters both queries and the warm-pass entries), so the pin just
+   *  goes dormant until the entry is removed in Settings. */
   private async excludeFile(path: string, displayName: string): Promise<void> {
     const confirmed = await showConfirm({
       title: `Exclude “${displayName}” from file search?`,
@@ -1313,102 +1403,10 @@ class QuickCardSearchUI {
       settings.set('fileSearchExclusions', [...current, path]);
     }
     if (!this.root) return; // palette closed while the dialog sat open
-    this.fileList = this.mergedVisibleFiles();
+    // Exclusions are part of the query key, so re-running re-fetches.
     if (!this.inFile) this.runSearch();
   }
 
-  /** Kick off the (cached, once-per-session) file scan if it hasn't run
-   *  yet — used by the no-prefix everything search, which folds files in
-   *  once the scan completes. No-op without an Electron host + a root. */
-  private ensureFileList(): void {
-    if (this.fileList !== null || this.fileListLoading) return;
-    const electron = getElectronHost();
-    const roots = settings.get('fileSearchRoots');
-    if (!electron || !roots.length) return;
-    this.loadFileList(roots, electron);
-  }
-
-  /** The merged, de-duplicated listing with the exclusion setting applied —
-   *  the only path by which raw per-root listings become searchable rows
-   *  (so an excluded file can't reach results, ranking, or the warm pass). */
-  private mergedVisibleFiles(): FileEntry[] {
-    return filterExcludedFiles(
-      mergeFileLists(this.rootLists.values()),
-      settings.get('fileSearchExclusions'),
-    );
-  }
-
-  /** Recursively list openable files under every search folder once per
-   *  session, merged + de-duplicated by path; on completion re-run the search
-   *  (if still open + still in file mode). A folder that fails to list resolves
-   *  to empty rather than failing the whole load. */
-  private loadFileList(roots: string[], electron: NonNullable<ReturnType<typeof getElectronHost>>): void {
-    // Re-report the current-roots set so a mid-session settings change
-    // prunes the persisted index at the next palette open (boot-time
-    // prewarm covers launches).
-    void electron.pruneCmirIndex?.(roots).catch(() => {});
-    this.fileListLoading = true;
-    const token = ++this.asyncToken;
-    void Promise.all(
-      roots.map((r) =>
-        electron
-          .listCmirFiles(r)
-          .then((list) => [r, toFileEntries(list)] as const)
-          .catch(() => [r, [] as FileEntry[]] as const),
-      ),
-    )
-      .then((perRoot) => {
-        if (token !== this.asyncToken || !this.root) return;
-        this.rootLists = new Map(perRoot);
-        this.fileList = this.mergedVisibleFiles();
-        this.fileListLoading = false;
-        if (!this.inFile) this.runSearch();
-        void this.warmPins(); // pre-warm pinned files in the background
-      })
-      .catch(() => {
-        if (token !== this.asyncToken || !this.root) return;
-        this.rootLists = new Map();
-        this.fileList = [];
-        this.fileListLoading = false;
-        if (!this.inFile) this.runSearch();
-      });
-  }
-
-  /** Live index refresh pushed from main's background revalidation. Swaps
-   *  in the fresh listing WITHOUT disturbing the in-progress search: the
-   *  query text is the source of truth (untouched), the selected row is
-   *  preserved by identity, and in-file mode is left alone — the fresh
-   *  list is just staged for when the user Escs back to the file list.
-   *
-   *  No `asyncToken` bump here: an index refresh must never abort an
-   *  in-flight `enterInFile` read. There's also no race with a pending
-   *  `loadFileList` — main returns the cached listing before it starts
-   *  the walk that produces this event, so the load always resolves
-   *  first. */
-  private onFileIndexUpdated(payload: {
-    root: string;
-    entries: Array<{ path: string; relPath: string; mtimeMs: number; size: number }>;
-  }): void {
-    if (!this.root) return; // closed — the next open reloads from main
-    if (!settings.get('fileSearchRoots').includes(payload.root)) return; // not one of our roots
-    this.rootLists.set(payload.root, toFileEntries(payload.entries));
-    this.fileList = this.mergedVisibleFiles();
-    this.fileListLoading = false;
-    void this.warmPins(); // re-warm pins against the new mtimes
-    // In-file mode shows a file's objects, not the listing — leave the
-    // visible results untouched; the swap above is ready for when the
-    // user returns to the file list.
-    if (this.inFile) return;
-    // Only the file (`f`) and non-empty everything views read `fileList`;
-    // for other prefixes a re-run would needlessly churn the results.
-    const { prefix, query } = parsePrefix(this.input.value);
-    const fileVisible = prefix === 'f' || (prefix === null && query.trim() !== '');
-    if (!fileVisible) return;
-    const sel = this.results[this.selected];
-    const prevKey = sel ? resultKey(sel) : null;
-    this.runSearch();
-    this.restoreSelection(prevKey);
-  }
 
   /** Re-point the selection at the row matching `key` after a re-render,
    *  so a background refresh doesn't bounce the cursor to the top. */

@@ -16,5 +16,9 @@
     "noImplicitOverride": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  // The file-index service imports src/editor (outside rootDir): esbuild
+  // bundles it (build:service) and the ROOT typecheck covers it via the
+  // desktop test imports.
+  "exclude": ["src/file-index-core.ts", "src/file-index-service.ts"]
 }

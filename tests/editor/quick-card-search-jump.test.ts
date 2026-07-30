@@ -19,14 +19,20 @@ vi.mock('../../src/editor/host/index.js', async (importOriginal) => {
   return {
     ...mod,
     getElectronHost: () => ({
-      listCmirFiles: async () => hostState.files,
-      onCmirFileIndexUpdated: () => () => {},
       readFileAtPath: async (p: string) => {
         const bytes = hostState.bytesByPath.get(p);
         if (!bytes) return null;
         return { name: p.split('/').pop()!, bytes, handle: p, format: 'cmir' as const };
       },
     }),
+  };
+});
+
+vi.mock('../../src/editor/file-search-client.js', async () => {
+  const { makeFakeFileIndexClient } = await import('./_fake-file-index.js');
+  return {
+    getFileIndexClient: async () => makeFakeFileIndexClient(hostState),
+    setFileIndexClientForTests: () => {},
   };
 });
 
@@ -99,6 +105,7 @@ async function diveIntoCase(): Promise<void> {
   openPalette();
   await settle();
   type('f case');
+  await settle(); // ranked rows arrive async from the (fake) service
   pressTab();
   await settle();
   await settle(); // read + parse round-trips
