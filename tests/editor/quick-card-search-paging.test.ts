@@ -106,6 +106,20 @@ describe('palette file paging', () => {
     expect(more?.textContent).toMatch(/Showing 50 of \d+ — show more/);
   });
 
+  it('clicks in the results list never steal keyboard focus (mousedown prevented)', async () => {
+    // Chromium makes scrollable containers click-focusable: without the
+    // mousedown preventDefault, a right-click (expand/collapse) moved
+    // focus to the scroller and arrows scrolled instead of selecting.
+    openPalette();
+    await settle();
+    type('f ');
+    await settle();
+    const row = document.querySelector('.pmd-qcs-row')!;
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 });
+    row.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+  });
+
   it('the first keystroke gets file rows within one service round-trip', async () => {
     openPalette();
     await settle(); // the service connection is warmed at open

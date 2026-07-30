@@ -1021,6 +1021,15 @@ class QuickCardSearchUI {
       <div class="pmd-qcs-hints"></div>`;
     this.root = root;
     this.resultsEl = root.querySelector('.pmd-qcs-results')!;
+    // The search input owns the keyboard, but modern Chromium makes
+    // scrollable containers CLICK-FOCUSABLE — any click in the results
+    // list (rows, chevrons, ★/⊘, right-click expand/collapse) moved
+    // focus to the scroller, after which arrows scrolled it natively
+    // and Enter/Tab/⌘↵ never reached the palette (left-click rows
+    // masked it by refocusing after insert; right-click had no such
+    // save). Preventing the mousedown default stops the focus transfer
+    // at the source while leaving click/contextmenu events intact.
+    this.resultsEl.addEventListener('mousedown', (e) => e.preventDefault());
     this.tagFilterEl = root.querySelector('.pmd-qcs-tagfilter')!;
     this.input = root.querySelector('.pmd-qcs-input')!;
     this.hintsEl = root.querySelector('.pmd-qcs-hints')!;
