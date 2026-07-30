@@ -5,7 +5,75 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.27 — Unreleased
+## 0.1.0-beta.27 — 2026-07-30
+
+- **File-index service (utilityProcess) + off-thread warm parsing.** The
+  boot-window resize freeze (external move/resize right after a window
+  opened showed a stretched stale frame for seconds) was the file-search
+  boot pipeline: main loaded/persisted the index and walked every root
+  (55k+ stats over Dropbox's File Provider), every launch structured-
+  cloned the whole corpus into the renderer, and the pin warm pass
+  parsed files on the renderer thread at idle+2s. The index AND the
+  search now live in a utilityProcess (`file-index-core.ts` +
+  `file-index-service.ts`, esbuild-bundled; main only brokers one
+  MessagePort per window) — a query sends params, ranked top-N rows +
+  total come back, and the corpus never crosses a process boundary.
+  Ranking imports the same `searchFiles` the renderer used, so
+  semantics can't drift. Warm-pass parse+extract moved to a Web Worker
+  (`warm-parse-worker.ts`); the doc crosses back as ProseMirror JSON and
+  materializes once on a real dive. Arrivals fold in latest-wins-
+  PROGRESSIVELY (dropping superseded responses read as a debounce);
+  known-root revalidation waits 3s past configure so the palette-open
+  typing burst never shares the service thread with the walk.
+
+- **Index prunes removed roots** (`host:cmir-prune-index` era, now
+  `configure`): removed search folders persisted in the on-disk index
+  forever (found: 129.7 MB, mostly corpses; 19.8 MB after). The
+  renderer reports the full current-roots set at boot and palette open;
+  the service drops the rest and rewrites only when something changed.
+
+- **File search exclusions** (`fileSearchExclusions`, pathList settings
+  widget, ⊘ row button behind a confirm): filtered service-side at the
+  single choke point where listings become results, so exclusions also
+  keep excluded pins out of the warm pass (pin left dormant by design).
+
+- **Two-rate read times** (`ReaderConfig.tagWpm`): counting splits into
+  highlighted-body vs tag/analytic/cite buckets (`countReadAloudSplit`);
+  blank second rate reproduces the single-rate arithmetic exactly. All
+  four surfaces (status bar, pane footers, container segment, Word
+  Count dialog) use the split; both reader editors gained the field.
+
+- **Live-view picker matches like the palette**: `matchesAllTokens` /
+  `tokenizeQuery` exported from file-search.ts and used by
+  self-ref-picker.ts over heading text + tag cite (collected in its one
+  collectHeadings pass). Outline order kept — it's a tree, not a
+  ranked list.
+
+- **In-file right-click jump**: flat search hits reveal themselves in
+  the outline browse (ancestors expanded, row selected, pinned to the
+  viewport top via an explicit `block: 'start'` scroll after
+  selection's `nearest`).
+
+- **Recents**: multi-pane `loadOpenedIntoSlot` records string-handle
+  opens (same guard as the single-doc mount); the store re-notifies on
+  the cross-window `storage` event; cap 6 → 10 (list grows, no inner
+  scroll — user's call); home rows and settings path cells tail-
+  truncate (direction:rtl + LRM guards in `setPathCell`).
+
+- **Card-by-tag linked copies from .docx**: `ensureDocxSourceAnchor`
+  re-derived the heading id with naive `nodeAt(pos).attrs.id` — for a
+  tag row that position is the CARD wrapper (no id; it lives on the tag
+  child) — and passed the wrapper's whole-card text to the anchor's
+  paragraph cross-check. Now uses `resolveHeadingIdAt` + the heading
+  paragraph's own text (`headingTextAt`). Importer provenance and
+  bookmark-id reimport already covered tags.
+
+- **Palette keyboard focus**: Chromium's click-focusable scrollable
+  containers meant any click in the results list (esp. right-click
+  expand/collapse) moved focus to the scroller — arrows then scrolled
+  natively and keys never reached the palette. `mousedown` on the
+  results container is now default-prevented; the input keeps the
+  keyboard through every list interaction.
 
 - **cardmirror-read CLI** (`src/tools/cardmirror-read-{lib,cli}.ts`,
   bundled single-file to `packaging/cardmirror-read/cardmirror-read.cjs`

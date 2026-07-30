@@ -5,9 +5,31 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## 0.1.0-beta.27 — Unreleased
+## 0.1.0-beta.27 — 2026-07-30
 
 ### Added
+
+- **File search exclusions.** Settings → Files → **File search:
+  exclusions** takes folders and files the palette's file search must
+  never show, no matter which search folder they live under (an
+  excluded folder hides everything beneath it). Every file result also
+  grows a **⊘** button beside the pin star — click it, confirm, and
+  the file drops out of results on the spot. Excluding a pinned file
+  leaves the pin dormant rather than deleting it.
+
+- **A second reading speed per reader.** Most people read tags,
+  analytics, and cites at a different clip than highlighted card
+  bodies. Each reader in Settings → General can now carry an optional
+  second words-per-minute rate for that structural read; leave it
+  blank and the main rate covers everything, exactly as before. Every
+  read-time surface uses the split — the status bar, the per-pane
+  footers, the enclosing-container readout, and the Word Count dialog
+  (which shows both rates, e.g. "200 / 260").
+
+- **Right-click a within-file search hit to see it in context.** When
+  searching inside a dived-into file, right-clicking a result clears
+  the query and reveals that hit in the file's outline — ancestors
+  expanded, the row selected and pinned to the top of the list.
 
 - **`cardmirror-read`: a tiny companion tool for reading files without
   the app.** A single-file command-line utility (in
@@ -24,6 +46,53 @@ see `DETAILED_CHANGELOG.md`.
   **mirror** (`--mirror <folder> --out-dir <folder>`) that keeps an
   always-current plain-text shadow of chosen folders for assistants
   that can only read files (e.g. through a Dropbox integration).
+
+### Changed
+
+- **File search moved out of the app's critical path.** The file index
+  and the search itself now run in a dedicated background process, and
+  the parsing that keeps pinned files warm runs off the interface
+  thread. The visible effect: opening a window and immediately moving
+  or resizing it no longer freezes on a stretched stale frame while
+  the index warms up, and typing in the palette stays fluid while the
+  index refreshes behind it. Search results, ranking, pins, and
+  exclusions behave identically.
+
+- **The live-view / linked-copy picker matches like the search
+  palette.** The section picker's filter box now uses the same
+  order-independent, multi-word matching as everything else — partial
+  and out-of-order words land, and a card's tag row also matches on
+  its cite. Rows keep their outline order.
+
+- **Recent files, rounded out.** The home screen's Recent list now
+  remembers files opened in the three-pane workspace, updates live
+  when another window opens or saves a file, holds ten entries instead
+  of six, and trims long paths from the left so the file and folder
+  names stay readable (the full path is in the tooltip). Settings'
+  folder-path fields trim the same way.
+
+### Fixed
+
+- **Linked copies of a single card from Word files.** Transcluding a
+  card by its tag from a `.docx` source failed with "This Word heading
+  can't be tracked" even though the same pick worked from `.cmir`
+  sources. The Word bookmark step now resolves the card's tag the same
+  way the rest of transclusion does, so card-by-tag linked copies work
+  from Word files too.
+
+- **The palette's keyboard no longer dies after clicking in the
+  results.** Clicking anywhere in the results list — most noticeably
+  right-clicking to expand or collapse an outline heading — could move
+  keyboard focus into the list itself, after which the arrow keys
+  scrolled instead of moving the selection and Enter went nowhere
+  until you clicked back into the search box. The search box now keeps
+  the keyboard through any click in the list.
+
+- **Removed search folders no longer haunt the file index.** Folders
+  taken out of the file-search settings stayed in the on-disk index
+  cache forever, growing it without bound (one real-world index had
+  shrunk from 130 MB to 20 MB after the fix). The index now forgets
+  roots the moment they leave settings.
 
 ## 0.1.0-beta.26 — 2026-07-28
 

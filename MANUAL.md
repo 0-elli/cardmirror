@@ -823,9 +823,9 @@ you *browse* that whole source.
 Searching **version** (or "about this install") shows the running app
 version, and Enter jumps to the About this install section of Settings.
 
-Results show 100 at a time. When there are more, the last row says so —
+Results show 50 at a time. When there are more, the last row says so —
 click **show more** (or just keep arrowing down past the end) to reveal
-the next hundred. When a result's name or folder path is too long to fit
+the next fifty. When a result's name or folder path is too long to fit
 the row, hovering it shows the full text in a tooltip.
 
 **Inserting evidence.** Quick-card, dropzone, and in-file results drop in
@@ -838,7 +838,9 @@ asks you to confirm first — you can turn that prompt off in Settings.
 With the query empty you get the file's outline — indented by level and
 collapsible, like the navigation pane — and as you type you search that
 file's blocks, tags, cites, and analytics. **Enter** inserts the chosen
-object straight into your current document; **Esc** returns you to the file
+object straight into your current document; **right-click** a search hit to
+see it in context — the query clears and the outline opens to that spot,
+ancestors expanded. **Esc** returns you to the file
 list with your search restored. Undo (**Mod-Z**) works while you're diving,
 so you can take an insert back without closing the palette.
 
@@ -846,6 +848,14 @@ so you can take an insert back without closing the palette.
 (★). Pinned files sort to the top and stay parsed for instant search;
 your pinned and recent files are warmed in the background, and the file
 list refreshes itself as files change on disk.
+
+**Excluding files.** The **⊘** button beside the star hides a file from
+file search everywhere, after a confirmation — useful for templates,
+archives, or anything that keeps outranking what you actually want.
+Manage the list (folders too — an excluded folder hides its whole
+subtree) under **Settings → Files → File search: exclusions**. Excluding
+a pinned file keeps the pin dormant; remove the exclusion and the star
+comes back.
 
 **How file results are ordered.** Matches rank by how well the query hits the
 **name** — an exact name first, then a name the query *starts*, then a
@@ -979,7 +989,11 @@ The status bar shows live read-time estimates — how long the visible
 (read-aloud) content would take to deliver. Configure your readers in
 **Settings → General → "Readers for read-time estimates"**: each reader
 is a name plus a words-per-minute rate, and you can list as many as you
-like. The **first two** readers appear live in the status bar; the
+like. Each reader can also carry an optional **second rate for tags,
+analytics, and cites** — most people deliver those faster than
+highlighted card bodies. Leave it blank ("same") and the main rate
+covers everything; set it, and every readout splits the math (the Word
+Count dialog shows both, e.g. "200 / 260"). The **first two** readers appear live in the status bar; the
 numbers update as you highlight and trim.
 
 Click the word count (the **Σ** button / Word Count) for the full
@@ -1267,7 +1281,8 @@ times, and CardMirror documents are self-contained.)
   headings with a filter box — type a few letters to narrow it, use the arrow
   keys, press Enter to pick.
 - **Insert Linked Copy from a File** — open the Search Everything palette, dive
-  into the source file, land on a heading and press **Mod-Enter**. The source
+  into the source file, land on a heading — or on a card's tag, to copy just
+  that one card — and press **Mod-Enter**. The source
   can be a `.cmir` or a Word `.docx`; for a Word file CardMirror adds a small,
   invisible bookmark so it can find the section again (nothing else changes), and
   declines if it can't. *(Making and refreshing a copy from a file is
