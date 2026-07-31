@@ -24,8 +24,11 @@ import {
   addHighlightFocusedCard,
   hasCardSubSelection,
   ensureEngine,
+  addCutterFlag,
   pendingCutterFlags,
   removeCutterFlag,
+  clearCutterFlags,
+  type CutFlag,
   type CutSession,
   type OmissionSection,
 } from './card-cutter-port.js';
@@ -54,35 +57,51 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   }
   const highlightOnly = status.hasUnderline; // underlined → highlight only
 
-  const overlay = document.createElement('div');
-  overlay.className = 'pmd-route-overlay';
+  // NON-MODAL panel: the doc stays interactive so the user can select
+  // chunks of the card and annotate them (U = play up / green, D =
+  // play down / red) while the panel is open. Escape cancels, the Cut
+  // button (or ⌘↩) fires.
   const dialog = document.createElement('div');
-  dialog.className = 'pmd-route-dialog pmd-cardcutter-dialog';
+  dialog.className = 'pmd-cardcutter-panel';
 
   const header = document.createElement('div');
   header.className = 'pmd-route-header';
   header.textContent = highlightOnly ? 'Highlight card' : 'Cut card';
   dialog.appendChild(header);
 
-  const overlayToken = pushOverlay();
-  const close = (): void => {
-    popOverlay(overlayToken);
-    overlay.remove();
+  const close = (discardFlags: boolean): void => {
+    if (discardFlags) clearCutterFlags(view);
+    dialog.remove();
     document.removeEventListener('keydown', onKey, true);
   };
+  const inPanelInput = (t: EventTarget | null): boolean =>
+    t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT');
   const onKey = (e: KeyboardEvent): void => {
-    // Only the topmost overlay owns the keyboard — this handler is
-    // capture-phase, so acting while stacked under another dialog
-    // would swallow that dialog's keys before it ever saw them.
-    if (!isTopOverlay(overlayToken)) return;
     if (e.key === 'Escape') {
-      close();
-      return;
-    }
-    if (!dialog.contains(e.target as Node)) {
       e.preventDefault();
       e.stopPropagation();
+      close(true);
+      return;
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      void onGo();
+      return;
+    }
+    // Annotation hotkeys — single keys, so they must never fire while
+    // typing intent text or with a modifier chord held.
+    if (e.metaKey || e.ctrlKey || e.altKey || inPanelInput(e.target)) return;
+    const k = e.key.toLowerCase();
+    if (k !== 'u' && k !== 'd') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const flag = addCutterFlag(view, k === 'u' ? 'up' : 'down');
+    if (!flag) {
+      showToast(`Select text in the card, then press ${k.toUpperCase()}.`);
+      return;
+    }
+    appendFlagRow(flag);
   };
 
   // ── Read length (optional cap; efficient by default) ──
@@ -140,58 +159,49 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   intentSection.appendChild(intentInput);
   dialog.appendChild(intentSection);
 
-  // ── Pending play-up / play-down flags ──
-  // Made before opening the sheet (select text in the card → “Play up
-  // in next cut” / “Play down in next cut”). Listed here so what the
-  // engine will see is visible — ✕ removes one.
-  const flags = pendingCutterFlags();
-  if (flags.length > 0) {
-    const flagSection = document.createElement('div');
-    flagSection.className = 'pmd-cardcutter-section';
-    flagSection.appendChild(label('Flagged for this cut'));
-    for (const f of flags) {
-      const row = document.createElement('div');
-      row.className = 'pmd-cardcutter-flag';
-      const dir = document.createElement('span');
-      dir.className = `pmd-cardcutter-flag-dir is-${f.kind}`;
-      dir.textContent = f.kind === 'up' ? '▲ play up' : '▼ play down';
-      row.appendChild(dir);
-      const quote = document.createElement('span');
-      quote.className = 'pmd-cardcutter-flag-text';
-      const t = f.text.length > 90 ? `${f.text.slice(0, 87)}…` : f.text;
-      quote.textContent = `“${t}”`;
-      row.appendChild(quote);
-      const x = document.createElement('button');
-      x.type = 'button';
-      x.className = 'pmd-cardcutter-flag-remove';
-      x.textContent = '✕';
-      x.title = 'Remove this flag';
-      x.addEventListener('click', () => {
-        removeCutterFlag(f);
-        row.remove();
-        if (flagSection.querySelectorAll('.pmd-cardcutter-flag').length === 0) flagSection.remove();
-      });
-      row.appendChild(x);
-      flagSection.appendChild(row);
-    }
-    dialog.appendChild(flagSection);
-  }
-
-  // ── Ask-me ──
-  const askDefault = settings.get('cardCutterClarifyingQuestions') !== 'never';
-  let askMe = askDefault;
-  const askRow = document.createElement('label');
-  askRow.className = 'pmd-cardcutter-check';
-  const askInput = document.createElement('input');
-  askInput.type = 'checkbox';
-  askInput.checked = askMe;
-  askInput.disabled = settings.get('cardCutterClarifyingQuestions') === 'never';
-  askInput.addEventListener('change', () => (askMe = askInput.checked));
-  askRow.appendChild(askInput);
-  const askSpan = document.createElement('span');
-  askSpan.textContent = 'Ask me if this card cuts multiple ways';
-  askRow.appendChild(askSpan);
-  if (!highlightOnly) dialog.appendChild(askRow);
+  // ── Annotations (select in the card → U / D) ──
+  // The doc stays live under this panel: select a chunk, press U to
+  // tint it green (play up) or D to tint it red (play down). Each
+  // annotation is listed here with a ✕; the engine receives them as
+  // this cut's play-up / play-down directives.
+  const flagSection = document.createElement('div');
+  flagSection.className = 'pmd-cardcutter-section';
+  flagSection.appendChild(label('Play up / play down (optional)'));
+  const flagHint = document.createElement('div');
+  flagHint.className = 'pmd-cardcutter-flag-hint';
+  flagHint.innerHTML =
+    'Select text in the card, then press <kbd>U</kbd> to play up (green) or <kbd>D</kbd> to play down (red).';
+  flagSection.appendChild(flagHint);
+  const flagList = document.createElement('div');
+  flagSection.appendChild(flagList);
+  const appendFlagRow = (f: CutFlag): void => {
+    const row = document.createElement('div');
+    row.className = 'pmd-cardcutter-flag';
+    const dir = document.createElement('span');
+    dir.className = `pmd-cardcutter-flag-dir is-${f.kind}`;
+    dir.textContent = f.kind === 'up' ? '▲' : '▼';
+    row.appendChild(dir);
+    const quote = document.createElement('span');
+    quote.className = 'pmd-cardcutter-flag-text';
+    const t = f.text.length > 90 ? `${f.text.slice(0, 87)}…` : f.text;
+    quote.textContent = `“${t}”`;
+    row.appendChild(quote);
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'pmd-cardcutter-flag-remove';
+    x.textContent = '✕';
+    x.title = 'Remove this annotation';
+    x.addEventListener('click', () => {
+      removeCutterFlag(view, f);
+      row.remove();
+    });
+    row.appendChild(x);
+    flagList.appendChild(row);
+  };
+  // Stale flags from an earlier panel in this doc (e.g. it was closed
+  // by a failed cut) are still pending — show them.
+  for (const f of pendingCutterFlags()) appendFlagRow(f);
+  dialog.appendChild(flagSection);
 
   // ── Buttons ──
   const buttons = document.createElement('div');
@@ -200,47 +210,40 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   cancel.type = 'button';
   cancel.className = 'pmd-route-cancel';
   cancel.textContent = 'Cancel';
-  cancel.addEventListener('click', close);
+  cancel.addEventListener('click', () => close(true));
   buttons.appendChild(cancel);
   const go = document.createElement('button');
   go.type = 'button';
   go.className = 'pmd-text-prompt-ok';
   go.textContent = highlightOnly ? 'Highlight' : 'Cut';
   go.dataset['label'] = go.textContent;
+  go.title = '⌘↩';
   go.addEventListener('click', () => {
     void onGo();
   });
   buttons.appendChild(go);
   dialog.appendChild(buttons);
 
-  overlay.appendChild(dialog);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
   document.addEventListener('keydown', onKey, true);
-  document.body.appendChild(overlay);
-  dialog.tabIndex = -1;
-  dialog.focus();
+  document.body.appendChild(dialog);
 
   async function onGo(): Promise<void> {
-    // Apply-then-refine: cut now (efficiently, capped if a length was
-    // chosen), then — when asked, or when a cap couldn't be met — open
-    // the section checklist over the real cut with exact counts.
-    close();
+    // Keep the flags — cutFocusedCard consumes and clears them (and
+    // their tints) itself.
+    const intent = intentInput.value.trim();
+    close(false);
     const session = await cutFocusedCard(view, {
-      ...(intentInput.value.trim() ? { intent: intentInput.value.trim() } : {}),
+      ...(intent ? { intent } : {}),
       ...(readTimeSec ? { readTimeSec } : {}),
     });
     if (!session) return;
-    // Cap met cleanly → done. Cap missed → offer manual trim. No cap →
-    // offer the checklist when ask-me is on.
-    const wantChecklist = readTimeSec ? !!session.shortfall : askMe;
-    if (!wantChecklist) return;
+    // Cap met cleanly → done. Cap missed → offer the manual trim
+    // checklist so the user decides what to drop.
+    if (!readTimeSec || !session.shortfall) return;
     showToast('Finding optional sections…');
     const sections = await proposeFocusedOmissions(session);
     if (sections.length === 0) {
-      if (session.shortfall)
-        showToast(`Couldn't reach ≤${readTimeSec}s without dropping a warrant.`);
+      showToast(`Couldn't reach ≤${readTimeSec}s without dropping a warrant.`);
       return;
     }
     openTrimChecklist(view, session, sections, readTimeSec);

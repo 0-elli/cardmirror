@@ -3409,16 +3409,6 @@ export const SETTING_METADATA: SettingMeta[] = [
     revealWhen: 'cardCutterEnabled',
   },
   {
-    key: 'cardCutterClarifyingQuestions',
-    label: 'Clarifying questions',
-    description:
-      'When the cutter may pause to ask how you want a card cut (e.g. establish vs. supplement). When-ambiguous lets the model decide; Always forces a prompt; Never skips them.',
-    kind: 'cardCutterClarifyingQuestions',
-    category: 'comments-ai',
-    searchHidden: true,
-    revealWhen: 'cardCutterEnabled',
-  },
-  {
     key: 'cardCutterAcronymSplitting',
     label: 'Acronym letter-splitting',
     description:

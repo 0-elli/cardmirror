@@ -13582,6 +13582,46 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
 .pmd-cardcutter-check {
   margin-top: 0.5rem;
 }
+/* Non-modal cut panel — the doc stays interactive underneath so the
+   user can select chunks and annotate them (U/D) while it's open.
+   Anchored bottom-left like the trim checklist. */
+.pmd-cardcutter-panel {
+  position: fixed;
+  left: calc(var(--nav-width) + 0.5rem);
+  bottom: calc(var(--status-bar-height) + 0.5rem);
+  z-index: 950;
+  width: 24rem;
+  max-width: calc(100vw - var(--nav-width) - 1rem);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0.9rem 1rem;
+  background: var(--pmd-c-surface);
+  border: 1px solid var(--pmd-c-border-soft);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+}
+.pmd-cardcutter-flag-hint {
+  font-size: 0.8rem;
+  color: var(--pmd-c-text-secondary);
+  margin-bottom: 0.35rem;
+}
+.pmd-cardcutter-flag-hint kbd {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--pmd-c-border-soft);
+  border-radius: 4px;
+  background: var(--pmd-c-bg);
+}
+/* In-doc annotation tints (decorations, never serialized). */
+.pmd-cc-flag-up {
+  background: rgba(46, 160, 67, 0.28);
+  border-bottom: 2px solid rgba(46, 160, 67, 0.75);
+}
+.pmd-cc-flag-down {
+  background: rgba(218, 54, 51, 0.24);
+  border-bottom: 2px solid rgba(218, 54, 51, 0.7);
+}
 .pmd-cardcutter-intent {
   width: 100%;
   resize: vertical;

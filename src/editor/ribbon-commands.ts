@@ -4279,8 +4279,6 @@ export type RibbonCommandId =
   | 'toggleVoice'
   | 'openCardCutter'
   | 'addCutterContext'
-  | 'cutterPlayUp'
-  | 'cutterPlayDown'
   | 'openCutterGuidance'
   | 'createFlashcard'
   | 'manageFlashcards'
@@ -4501,8 +4499,6 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'toggleVoice',
   'openCardCutter',
   'addCutterContext',
-  'cutterPlayUp',
-  'cutterPlayDown',
   'openCutterGuidance',
   'createFlashcard',
   'manageFlashcards',
@@ -4679,8 +4675,6 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   toggleVoice: 'Toggle voice control',
   openCardCutter: 'Cut card with AI…',
   addCutterContext: 'Use Selection as Cutter Context',
-  cutterPlayUp: 'Play Up in Next Cut',
-  cutterPlayDown: 'Play Down in Next Cut',
   openCutterGuidance: 'Edit File Cutting Guidance',
   createFlashcard: 'Create Flashcard From Selection',
   manageFlashcards: 'Manage Flashcards',
@@ -4918,8 +4912,6 @@ export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly st
     'refine highlighting', 'refine highlight', 'rehighlight', 'fix highlighting',
   ],
   addCutterContext: ['cutter context', 'context section', 'designate context', 'cutting context'],
-  cutterPlayUp: ['play up', 'prioritize in cut', 'emphasize section'],
-  cutterPlayDown: ['play down', 'deprioritize in cut', 'skip section'],
   openCutterGuidance: ['file guidance', 'cutting guidance', 'cutter guidance', 'how this file works'],
   // Spelled-out slot numbers, so "one" / "two" / "three" surface the
   // slot focus (switch) + send-to-slot commands in the command bar.
@@ -5008,8 +5000,6 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   toggleVoice: 'Mod-Shift-V',
   openCardCutter: 'Mod-Alt-c',
   addCutterContext: '',
-  cutterPlayUp: '',
-  cutterPlayDown: '',
   openCutterGuidance: '',
   createFlashcard: '',
   manageFlashcards: '',
@@ -5252,10 +5242,6 @@ export interface RibbonContext {
   /** Create an anchored cutter-context note from the selection. Gated
    *  on `cardCutterActive`. */
   addCutterContext: () => void;
-  /** Flag the selection to play up / play down in the next cut. Gated
-   *  on `cardCutterActive`. */
-  cutterPlayUp: () => void;
-  cutterPlayDown: () => void;
   /** Open (creating if absent) the doc's single anchorless file-guidance
    *  note for the cutter. Gated on `cardCutterActive`. */
   openCutterGuidance: () => void;
@@ -5423,8 +5409,6 @@ const DEFAULT_RIBBON_CONTEXT: RibbonContext = {
   toggleVoice: () => {},
   openCardCutter: () => {},
   addCutterContext: () => {},
-  cutterPlayUp: () => {},
-  cutterPlayDown: () => {},
   openCutterGuidance: () => {},
   cardCutterActive: () => false,
   createFlashcard: () => {},
@@ -5770,22 +5754,6 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
         if (state.selection.empty) return false;
         if (!dispatch) return true;
         ctx.addCutterContext();
-        return true;
-      };
-    case 'cutterPlayUp':
-      return (state, dispatch) => {
-        if (!ctx.cardCutterActive()) return false;
-        if (state.selection.empty) return false;
-        if (!dispatch) return true;
-        ctx.cutterPlayUp();
-        return true;
-      };
-    case 'cutterPlayDown':
-      return (state, dispatch) => {
-        if (!ctx.cardCutterActive()) return false;
-        if (state.selection.empty) return false;
-        if (!dispatch) return true;
-        ctx.cutterPlayDown();
         return true;
       };
     case 'openCutterGuidance':

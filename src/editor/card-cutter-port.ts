@@ -29,7 +29,7 @@ import { resolveAiModel } from './ai/llm.js';
 import { showToast } from './toast.js';
 import { AiActivity } from './ai/ai-activity.js';
 import { claimRegion, type EditLease } from './ai/edit-coordinator.js';
-import { setCardCutterPreview } from './card-cutter-preview-plugin.js';
+import { setCardCutterPreview, setCutterFlagDecorations } from './card-cutter-preview-plugin.js';
 import { getElectronHost } from './host/index.js';
 import { learnStore } from './learn-store-host.js';
 import { flattenDoc, resolveDescriptorIn } from './learn-anchor.js';
@@ -626,41 +626,64 @@ function docStructureAt(
   return { section, near };
 }
 
-// ─── Play-up / play-down flags for the NEXT cut ───────────────────
+// ─── Play-up / play-down flags (cut-panel annotation mode) ────────
 
 export interface CutFlag {
   kind: 'up' | 'down';
   /** Verbatim flagged text (what ships in the prompt). */
   text: string;
+  /** Selection positions at annotation time — for the tint
+   *  decorations. The decoration set maps them through edits; the
+   *  prompt ships the captured text either way. */
+  from: number;
+  to: number;
   /** Doc the flag was made in — flags never leak across docs. */
   docId: string | null;
 }
 
-/** Pending flags for the next cut. Transient by design: consumed (and
- *  cleared) by the next successful cut in the same doc, or removed by
- *  hand in the launch sheet. */
+/** Flags for the in-progress cut panel. Transient by design: consumed
+ *  by the cut that used them, or discarded when the panel closes. */
 let cutFlags: CutFlag[] = [];
 
-/** Flag the current selection to play up or down in the next cut.
- *  Returns false when the selection is empty. */
-export function addCutterFlag(view: EditorView, kind: 'up' | 'down'): boolean {
-  const { from, to, empty } = view.state.selection;
-  if (empty) return false;
-  const text = view.state.doc.textBetween(from, to, ' ').trim();
-  if (!text) return false;
-  cutFlags.push({ kind, text, docId: cutterDocIdProvider?.() ?? null });
-  return true;
+function refreshFlagDecorations(view: EditorView): void {
+  const flags = pendingCutterFlags();
+  setCutterFlagDecorations(
+    view,
+    flags.length > 0 ? flags.map((f) => ({ from: f.from, to: f.to, kind: f.kind })) : null,
+  );
 }
 
-/** Flags pending for the active doc (what the launch sheet lists). */
+/** Flag the current selection to play up or down in the next cut and
+ *  tint it green/red. Returns the flag, or null if nothing usable is
+ *  selected. */
+export function addCutterFlag(view: EditorView, kind: 'up' | 'down'): CutFlag | null {
+  const { from, to, empty } = view.state.selection;
+  if (empty) return null;
+  const text = view.state.doc.textBetween(from, to, ' ').trim();
+  if (!text) return null;
+  const flag: CutFlag = { kind, text, from, to, docId: cutterDocIdProvider?.() ?? null };
+  cutFlags.push(flag);
+  refreshFlagDecorations(view);
+  return flag;
+}
+
+/** Flags pending for the active doc (what the cut panel lists). */
 export function pendingCutterFlags(): CutFlag[] {
   const docId = cutterDocIdProvider?.() ?? null;
   return cutFlags.filter((f) => f.docId === docId);
 }
 
-/** Remove one pending flag by identity (launch-sheet ✕ buttons). */
-export function removeCutterFlag(flag: CutFlag): void {
+/** Remove one pending flag by identity (panel ✕ buttons). */
+export function removeCutterFlag(view: EditorView, flag: CutFlag): void {
   cutFlags = cutFlags.filter((f) => f !== flag);
+  refreshFlagDecorations(view);
+}
+
+/** Discard the active doc's pending flags (panel cancelled). */
+export function clearCutterFlags(view: EditorView): void {
+  const docId = cutterDocIdProvider?.() ?? null;
+  cutFlags = cutFlags.filter((f) => f.docId !== docId);
+  setCutterFlagDecorations(view, null);
 }
 
 // ─── The one public entry the command layer calls ─────────────────
@@ -772,7 +795,7 @@ export async function cutFocusedCard(
     applyCutToCard(view, placed, result.spans, applyLayers, (tr) => lease.apply(tr));
     for (const w of result.warnings) console.log(`[cardcutter] ${w}`);
     // Flags are per-cut: consumed by the cut that used them.
-    for (const f of flags) removeCutterFlag(f);
+    for (const f of flags) removeCutterFlag(view, f);
     showToast(hasUnderline ? 'Card highlighted — ↶ to undo' : 'Card cut — ↶ to undo');
     return {
       focused: placed,
