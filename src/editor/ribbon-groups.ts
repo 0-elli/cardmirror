@@ -248,7 +248,7 @@ export const RIBBON_GROUPS: RibbonGroup[] = [
   },
   {
     title: 'Card cutter',
-    commands: ['openCardCutter', 'addCutterContext', 'openCutterGuidance'],
+    commands: ['openCardCutter', 'cutterPlayUp', 'cutterPlayDown', 'addCutterContext', 'openCutterGuidance'],
   },
   {
     title: 'Reading',

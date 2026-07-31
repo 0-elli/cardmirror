@@ -13582,6 +13582,53 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
 .pmd-cardcutter-check {
   margin-top: 0.5rem;
 }
+.pmd-cardcutter-intent {
+  width: 100%;
+  resize: vertical;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--pmd-c-border-soft);
+  border-radius: 6px;
+  background: var(--pmd-c-bg);
+  color: var(--pmd-c-text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+.pmd-cardcutter-flag {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+}
+.pmd-cardcutter-flag-dir {
+  flex: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.pmd-cardcutter-flag-dir.is-up {
+  color: var(--pmd-c-accent);
+}
+.pmd-cardcutter-flag-dir.is-down {
+  color: var(--pmd-c-text-secondary);
+}
+.pmd-cardcutter-flag-text {
+  color: var(--pmd-c-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pmd-cardcutter-flag-remove {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--pmd-c-text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.pmd-cardcutter-flag-remove:hover {
+  color: var(--pmd-c-text);
+}
 .pmd-cardcutter-proposal span {
   display: block;
 }

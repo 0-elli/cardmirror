@@ -24,16 +24,11 @@ import {
   addHighlightFocusedCard,
   hasCardSubSelection,
   ensureEngine,
+  pendingCutterFlags,
+  removeCutterFlag,
   type CutSession,
   type OmissionSection,
 } from './card-cutter-port.js';
-
-type Intent = 'build' | 'support' | 'answer';
-const INTENT_ROLE: Record<Intent, 'block' | 'ext' | 'at'> = {
-  build: 'block',
-  support: 'ext',
-  answer: 'at',
-};
 
 const READ_TIME_PRESETS = [8, 12, 20, 30];
 
@@ -129,34 +124,58 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   rtSection.appendChild(rtRow);
   dialog.appendChild(rtSection);
 
-  // ── Intent ──
-  let intent: Intent = 'build';
+  // ── Intent (free-form) ──
+  // Purpose is the #1 selection lever, and canned categories flatten
+  // it — a prose line ("2AC answer to the courts CP", "impact card,
+  // play up escalation") goes straight to the engine as this cut's
+  // stated purpose. Optional: blank = infer from the file context.
   const intentSection = document.createElement('div');
   intentSection.className = 'pmd-cardcutter-section';
-  intentSection.appendChild(label('Using this card to…'));
-  const intents: [Intent, string][] = [
-    ['build', 'Build a point — full read'],
-    ['support', 'Add support — supplement a point already made'],
-    ['answer', 'Answer — isolate the responsive line'],
-  ];
-  const grp = `pmd-cc-intent-${Math.random().toString(36).slice(2, 7)}`;
-  for (const [val, text] of intents) {
-    const lbl = document.createElement('label');
-    lbl.className = 'pmd-cardcutter-radio';
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = grp;
-    input.checked = val === intent;
-    input.addEventListener('change', () => {
-      if (input.checked) intent = val;
-    });
-    lbl.appendChild(input);
-    const span = document.createElement('span');
-    span.textContent = text;
-    lbl.appendChild(span);
-    intentSection.appendChild(lbl);
-  }
+  intentSection.appendChild(label('What’s this cut for? (optional)'));
+  const intentInput = document.createElement('textarea');
+  intentInput.className = 'pmd-cardcutter-intent';
+  intentInput.rows = 2;
+  intentInput.placeholder =
+    'e.g. “2AC answer to the courts counterplan — the delay warrant matters most”';
+  intentSection.appendChild(intentInput);
   dialog.appendChild(intentSection);
+
+  // ── Pending play-up / play-down flags ──
+  // Made before opening the sheet (select text in the card → “Play up
+  // in next cut” / “Play down in next cut”). Listed here so what the
+  // engine will see is visible — ✕ removes one.
+  const flags = pendingCutterFlags();
+  if (flags.length > 0) {
+    const flagSection = document.createElement('div');
+    flagSection.className = 'pmd-cardcutter-section';
+    flagSection.appendChild(label('Flagged for this cut'));
+    for (const f of flags) {
+      const row = document.createElement('div');
+      row.className = 'pmd-cardcutter-flag';
+      const dir = document.createElement('span');
+      dir.className = `pmd-cardcutter-flag-dir is-${f.kind}`;
+      dir.textContent = f.kind === 'up' ? '▲ play up' : '▼ play down';
+      row.appendChild(dir);
+      const quote = document.createElement('span');
+      quote.className = 'pmd-cardcutter-flag-text';
+      const t = f.text.length > 90 ? `${f.text.slice(0, 87)}…` : f.text;
+      quote.textContent = `“${t}”`;
+      row.appendChild(quote);
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'pmd-cardcutter-flag-remove';
+      x.textContent = '✕';
+      x.title = 'Remove this flag';
+      x.addEventListener('click', () => {
+        removeCutterFlag(f);
+        row.remove();
+        if (flagSection.querySelectorAll('.pmd-cardcutter-flag').length === 0) flagSection.remove();
+      });
+      row.appendChild(x);
+      flagSection.appendChild(row);
+    }
+    dialog.appendChild(flagSection);
+  }
 
   // ── Ask-me ──
   const askDefault = settings.get('cardCutterClarifyingQuestions') !== 'never';
@@ -209,7 +228,7 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     // the section checklist over the real cut with exact counts.
     close();
     const session = await cutFocusedCard(view, {
-      role: INTENT_ROLE[intent],
+      ...(intentInput.value.trim() ? { intent: intentInput.value.trim() } : {}),
       ...(readTimeSec ? { readTimeSec } : {}),
     });
     if (!session) return;

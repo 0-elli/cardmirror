@@ -82,7 +82,7 @@ import { mobilePlugin, setMobileShellActive } from './mobile-plugin.js';
 import { installCardCutterGate, cardCutterActive } from './card-cutter-gate.js';
 import { installPluginCommunityGate } from './plugin-community-gate.js';
 import { openCutLaunchSheet } from './card-cutter-ui.js';
-import { setCutterDocIdProvider } from './card-cutter-port.js';
+import { setCutterDocIdProvider, addCutterFlag } from './card-cutter-port.js';
 import {
   quickCardsStore,
   buildQuickCard,
@@ -1672,6 +1672,16 @@ const ribbonContext: RibbonContext = {
       commentsToggleBtn?.setAttribute('aria-pressed', 'true');
     }
     commentsColumn.activateNote(noteId);
+  },
+  cutterPlayUp: () => {
+    if (!view) return;
+    if (addCutterFlag(view, 'up')) showToast('Flagged to play up in the next cut.');
+    else showToast('Select the text to play up first.');
+  },
+  cutterPlayDown: () => {
+    if (!view) return;
+    if (addCutterFlag(view, 'down')) showToast('Flagged to play down in the next cut.');
+    else showToast('Select the text to play down first.');
   },
   openCutterGuidance: () => {
     if (!view || !commentsColumn) return;

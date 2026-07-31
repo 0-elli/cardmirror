@@ -69,6 +69,12 @@ interface CutOptions {
    *  the #1 cut killer; newer engines consume this, older ones ignore
    *  the extra field. */
   context?: string;
+  /** Free-form user statement of what THIS cut is for. */
+  intent?: string;
+  /** Verbatim card stretches the user flagged to prioritize. */
+  playUp?: string[];
+  /** Verbatim card stretches the user flagged to de-prioritize. */
+  playDown?: string[];
   underlineGenerosity?: 'lean' | 'standard' | 'generous';
   model?: string;
   terminalImpact?: boolean;
@@ -620,10 +626,50 @@ function docStructureAt(
   return { section, near };
 }
 
+// ─── Play-up / play-down flags for the NEXT cut ───────────────────
+
+export interface CutFlag {
+  kind: 'up' | 'down';
+  /** Verbatim flagged text (what ships in the prompt). */
+  text: string;
+  /** Doc the flag was made in — flags never leak across docs. */
+  docId: string | null;
+}
+
+/** Pending flags for the next cut. Transient by design: consumed (and
+ *  cleared) by the next successful cut in the same doc, or removed by
+ *  hand in the launch sheet. */
+let cutFlags: CutFlag[] = [];
+
+/** Flag the current selection to play up or down in the next cut.
+ *  Returns false when the selection is empty. */
+export function addCutterFlag(view: EditorView, kind: 'up' | 'down'): boolean {
+  const { from, to, empty } = view.state.selection;
+  if (empty) return false;
+  const text = view.state.doc.textBetween(from, to, ' ').trim();
+  if (!text) return false;
+  cutFlags.push({ kind, text, docId: cutterDocIdProvider?.() ?? null });
+  return true;
+}
+
+/** Flags pending for the active doc (what the launch sheet lists). */
+export function pendingCutterFlags(): CutFlag[] {
+  const docId = cutterDocIdProvider?.() ?? null;
+  return cutFlags.filter((f) => f.docId === docId);
+}
+
+/** Remove one pending flag by identity (launch-sheet ✕ buttons). */
+export function removeCutterFlag(flag: CutFlag): void {
+  cutFlags = cutFlags.filter((f) => f !== flag);
+}
+
 // ─── The one public entry the command layer calls ─────────────────
 
 export interface CutInvocation {
-  role: CutOptions['role'];
+  /** Free-form user statement of what this cut is for. Replaces the
+   *  old role radios — the engine infers genre from the section path
+   *  and treats a stated purpose as outranking that inference. */
+  intent?: string;
   /** Optional read-time CAP in seconds. The cut is always made
    *  efficiently first; when set, a secondary de-highlight trims it
    *  toward this length (never pads up to it). Omit = no cap. */
@@ -669,6 +715,7 @@ export async function cutFocusedCard(
     showToast('This card is already highlighted.');
     return null;
   }
+  const flags = pendingCutterFlags();
   const opts: CutOptions = {
     // Efficient by default; a read-time cap becomes the secondary
     // de-highlight target. No cap → undefined → pure efficient cut.
@@ -676,8 +723,17 @@ export async function cutFocusedCard(
       ? { targetWords: Math.max(15, Math.round((inv.readTimeSec * readerWpm()) / 60)) }
       : {}),
     emphasisStyle: settings.get('cardCutterEmphasisStyle'),
-    role: inv.role,
+    // Inert on current engines (genre comes from the section path in
+    // context); kept so an older installed bundle still gets a value.
+    role: 'block',
     context: buildCutterContext(view, focused.cardFrom),
+    ...(inv.intent?.trim() ? { intent: inv.intent.trim() } : {}),
+    ...(flags.some((f) => f.kind === 'up')
+      ? { playUp: flags.filter((f) => f.kind === 'up').map((f) => f.text) }
+      : {}),
+    ...(flags.some((f) => f.kind === 'down')
+      ? { playDown: flags.filter((f) => f.kind === 'down').map((f) => f.text) }
+      : {}),
     model: resolveAiModel(),
     terminalImpact: api.detectTerminalImpact(focused.card.tag),
   };
@@ -715,6 +771,8 @@ export async function cutFocusedCard(
       : undefined;
     applyCutToCard(view, placed, result.spans, applyLayers, (tr) => lease.apply(tr));
     for (const w of result.warnings) console.log(`[cardcutter] ${w}`);
+    // Flags are per-cut: consumed by the cut that used them.
+    for (const f of flags) removeCutterFlag(f);
     showToast(hasUnderline ? 'Card highlighted — ↶ to undo' : 'Card cut — ↶ to undo');
     return {
       focused: placed,
