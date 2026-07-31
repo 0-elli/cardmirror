@@ -70,6 +70,14 @@ export interface Note {
   comments: LocalComment[];
   anchor: AnchorDescriptor | null;
   createdAt: string;
+  /** Cutter-context role, when this note feeds the card cutter:
+   *  'cutter-section' = an anchored note designating a stretch of the
+   *  file whose text ships as context with every cut in this doc;
+   *  'cutter-guidance' = THE one anchorless per-doc note holding
+   *  file-wide guidance (root = the user's "how this file works",
+   *  replies = the cutter's accumulated card-neutral refinements,
+   *  `ai: true` turns). Absent = a plain private note. */
+  kind?: 'cutter-section' | 'cutter-guidance';
 }
 
 export interface ReviewLogEntry {
@@ -238,6 +246,14 @@ export class LearnStore {
   notesForDoc(docId: string): Note[] {
     return this.notes.filter((n) => n.docId === docId);
   }
+  /** Anchored cutter-context notes for a doc (designated sections). */
+  cutterSectionNotes(docId: string): Note[] {
+    return this.notes.filter((n) => n.docId === docId && n.kind === 'cutter-section');
+  }
+  /** The doc's single anchorless file-guidance note, if created. */
+  cutterGuidanceNote(docId: string): Note | undefined {
+    return this.notes.find((n) => n.docId === docId && n.kind === 'cutter-guidance');
+  }
 
   /** The cardIds belonging to a scope. */
   private cardIdsForScope(scope: Scope): Set<string> {
@@ -356,6 +372,17 @@ export class LearnStore {
     const c = n?.comments[index];
     if (c) {
       c.text = text;
+      this.changed();
+    }
+  }
+
+  /** Delete a single turn of a note by index (the guidance note's
+   *  cutter refinements are individually deletable). No-op on a bad
+   *  index. */
+  removeNoteComment(noteId: string, index: number): void {
+    const n = this.notes.find((x) => x.noteId === noteId);
+    if (n && index >= 0 && index < n.comments.length) {
+      n.comments.splice(index, 1);
       this.changed();
     }
   }

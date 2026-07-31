@@ -31,6 +31,8 @@ import { AiActivity } from './ai/ai-activity.js';
 import { claimRegion, type EditLease } from './ai/edit-coordinator.js';
 import { setCardCutterPreview } from './card-cutter-preview-plugin.js';
 import { getElectronHost } from './host/index.js';
+import { learnStore } from './learn-store-host.js';
+import { flattenDoc, resolveDescriptorIn } from './learn-anchor.js';
 
 // ─── Engine contract (structural — no import of the package) ──────
 
@@ -62,6 +64,11 @@ interface CutOptions {
   targetWords?: number;
   emphasisStyle: 'voice' | 'independent' | 'minimal';
   role: 'shell' | 'block' | 'at' | 'ext' | 'impact';
+  /** Cutter context: file guidance + designated sections + section
+   *  path + neighbor tags. The bench found missing purpose/context was
+   *  the #1 cut killer; newer engines consume this, older ones ignore
+   *  the extra field. */
+  context?: string;
   underlineGenerosity?: 'lean' | 'standard' | 'generous';
   model?: string;
   terminalImpact?: boolean;
@@ -251,14 +258,20 @@ export interface FocusedCard {
 
 /** Whether the card already has any underline/emphasis, and any
  *  highlight — drives cut vs highlight vs done routing. */
-function cardState(f: FocusedCard): { hasUnderline: boolean; hasHighlight: boolean } {
+function cardState(f: FocusedCard): {
+  hasUnderline: boolean;
+  hasEmphasis: boolean;
+  hasHighlight: boolean;
+} {
   let hasUnderline = false;
+  let hasEmphasis = false;
   let hasHighlight = false;
   for (const s of f.existing) {
     if (s.layer === 'hl') hasHighlight = true;
+    else if (s.layer === 'em') hasEmphasis = true;
     else hasUnderline = true;
   }
-  return { hasUnderline, hasHighlight };
+  return { hasUnderline, hasEmphasis, hasHighlight };
 }
 
 /** Delimiter-protected spans — bracketed Omitted / ALT TEXT / FOOTNOTE
@@ -463,6 +476,146 @@ function claimCardLease(view: EditorView, focused: FocusedCard, label: string): 
   return lease;
 }
 
+// ─── Cutter context (file guidance + sections + doc structure) ────
+
+/** The active doc's annotation id, injected by the host (index.ts owns
+ *  doc identity; importing it here would be a cycle). Null until wired
+ *  or when no doc is open — context then omits the notes. */
+let cutterDocIdProvider: (() => string | null) | null = null;
+export function setCutterDocIdProvider(fn: () => string | null): void {
+  cutterDocIdProvider = fn;
+}
+
+/** Cap per designated-section excerpt so a huge selection can't blow
+ *  up the prompt (the engine sees the card body separately anyway). */
+const SECTION_EXCERPT_CHARS = 4000;
+
+/** Assemble the context block the engine's prompts consume: the file
+ *  guidance note (root = user's "how this file works", replies = the
+ *  cutter's accumulated refinements), each designated section's live
+ *  text, the focused card's section path, and its neighbors' tags in
+ *  the same block. Mirrors the bench's cutterContext contract — the
+ *  ordering is stable so the [context prefix][card payload] split
+ *  stays prompt-cache-friendly. */
+export function buildCutterContext(view: EditorView, cardFrom: number): string {
+  const parts: string[] = [];
+  const docId = cutterDocIdProvider?.() ?? null;
+
+  if (docId) {
+    const guidance = learnStore.cutterGuidanceNote(docId);
+    if (guidance && guidance.comments.length > 0) {
+      const [root, ...rest] = guidance.comments;
+      const lines = [root!.text.trim()];
+      for (const r of rest) {
+        const t = r.text.trim();
+        if (t) lines.push(`- ${t}`);
+      }
+      parts.push(
+        `FILE GUIDANCE (how this file works):\n${lines.filter(Boolean).join('\n')}`,
+      );
+    }
+    const sections = learnStore.cutterSectionNotes(docId);
+    if (sections.length > 0) {
+      // Resolve all descriptors against ONE flatten (O(doc) once).
+      const flat = flattenDoc(view.state.doc);
+      const excerpts: string[] = [];
+      for (const n of sections) {
+        if (!n.anchor) continue;
+        const r = resolveDescriptorIn(flat, n.anchor);
+        // Live text when the anchor resolves; the designation-time
+        // quote when edits broke it (stale context beats none).
+        let live = '';
+        if (r) {
+          const startI = flat.pos.findIndex((p) => p >= r.from);
+          let endI = flat.pos.findIndex((p) => p >= r.to);
+          if (endI === -1) endI = flat.text.length;
+          if (startI >= 0) live = flat.text.slice(startI, endI);
+        }
+        const text = (live || n.anchor.quote).trim();
+        if (!text) continue;
+        const label = n.comments[0]?.text.trim();
+        excerpts.push(
+          (label ? `[${label}]\n` : '') + text.slice(0, SECTION_EXCERPT_CHARS),
+        );
+      }
+      if (excerpts.length > 0) {
+        parts.push(`DESIGNATED CONTEXT SECTIONS (from this file):\n${excerpts.join('\n---\n')}`);
+      }
+    }
+  }
+
+  const structure = docStructureAt(view, cardFrom);
+  if (structure.section) parts.push(`SECTION: ${structure.section}`);
+  if (structure.near.length > 0) {
+    parts.push(
+      `NEARBY TAGS IN THIS BLOCK (the card may continue their story):\n  ${structure.near.join('\n  ')}`,
+    );
+  }
+  return parts.join('\n\n');
+}
+
+/** Walk the doc's top-level children to find the focused card's
+ *  pocket › hat › block path and its neighbors' tags within the same
+ *  block (blocks tell one story across cards — the engine credits
+ *  material serving it). */
+function docStructureAt(
+  view: EditorView,
+  cardFrom: number,
+): { section: string; near: string[] } {
+  interface Entry {
+    kind: 'pocket' | 'hat' | 'block' | 'card';
+    text: string;
+    from: number;
+    to: number;
+  }
+  const entries: Entry[] = [];
+  view.state.doc.forEach((child, offset) => {
+    const t = child.type.name;
+    if (t === 'pocket' || t === 'hat' || t === 'block') {
+      entries.push({ kind: t, text: child.textContent.trim(), from: offset, to: offset + child.nodeSize });
+    } else if (t === 'card' || t === 'analytic_unit') {
+      let tag = '';
+      child.forEach((cc) => {
+        if (!tag && (cc.type.name === 'tag' || cc.type.name === 'analytic')) {
+          tag = cc.textContent.trim();
+        }
+      });
+      entries.push({ kind: 'card', text: tag, from: offset, to: offset + child.nodeSize });
+    }
+  });
+  const idx = entries.findIndex(
+    (e) => e.kind === 'card' && e.from <= cardFrom && cardFrom < e.to,
+  );
+  if (idx < 0) return { section: '', near: [] };
+
+  let pocket = '';
+  let hat = '';
+  let block = '';
+  for (let i = idx - 1; i >= 0; i--) {
+    const e = entries[i]!;
+    if (e.kind === 'block' && !block && !hat && !pocket) block = e.text;
+    else if (e.kind === 'hat' && !hat && !pocket) hat = e.text;
+    else if (e.kind === 'pocket' && !pocket) pocket = e.text;
+  }
+  const section = [pocket, hat, block].filter(Boolean).join(' › ');
+
+  // Neighbor cards within the same block: stop at any heading.
+  const near: string[] = [];
+  for (let i = idx - 1; i >= 0; i--) {
+    const e = entries[i]!;
+    if (e.kind !== 'card') break;
+    if (e.text) near.push(`previous tag: ${e.text}`);
+    break;
+  }
+  for (let i = idx + 1; i < entries.length; i++) {
+    const e = entries[i]!;
+    if (e.kind !== 'card') break;
+    if (e.text) near.push(`next tag: ${e.text}`);
+    break;
+  }
+  return { section, near };
+}
+
 // ─── The one public entry the command layer calls ─────────────────
 
 export interface CutInvocation {
@@ -505,7 +658,7 @@ export async function cutFocusedCard(
     showToast('Put the cursor in a card with body text first.');
     return null;
   }
-  const { hasUnderline, hasHighlight } = cardState(focused);
+  const { hasUnderline, hasEmphasis, hasHighlight } = cardState(focused);
   // Already highlighted → done; don't clobber a finished cut. (Highlight
   // Down shrinks it.)
   if (hasHighlight) {
@@ -520,6 +673,7 @@ export async function cutFocusedCard(
       : {}),
     emphasisStyle: settings.get('cardCutterEmphasisStyle'),
     role: inv.role,
+    context: buildCutterContext(view, focused.cardFrom),
     model: resolveAiModel(),
     terminalImpact: api.detectTerminalImpact(focused.card.tag),
   };
@@ -546,7 +700,16 @@ export async function cutFocusedCard(
       return null;
     }
     const placed = shiftFocused(focused, delta);
-    applyCutToCard(view, placed, result.spans, hasUnderline ? ['hl'] : undefined, (tr) => lease.apply(tr));
+    // Finish-the-card: existing underlining is immutable, but a card
+    // underlined with NO emphasis gets the emphasis layer added along
+    // with highlights (the settled design: the cutter adds only the
+    // MISSING lower layers, never touches present ones).
+    const applyLayers: Layer[] | undefined = hasUnderline
+      ? hasEmphasis
+        ? ['hl']
+        : ['em', 'hl']
+      : undefined;
+    applyCutToCard(view, placed, result.spans, applyLayers, (tr) => lease.apply(tr));
     for (const w of result.warnings) console.log(`[cardcutter] ${w}`);
     showToast(hasUnderline ? 'Card highlighted — ↶ to undo' : 'Card cut — ↶ to undo');
     return {
@@ -865,6 +1028,7 @@ export async function addHighlightFocusedCard(view: EditorView): Promise<void> {
   const opts: CutOptions = {
     emphasisStyle: settings.get('cardCutterEmphasisStyle'),
     role: 'block',
+    context: buildCutterContext(view, focused.cardFrom),
     model: resolveAiModel(),
   };
   const lease = claimCardLease(view, focused, 'card-add-highlight');

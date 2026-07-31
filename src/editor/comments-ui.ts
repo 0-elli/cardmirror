@@ -164,10 +164,24 @@ function aiPersonaInitials(name: string): string {
 /** The card-type chip shown in every card's header — the unified type
  *  indicator. Color mirrors the in-text highlight: comment = gold,
  *  flashcard (Q&A / cloze) = accent, AI = purple. */
-type CardTypeChipKind = 'comment' | 'qa' | 'cloze' | 'ai' | 'note';
+type CardTypeChipKind =
+  | 'comment'
+  | 'qa'
+  | 'cloze'
+  | 'ai'
+  | 'note'
+  | 'cutter-section'
+  | 'cutter-guidance';
 function makeCardTypeChip(kind: CardTypeChipKind): HTMLElement {
   const chip = document.createElement('span');
-  const tone = kind === 'qa' || kind === 'cloze' ? 'flashcard' : kind;
+  // Cutter-context notes reuse the note tone (green) — they ARE notes,
+  // just ones the cutter reads; the label carries the distinction.
+  const tone =
+    kind === 'qa' || kind === 'cloze'
+      ? 'flashcard'
+      : kind === 'cutter-section' || kind === 'cutter-guidance'
+      ? 'note'
+      : kind;
   chip.className = `pmd-card-type-chip is-${tone}`;
   chip.textContent =
     kind === 'qa'
@@ -176,6 +190,10 @@ function makeCardTypeChip(kind: CardTypeChipKind): HTMLElement {
       ? 'Cloze'
       : kind === 'ai'
       ? 'AI'
+      : kind === 'cutter-section'
+      ? 'Context'
+      : kind === 'cutter-guidance'
+      ? 'Guidance'
       : kind === 'note'
       ? 'Note'
       : 'Comment';
@@ -617,10 +635,18 @@ export class CommentsColumn {
     const unanchoredAi = aiThreads.filter((t) => !fcRangeMap.has(t.threadId));
 
     // Private notes (local annotation layer) — same resolution + range
-    // sharing as AI threads, keyed by noteId.
+    // sharing as AI threads, keyed by noteId. The cutter's file-guidance
+    // note is anchorless BY DESIGN (it's about the whole file), so it
+    // renders pinned at the top of the flow, never in the Unanchored
+    // broken-anchor footer.
     const notes = docId ? learnStore.notesForDoc(docId) : [];
-    const anchoredNotes = notes.filter((n) => fcRangeMap.has(n.noteId));
-    const unanchoredNotes = notes.filter((n) => !fcRangeMap.has(n.noteId));
+    const guidanceNotes = notes.filter((n) => n.kind === 'cutter-guidance');
+    const anchoredNotes = notes.filter(
+      (n) => fcRangeMap.has(n.noteId) && n.kind !== 'cutter-guidance',
+    );
+    const unanchoredNotes = notes.filter(
+      (n) => !fcRangeMap.has(n.noteId) && n.kind !== 'cutter-guidance',
+    );
 
     if (
       state.threads.size === 0 &&
@@ -730,6 +756,10 @@ export class CommentsColumn {
         cardId: n.noteId,
         sortKey: r ? r.from : Number.MAX_SAFE_INTEGER,
       });
+    }
+    // File-guidance note(s) pin above everything document-anchored.
+    for (const n of guidanceNotes) {
+      items.push({ id: NOTE_PREFIX + n.noteId, kind: 'note', cardId: n.noteId, sortKey: -1 });
     }
     items.sort((x, y) => x.sortKey - y.sortKey);
 
@@ -1675,17 +1705,25 @@ export class CommentsColumn {
     const note = learnStore.getNote(noteId);
     if (!note) return; // vanished — next render drops it
 
+    const chipKind: CardTypeChipKind = note.kind ?? 'note';
+    const emptyPlaceholder =
+      note.kind === 'cutter-guidance'
+        ? 'How should cards in this file be cut? (strategy, antecedents, what to prioritize)'
+        : note.kind === 'cutter-section'
+        ? 'Why this section matters to cuts (optional — the text itself is the context)'
+        : 'Write a note';
+
     if (note.comments.length === 0) {
-      card.appendChild(this.buildThreadHeader(makeCardTypeChip('note'), note.createdAt, () => this.deleteNote(noteId)));
-      card.appendChild(this.buildNoteInput(noteId, 'Write a note', 'Add'));
+      card.appendChild(this.buildThreadHeader(makeCardTypeChip(chipKind), note.createdAt, () => this.deleteNote(noteId)));
+      card.appendChild(this.buildNoteInput(noteId, emptyPlaceholder, 'Add'));
       return;
     }
     if (!isActive) {
-      card.appendChild(this.buildThreadHeader(makeCardTypeChip('note'), note.createdAt));
+      card.appendChild(this.buildThreadHeader(makeCardTypeChip(chipKind), note.createdAt));
       card.appendChild(this.renderAiPreview(note));
       return;
     }
-    card.appendChild(this.buildThreadHeader(makeCardTypeChip('note'), note.createdAt, () => this.deleteNote(noteId)));
+    card.appendChild(this.buildThreadHeader(makeCardTypeChip(chipKind), note.createdAt, () => this.deleteNote(noteId)));
     note.comments.forEach((c, i) =>
       card.appendChild(
         this.renderAiComment(c, i === 0, (text) => learnStore.editNoteComment(noteId, i, text)),

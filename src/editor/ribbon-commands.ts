@@ -4278,6 +4278,8 @@ export type RibbonCommandId =
   | 'startFlowHost'
   | 'toggleVoice'
   | 'openCardCutter'
+  | 'addCutterContext'
+  | 'openCutterGuidance'
   | 'createFlashcard'
   | 'manageFlashcards'
   | 'wordCountSelection'
@@ -4496,6 +4498,8 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'startFlowHost',
   'toggleVoice',
   'openCardCutter',
+  'addCutterContext',
+  'openCutterGuidance',
   'createFlashcard',
   'manageFlashcards',
   'wordCountSelection',
@@ -4670,6 +4674,8 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   startFlowHost: 'Start Flow Connection',
   toggleVoice: 'Toggle voice control',
   openCardCutter: 'Cut card with AI…',
+  addCutterContext: 'Use Selection as Cutter Context',
+  openCutterGuidance: 'Edit File Cutting Guidance',
   createFlashcard: 'Create Flashcard From Selection',
   manageFlashcards: 'Manage Flashcards',
   wordCountSelection: 'Word Count Selection',
@@ -4905,6 +4911,8 @@ export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly st
     'highlight', 'add highlight', 'dehighlight', 'remove highlight', 'unhighlight',
     'refine highlighting', 'refine highlight', 'rehighlight', 'fix highlighting',
   ],
+  addCutterContext: ['cutter context', 'context section', 'designate context', 'cutting context'],
+  openCutterGuidance: ['file guidance', 'cutting guidance', 'cutter guidance', 'how this file works'],
   // Spelled-out slot numbers, so "one" / "two" / "three" surface the
   // slot focus (switch) + send-to-slot commands in the command bar.
   focusSlot1: ['one'],
@@ -4991,6 +4999,8 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   startFlowHost: '',
   toggleVoice: 'Mod-Shift-V',
   openCardCutter: 'Mod-Alt-c',
+  addCutterContext: '',
+  openCutterGuidance: '',
   createFlashcard: '',
   manageFlashcards: '',
   wordCountSelection: '',
@@ -5229,6 +5239,12 @@ export interface RibbonContext {
   /** Open the AI card-cutter launch sheet for the current card. Gated on
    *  `cardCutterActive` — a no-op when the experiment is off. */
   openCardCutter: () => void;
+  /** Create an anchored cutter-context note from the selection. Gated
+   *  on `cardCutterActive`. */
+  addCutterContext: () => void;
+  /** Open (creating if absent) the doc's single anchorless file-guidance
+   *  note for the cutter. Gated on `cardCutterActive`. */
+  openCutterGuidance: () => void;
   /** Whether the card-cutter experiment is currently enabled. Lets the
    *  keymap fall through when off so the binding isn't consumed. */
   cardCutterActive: () => boolean;
@@ -5392,6 +5408,8 @@ const DEFAULT_RIBBON_CONTEXT: RibbonContext = {
   startFlowHost: () => {},
   toggleVoice: () => {},
   openCardCutter: () => {},
+  addCutterContext: () => {},
+  openCutterGuidance: () => {},
   cardCutterActive: () => false,
   createFlashcard: () => {},
   manageFlashcards: () => {},
@@ -5727,6 +5745,22 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
         if (!ctx.cardCutterActive()) return false;
         if (!dispatch) return true;
         ctx.openCardCutter();
+        return true;
+      };
+    case 'addCutterContext':
+      // Same gate as openCardCutter, plus a selection to anchor to.
+      return (state, dispatch) => {
+        if (!ctx.cardCutterActive()) return false;
+        if (state.selection.empty) return false;
+        if (!dispatch) return true;
+        ctx.addCutterContext();
+        return true;
+      };
+    case 'openCutterGuidance':
+      return (_state, dispatch) => {
+        if (!ctx.cardCutterActive()) return false;
+        if (!dispatch) return true;
+        ctx.openCutterGuidance();
         return true;
       };
     case 'createFlashcard':

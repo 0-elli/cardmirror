@@ -47,6 +47,13 @@ export default defineConfig({
         find: /^electron$/,
         replacement: resolve(__dirname, 'tests/desktop/_electron-stub.ts'),
       },
+      // The card-cutter engine package is never present under test —
+      // resolve its dynamic import to the same inert no-op stub the
+      // production build falls back to.
+      {
+        find: /^@cardcutter\/browser$/,
+        replacement: resolve(__dirname, 'src/editor/card-cutter-stub.ts'),
+      },
     ],
   },
 });

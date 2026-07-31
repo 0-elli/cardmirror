@@ -82,6 +82,7 @@ import { mobilePlugin, setMobileShellActive } from './mobile-plugin.js';
 import { installCardCutterGate, cardCutterActive } from './card-cutter-gate.js';
 import { installPluginCommunityGate } from './plugin-community-gate.js';
 import { openCutLaunchSheet } from './card-cutter-ui.js';
+import { setCutterDocIdProvider } from './card-cutter-port.js';
 import {
   quickCardsStore,
   buildQuickCard,
@@ -1634,6 +1635,77 @@ const ribbonContext: RibbonContext = {
   },
   openCardCutter: () => {
     if (view) void openCutLaunchSheet(view);
+  },
+  addCutterContext: () => {
+    if (!view || !commentsColumn) return;
+    const sel = view.state.selection;
+    if (sel.empty) {
+      showToast('Select the text the cutter should use as context.');
+      return;
+    }
+    // Same local-annotation plumbing as a private note (anchored by
+    // descriptor, green decoration, never serialized into the doc) —
+    // just carrying the cutter-section kind so the port ships the
+    // anchored text as context with every cut in this file.
+    const descriptor = buildDescriptor(view.state.doc, sel.from, sel.to);
+    const docId = ensureActiveDocId();
+    const noteId = crypto.randomUUID();
+    commentsColumn.placeLocalAnnotation(noteId, sel.from, sel.to, 'note');
+    learnStore.addNote({
+      noteId,
+      docId,
+      comments: [],
+      anchor: descriptor,
+      createdAt: new Date().toISOString(),
+      kind: 'cutter-section',
+    });
+    const f = activeFile();
+    learnStore.registerDoc({
+      docId,
+      path: typeof f.handle === 'string' ? f.handle : null,
+      name: f.filename ?? 'Untitled',
+      format: f.format,
+    });
+    void stampActiveFileDocId(docId);
+    if (commentsColumnEl?.hidden) {
+      commentsColumn.setVisible(true);
+      commentsToggleBtn?.setAttribute('aria-pressed', 'true');
+    }
+    commentsColumn.activateNote(noteId);
+  },
+  openCutterGuidance: () => {
+    if (!view || !commentsColumn) return;
+    const docId = ensureActiveDocId();
+    let note = learnStore.cutterGuidanceNote(docId);
+    if (!note) {
+      // The ONE anchorless guidance note per file: root = the user's
+      // "how this file works", replies = the cutter's accumulated
+      // card-neutral refinements. Anchorless by design — it's about
+      // the whole file, not a stretch of text.
+      const noteId = crypto.randomUUID();
+      learnStore.addNote({
+        noteId,
+        docId,
+        comments: [],
+        anchor: null,
+        createdAt: new Date().toISOString(),
+        kind: 'cutter-guidance',
+      });
+      const f = activeFile();
+      learnStore.registerDoc({
+        docId,
+        path: typeof f.handle === 'string' ? f.handle : null,
+        name: f.filename ?? 'Untitled',
+        format: f.format,
+      });
+      void stampActiveFileDocId(docId);
+      note = learnStore.getNote(noteId)!;
+    }
+    if (commentsColumnEl?.hidden) {
+      commentsColumn.setVisible(true);
+      commentsToggleBtn?.setAttribute('aria-pressed', 'true');
+    }
+    commentsColumn.activateNote(note.noteId);
   },
   cardCutterActive: () => cardCutterActive(),
   createFlashcard: () => {
@@ -8521,6 +8593,10 @@ installPluginCommunityGate();
 // `__cardcutter('on')` console entry point; does nothing visible
 // until enabled.
 installCardCutterGate();
+// The port can't import index.ts (cycle) — inject the annotation docId
+// so cutter-context notes (file guidance + designated sections) resolve
+// for the active doc when the cutter assembles its context block.
+setCutterDocIdProvider(() => activeAnnotationDocId());
 // Start-on-launch: pre-warm the Verbatim Flow PowerShell host so the
 // first Send to Flow doesn't pay the cold start. No-ops off Windows and
 // when the setting is off; silent (no toast) on this automatic path.
