@@ -226,12 +226,16 @@ export async function tryLoadCardCutterEngine(): Promise<boolean> {
 // provider-aware before the card cutter can run over OpenRouter.
 function makeLlm(): LlmCaller {
   return async (system, user, model) => {
+    // No temperature: non-default sampling params are REJECTED (400) on
+    // Sonnet 5 / Opus 4.7+ — the bench caller hit exactly this. And
+    // 16k max_tokens leaves headroom for adaptive thinking (on by
+    // default on Sonnet 5), which counts against the cap — we throw on
+    // truncation below.
     const reply = await callLlm({
       apiKey: activeApiKey(),
       model,
       system,
-      maxTokens: 8000,
-      temperature: model.includes('opus') ? undefined : 0,
+      maxTokens: 16000,
       messages: [{ role: 'user', content: user }],
     });
     if (reply.stopReason === 'max_tokens') throw new Error('truncated at max_tokens');
