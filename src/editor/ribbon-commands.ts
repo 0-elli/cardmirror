@@ -4265,6 +4265,7 @@ export type RibbonCommandId =
   | 'addNoteToSelection'
   | 'aiAskAboutSelection'
   | 'aiCreateCite'
+  | 'reformatAllCites'
   | 'translate'
   | 'repairText'
   | 'repairFormatting'
@@ -4485,6 +4486,7 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'addNoteToSelection',
   'aiAskAboutSelection',
   'aiCreateCite',
+  'reformatAllCites',
   'translate',
   'repairText',
   'repairFormatting',
@@ -4661,6 +4663,7 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   addNoteToSelection: 'Add Note to Selection',
   aiAskAboutSelection: 'Ask AI About Selection',
   aiCreateCite: 'Format Cite From Selection (AI)',
+  reformatAllCites: 'Reformat Every Cite in Document (AI)',
   translate: 'Translate Selection to Clipboard (AI)',
   repairText: 'Repair OCR/PDF Text (AI)',
   repairFormatting: 'Repair Formatting (AI)',
@@ -4824,6 +4827,7 @@ export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly st
   regrow: ['unshrink', 'regrow', 'restore text size', 'unshrink card text'],
   smartShrink: ['smart shrink', 'deep shrink'],
   aiAskAboutSelection: ['question'],
+  reformatAllCites: ['reformat all cites', 'reformat cites', 'all cites', 'every cite', 'bulk cite'],
   pasteAsText: ['paste without formatting', 'paste unformatted', 'paste text'],
   pasteCondensed: ['paste condense', 'paste merge', 'paste flatten', 'paste no paragraphs', 'destructive paste'],
   removeHyperlinks: ['remove links', 'unlink'], // "delete …" via the delete/remove synonym group
@@ -4985,6 +4989,10 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   addNoteToSelection: 'Mod-Shift-n',
   aiAskAboutSelection: 'Mod-Shift-q',
   aiCreateCite: 'Mod-Shift-x',
+  // Deliberately unbound: one model request per cite in the document is
+  // far too expensive to sit behind a stray chord. Bind it in Settings →
+  // Keyboard shortcuts if you want one.
+  reformatAllCites: '',
   translate: 'Mod-Shift-t',
   repairText: 'Mod-Shift-r',
   repairFormatting: 'Mod-Alt-r',
@@ -5216,6 +5224,9 @@ export interface RibbonContext {
   addNoteToSelection: () => void;
   aiAskAboutSelection: () => void;
   aiCreateCite: () => void;
+  /** Confirm, then run the cite creator over every cite paragraph in the
+   *  document — one model request each. */
+  reformatAllCites: () => void;
   /** Translate the selection and copy the result to the clipboard. */
   translate: () => void;
   /** Repair OCR / PDF text errors in the selection in place. */
@@ -5395,6 +5406,7 @@ const DEFAULT_RIBBON_CONTEXT: RibbonContext = {
   addNoteToSelection: () => {},
   aiAskAboutSelection: () => {},
   aiCreateCite: () => {},
+  reformatAllCites: () => {},
   translate: () => {},
   repairText: () => {},
   repairFormatting: () => {},
@@ -5661,6 +5673,14 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
         if (state.selection.empty) return false;
         if (!dispatch) return true;
         ctx.aiCreateCite();
+        return true;
+      };
+    case 'reformatAllCites':
+      // Whole-document scope — no selection needed, and the run itself
+      // reports when the doc has no cites to reformat.
+      return (_state, dispatch) => {
+        if (!dispatch) return true;
+        ctx.reformatAllCites();
         return true;
       };
     case 'translate':
