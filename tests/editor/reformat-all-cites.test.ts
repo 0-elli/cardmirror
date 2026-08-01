@@ -373,10 +373,10 @@ describe('runReformatAllCites', () => {
     expect(summary()).toBe('Reformatted 0 of 3 cites · 1 failed.');
   });
 
-  it('refuses a second pass while one is running, and frees the guard after', async () => {
-    // Double-invoking (stray palette re-entry, or the command fired from
-    // another pane) used to start a second interleaved pass: every cite
-    // sent — and billed — twice, and a single Escape stopping both.
+  it('refuses a second pass over the same document, and frees the guard after', async () => {
+    // Double-invoking (a stray palette re-entry) used to start a second
+    // interleaved pass over the same doc: every cite sent — and billed —
+    // twice, and a single Escape stopping both.
     const view = fakeView(
       doc(card(tag('A'), cite('Smith 24', ', a')), card(tag('B'), cite('Jones 23', ', b'))),
     );
@@ -403,7 +403,9 @@ describe('runReformatAllCites', () => {
 
     await runReformatAllCites(view);
     expect(showConfirm).toHaveBeenCalledTimes(1); // never got as far as asking
-    expect(showToast).toHaveBeenCalledWith('A cite reformat pass is already running.');
+    expect(showToast).toHaveBeenCalledWith(
+      'A cite reformat pass is already running in this document.',
+    );
 
     releaseRequest();
     await first;
@@ -416,6 +418,96 @@ describe('runReformatAllCites', () => {
     showConfirm.mockResolvedValue(false);
     await runReformatAllCites(view);
     expect(showConfirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs concurrently in another pane — the guard is per document, not app-wide', async () => {
+    // Panes hold distinct documents (the shell focuses an already-open
+    // file rather than loading it twice), so a pass in one pane has no
+    // business blocking a pass in another.
+    const viewA = fakeView(doc(card(tag('A'), cite('Smith 24', ', a'))));
+    const viewB = fakeView(doc(card(tag('B'), cite('Jones 23', ', b'))));
+    let reachedA!: () => void;
+    const inFlightA = new Promise<void>((r) => {
+      reachedA = r;
+    });
+    let releaseA!: () => void;
+    const heldA = new Promise<void>((r) => {
+      releaseA = r;
+    });
+    callLlm.mockImplementation(async (req) => {
+      const content = req.messages[0]!.content;
+      const sent = typeof content === 'string' ? content : '';
+      if (sent.startsWith('Smith')) {
+        reachedA();
+        await heldA;
+        return reply('Smith 24, NEW A.', ['Smith 24']);
+      }
+      return reply('Jones 23, NEW B.', ['Jones 23']);
+    });
+
+    const passA = runReformatAllCites(viewA);
+    await inFlightA; // pane A is mid-request
+
+    // Pane B runs to completion while A is still in flight.
+    await runReformatAllCites(viewB);
+    expect(citeTexts(viewB.state.doc)).toEqual(['Jones 23, NEW B.']);
+
+    releaseA();
+    await passA;
+    expect(citeTexts(viewA.state.doc)).toEqual(['Smith 24, NEW A.']);
+    expect(showToast).not.toHaveBeenCalledWith(
+      'A cite reformat pass is already running in this document.',
+    );
+  });
+
+  it('Escape stops the pass in the pane it was pressed in, not the other one', async () => {
+    // Both passes register a capture-phase listener on `window`, and
+    // stopPropagation does not stop listeners on the same node — so
+    // without scoping, one Escape would cancel every running pass.
+    const viewA = fakeView(
+      doc(card(tag('A'), cite('Smith 24', ', a')), card(tag('A2'), cite('Adams 24', ', a2'))),
+    );
+    const viewB = fakeView(
+      doc(card(tag('B'), cite('Jones 23', ', b')), card(tag('B2'), cite('Brown 23', ', b2'))),
+    );
+    document.body.append(viewA.dom, viewB.dom);
+    const held: Record<string, () => void> = {};
+    const reached: Record<string, () => void> = {};
+    const inFlight = {
+      A: new Promise<void>((r) => (reached['A'] = r)),
+      B: new Promise<void>((r) => (reached['B'] = r)),
+    };
+    callLlm.mockImplementation(async (req) => {
+      const content = req.messages[0]!.content;
+      const sent = typeof content === 'string' ? content : '';
+      const head = sent.split(',')[0]!;
+      const pane = sent.startsWith('Smith') || sent.startsWith('Adams') ? 'A' : 'B';
+      // Hold only the FIRST cite of each pane, so Escape lands while both
+      // passes are between cites.
+      if (sent.startsWith('Smith') || sent.startsWith('Jones')) {
+        reached[pane]!();
+        await new Promise<void>((r) => (held[pane] = r));
+      }
+      return reply(`${head}, NEW.`, [head]);
+    });
+
+    const passA = runReformatAllCites(viewA);
+    const passB = runReformatAllCites(viewB);
+    await Promise.all([inFlight.A, inFlight.B]);
+
+    // Escape inside pane A's editor.
+    viewA.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    held['A']!();
+    held['B']!();
+    await Promise.all([passA, passB]);
+
+    const summaries = showToast.mock.calls.map(([m]) => m).filter((m) => m.startsWith('Reformatted'));
+    // A stopped after the cite in flight; B ran both of its own.
+    expect(summaries).toContain('Reformatted 1 of 2 cites · stopped.');
+    expect(summaries).toContain('Reformatted 2 of 2 cites.');
+    viewA.dom.remove();
+    viewB.dom.remove();
   });
 
   it('keeps its place when a FAILED cite shifts under a user edit', async () => {

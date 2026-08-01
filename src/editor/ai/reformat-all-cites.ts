@@ -26,9 +26,10 @@
  *     (N undo steps) is called out in the confirm text.
  *   - **Escape stops it.** The pass checks a cancel flag between cites;
  *     the request already in flight still lands.
- *   - **One pass at a time, app-wide.** Per-cite leases leave nothing for
- *     a second invocation to collide with, so re-entrance is refused
- *     explicitly (`passRunning`) rather than by the coordinator.
+ *   - **One pass per pane.** Per-cite leases leave nothing for a second
+ *     invocation over the same document to collide with, so re-entrance
+ *     is refused explicitly (`runningPasses`) rather than by the
+ *     coordinator. Another pane is another document, and runs freely.
  */
 
 import type { EditorView } from 'prosemirror-view';
@@ -141,12 +142,28 @@ function summaryMessage(s: ReformatAllCitesSummary, total: number): string {
   return parts.join(' · ') + '.';
 }
 
+/** Is this keystroke the running pane's business? True when the event —
+ *  or, failing that, wherever focus currently sits — is inside this
+ *  view's editor DOM. */
+function ownsKey(view: EditorView, target: EventTarget | null): boolean {
+  const within = (n: unknown): boolean => n instanceof Node && view.dom.contains(n);
+  return within(target) || within(document.activeElement);
+}
+
 /** Escape-to-stop, installed only while a pass runs. Stands down while a
- *  modal is open so it can't swallow a dialog's own Escape. */
-function installCancelKey(onCancel: () => void): () => void {
+ *  modal is open so it can't swallow a dialog's own Escape.
+ *
+ *  Scoping: a lone pass answers to any Escape, wherever focus is — the
+ *  reach it has always had. Once a second pane is also running, each
+ *  pass takes only the keystrokes belonging to its own pane, so stopping
+ *  one never stops the other. (Both handlers sit on `window`, and
+ *  `stopPropagation` does not stop listeners on the same node, so
+ *  without this check a single Escape would cancel every pass at once.) */
+function installCancelKey(view: EditorView, onCancel: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || isAnyOverlayOpen()) return;
+    if (runningPasses.size > 1 && !ownsKey(view, e.target)) return;
     e.preventDefault();
     e.stopPropagation();
     onCancel();
@@ -157,25 +174,31 @@ function installCancelKey(onCancel: () => void): () => void {
 
 // --------------------------- command ----------------------------
 
-/** One pass at a time, app-wide. The single-selection AI commands get
- *  this for free — each holds a lease over its selection for the whole
- *  request, so `claimRegion` rejects a second invocation — but this pass
- *  leases one cite at a time by design, leaving nothing to collide. Two
- *  passes over the same document would send (and bill) every cite twice;
- *  two over different panes would each install a window-level Escape
- *  handler, so one press would stop both. Hence a module-level flag: the
- *  cancel key and the progress cues are global, so the pass is too. */
-let passRunning = false;
+/** Panes with a pass in flight. Serves two purposes: refusing a second
+ *  pass over a document already being swept, and telling `installCancelKey`
+ *  whether Escape has to be scoped.
+ *
+ *  Per pane rather than app-wide because panes hold distinct documents —
+ *  the shell focuses an already-open file instead of loading it into a
+ *  second slot — so two passes in two panes are two different documents'
+ *  cites, and refusing the second would be an arbitrary restriction. What
+ *  must not happen is two passes over the SAME document, which would send
+ *  (and bill) every cite twice; the single-selection AI commands get that
+ *  from the coordinator, since each holds a lease over its selection for
+ *  the whole request, but this pass leases one cite at a time by design
+ *  and so has nothing to collide with. Windows need no coordination at
+ *  all: each is its own renderer, hence its own copy of this module. */
+const runningPasses = new Set<EditorView>();
 
 /** Entry point — fires on the `reformatAllCites` ribbon command. The
  *  returned promise settles when the whole pass is done (the ribbon hook
  *  voids it; the tests await it). */
 export async function runReformatAllCites(view: EditorView): Promise<void> {
-  if (passRunning) {
-    showToast('A cite reformat pass is already running.');
+  if (runningPasses.has(view)) {
+    showToast('A cite reformat pass is already running in this document.');
     return;
   }
-  passRunning = true;
+  runningPasses.add(view);
   try {
     if (!settings.get('aiFeaturesEnabled')) {
       showToast('AI features are disabled — enable them in Settings.');
@@ -213,7 +236,7 @@ export async function runReformatAllCites(view: EditorView): Promise<void> {
     if (!ok) return;
     await reformatAllCites(view, apiKey, systemPrompt, total);
   } finally {
-    passRunning = false;
+    runningPasses.delete(view);
   }
 }
 
@@ -233,7 +256,7 @@ async function reformatAllCites(
     cappedOut: false,
   };
   let activity: AiActivity | null = null;
-  const removeCancelKey = installCancelKey(() => {
+  const removeCancelKey = installCancelKey(view, () => {
     if (s.cancelled) return;
     s.cancelled = true;
     activity?.setStage('Stopping after this cite…');
