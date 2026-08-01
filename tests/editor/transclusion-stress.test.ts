@@ -143,8 +143,12 @@ describe('extraction edge cases', () => {
     const a = extractSection(d, 'dup')!;
     const b = extractSection(d, 'dup')!;
     expect(JSON.stringify(a.content.toJSON())).toBe(JSON.stringify(b.content.toJSON()));
-    expect(JSON.stringify(a.content.toJSON())).toContain('aaa');
-    expect(JSON.stringify(a.content.toJSON())).not.toContain('bbb');
+    // Assert over the extracted TEXT, not the serialized node: every card
+    // carries a freshly minted tag UUID, and one whose hex happens to
+    // contain 'aaa'/'bbb' would decide this test on a coin flip (~2% of
+    // runs). Exact equality also says the real thing outright — the first
+    // 'dup' section and nothing that follows it.
+    expect(a.content.textBetween(0, a.content.size, ' ')).toBe('A aaa');
   });
 
   it('detach of an empty zone yields an empty slice', () => {
