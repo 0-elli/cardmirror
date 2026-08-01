@@ -58,7 +58,8 @@ type CutStage =
   | 'skeletonize'
   | 'budget'
   | 'add'
-  | 'tighten';
+  | 'tighten'
+  | 'fluency';
 interface CutOptions {
   /** Optional de-highlight cap; the primary cut is budget-free. */
   targetWords?: number;
@@ -90,7 +91,18 @@ const STAGE_LABEL: Record<CutStage, string> = {
   budget: 'highlighting down',
   add: 'adding highlighting',
   tighten: 'tightening',
+  fluency: 'restoring connective words',
 };
+
+/** Stage label for a cut that is working from corpus examples: the
+ *  compression step is the one that sees them, so it says so. `family`
+ *  is null whenever this cut will show no examples, in which case the
+ *  ordinary labels stand — the pill must never claim examples the
+ *  engine isn't reading. */
+function stageLabel(stage: CutStage, family: string | null): string {
+  if (stage === 'skeletonize' && family) return `looking at examples about ${family}`;
+  return STAGE_LABEL[stage];
+}
 interface BudgetShortfall {
   targetWords: number;
   words: number;
@@ -114,6 +126,14 @@ export interface OmissionSection {
   words: number;
   spans: MarkSpan[];
 }
+/** Mirror of the engine's GenreHint — `index` is engine ≥0.9. */
+interface GenreHintish {
+  label: string;
+  confidence: number;
+  runnerUp?: string;
+  index?: number;
+}
+
 interface CardCutterApi {
   readonly version: string;
   cutCard(card: PlainCard, opts: CutOptions, llm: LlmCaller): Promise<CutResult>;
@@ -162,8 +182,11 @@ interface CardCutterApi {
   detectTerminalImpact(tag: string): boolean;
   /** Corpus-derived argument-family hint (engine ≥0.8; optional so
    *  older installed bundles keep working). */
-  classifyGenre?(bodyText: string, tag?: string): { label: string; confidence: number; runnerUp?: string } | null;
-  genreHintLine?(hint: { label: string; confidence: number; runnerUp?: string }): string;
+  classifyGenre?(bodyText: string, tag?: string): GenreHintish | null;
+  genreHintLine?(hint: GenreHintish): string;
+  /** Short family name for the progress pill, or null when this cut
+   *  will show no examples. Engine ≥0.9. */
+  genreDemoLabel?(hint: GenreHintish): string | null;
 }
 
 interface MarkMap {
@@ -509,14 +532,24 @@ const SECTION_EXCERPT_CHARS = 4000;
  *  derived from the card's prose alone, so it helps most on loose
  *  cards with no section path — and the line itself tells the model
  *  the section path and user intent outrank it. */
-function withGenreHint(api: CardCutterApi, focused: FocusedCard, context: string): string {
+/** Append the corpus genre hint to the cut context, and report the
+ *  family whose examples this cut will use (null when it will use
+ *  none) so the progress pill can name it. */
+function withGenreHint(
+  api: CardCutterApi,
+  focused: FocusedCard,
+  context: string,
+): { context: string; family: string | null } {
   try {
     const hint = api.classifyGenre?.(focused.card.paras.join(' '), focused.card.tag);
-    if (!hint || !api.genreHintLine) return context;
+    if (!hint || !api.genreHintLine) return { context, family: null };
     const line = api.genreHintLine(hint);
-    return context ? `${context}\n\n${line}` : line;
+    // Engine ≥0.9 decides whether examples will actually be shown; an
+    // older engine simply reports no family and the pill stays generic.
+    const family = api.genreDemoLabel?.(hint) ?? null;
+    return { context: context ? `${context}\n\n${line}` : line, family };
   } catch {
-    return context;
+    return { context, family: null };
   }
 }
 
@@ -759,6 +792,7 @@ export async function cutFocusedCard(
     return null;
   }
   const flags = pendingCutterFlags();
+  const genre = withGenreHint(api, focused, buildCutterContext(view, focused.cardFrom));
   const opts: CutOptions = {
     // Efficient by default; a read-time cap becomes the secondary
     // de-highlight target. No cap → undefined → pure efficient cut.
@@ -769,7 +803,7 @@ export async function cutFocusedCard(
     // Inert on current engines (genre comes from the section path in
     // context); kept so an older installed bundle still gets a value.
     role: 'block',
-    context: withGenreHint(api, focused, buildCutterContext(view, focused.cardFrom)),
+    context: genre.context,
     ...(inv.intent?.trim() ? { intent: inv.intent.trim() } : {}),
     ...(flags.some((f) => f.kind === 'up')
       ? { playUp: flags.filter((f) => f.kind === 'up').map((f) => f.text) }
@@ -787,7 +821,7 @@ export async function cutFocusedCard(
   // Pill + purple tint over the whole card while the model works.
   const activity = new AiActivity(view, { from: focused.cardFrom, to: focused.cardTo });
   activity.start();
-  opts.onStage = (s) => activity.setStage(STAGE_LABEL[s]);
+  opts.onStage = (s) => activity.setStage(stageLabel(s, genre.family));
   const llm = makeLlm();
   try {
     // Underlined-but-not-highlighted → Highlight Card (trust the
@@ -1130,17 +1164,18 @@ export async function addHighlightFocusedCard(view: EditorView): Promise<void> {
     return;
   }
   const scope = selectionScope(view, focused) ?? undefined;
+  const genre = withGenreHint(engine!, focused, buildCutterContext(view, focused.cardFrom));
   const opts: CutOptions = {
     emphasisStyle: settings.get('cardCutterEmphasisStyle'),
     role: 'block',
-    context: withGenreHint(engine!, focused, buildCutterContext(view, focused.cardFrom)),
+    context: genre.context,
     model: resolveAiModel(),
   };
   const lease = claimCardLease(view, focused, 'card-add-highlight');
   if (!lease) return;
   const activity = new AiActivity(view, { from: focused.cardFrom, to: focused.cardTo });
   activity.start();
-  opts.onStage = (s) => activity.setStage(STAGE_LABEL[s]);
+  opts.onStage = (s) => activity.setStage(stageLabel(s, genre.family));
   try {
     const result = await engine!.addHighlight(focused.card, focused.existing, opts, makeLlm(), scope);
     if (result.spans.length === 0) {
