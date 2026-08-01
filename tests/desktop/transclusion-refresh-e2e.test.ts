@@ -71,9 +71,12 @@ describe('refresh data path over real files', () => {
     expect(section && 'content' in section).toBe(true);
     const s = section as ReturnType<typeof extractSection>;
     expect(s!.content.childCount).toBe(2);
-    expect(JSON.stringify(s!.content.toJSON())).toContain('e1');
-    // header excluded
-    expect(JSON.stringify(s!.content.toJSON())).not.toContain('"Warming"');
+    // Both cards, header line excluded — asserted over the extracted TEXT
+    // rather than the serialized node, which also carries each card's
+    // random tag UUID. Searching that for 'e1' was two hex digits looking
+    // for themselves: ~18% of runs contain 'e1' in an id whatever the
+    // extraction did, so a broken one could pass unnoticed.
+    expect(s!.content.textBetween(0, s!.content.size, ' ')).toBe('T1 e1 T2 e2');
   });
 
   it('doc-relative ref (../Impacts/Src.cmir) resolves the same file', () => {
