@@ -160,6 +160,10 @@ interface CardCutterApi {
     scope?: { p: number; start: number; end: number }[],
   ): Promise<CutResult>;
   detectTerminalImpact(tag: string): boolean;
+  /** Corpus-derived argument-family hint (engine ≥0.8; optional so
+   *  older installed bundles keep working). */
+  classifyGenre?(bodyText: string, tag?: string): { label: string; confidence: number; runnerUp?: string } | null;
+  genreHintLine?(hint: { label: string; confidence: number; runnerUp?: string }): string;
 }
 
 interface MarkMap {
@@ -500,6 +504,22 @@ export function setCutterDocIdProvider(fn: () => string | null): void {
  *  up the prompt (the engine sees the card body separately anyway). */
 const SECTION_EXCERPT_CHARS = 4000;
 
+/** Append the engine's corpus-derived argument-family hint to a built
+ *  context block. Engine ≥0.8 only; older bundles no-op. The hint is
+ *  derived from the card's prose alone, so it helps most on loose
+ *  cards with no section path — and the line itself tells the model
+ *  the section path and user intent outrank it. */
+function withGenreHint(api: CardCutterApi, focused: FocusedCard, context: string): string {
+  try {
+    const hint = api.classifyGenre?.(focused.card.paras.join(' '), focused.card.tag);
+    if (!hint || !api.genreHintLine) return context;
+    const line = api.genreHintLine(hint);
+    return context ? `${context}\n\n${line}` : line;
+  } catch {
+    return context;
+  }
+}
+
 /** Assemble the context block the engine's prompts consume: the file
  *  guidance note (root = user's "how this file works", replies = the
  *  cutter's accumulated refinements), each designated section's live
@@ -749,7 +769,7 @@ export async function cutFocusedCard(
     // Inert on current engines (genre comes from the section path in
     // context); kept so an older installed bundle still gets a value.
     role: 'block',
-    context: buildCutterContext(view, focused.cardFrom),
+    context: withGenreHint(api, focused, buildCutterContext(view, focused.cardFrom)),
     ...(inv.intent?.trim() ? { intent: inv.intent.trim() } : {}),
     ...(flags.some((f) => f.kind === 'up')
       ? { playUp: flags.filter((f) => f.kind === 'up').map((f) => f.text) }
@@ -1113,7 +1133,7 @@ export async function addHighlightFocusedCard(view: EditorView): Promise<void> {
   const opts: CutOptions = {
     emphasisStyle: settings.get('cardCutterEmphasisStyle'),
     role: 'block',
-    context: buildCutterContext(view, focused.cardFrom),
+    context: withGenreHint(engine!, focused, buildCutterContext(view, focused.cardFrom)),
     model: resolveAiModel(),
   };
   const lease = claimCardLease(view, focused, 'card-add-highlight');
