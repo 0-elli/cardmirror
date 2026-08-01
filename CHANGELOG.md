@@ -15,10 +15,13 @@ see `DETAILED_CHANGELOG.md`.
   cites") and rebindable under Settings → Keyboard. It rewrites every
   cite in the open document through the same formatter, one at a time.
   Because that's one AI request per cite, it asks first and tells you
-  exactly how many requests it will make. You can keep working
-  elsewhere in the document while it runs, each cite is its own undo
-  step, **Esc** stops the pass, and a summary at the end reports what
-  was reformatted and what needs a look.
+  exactly how many requests it will make — and never makes more than
+  that, so cites pasted in while it runs are left for a second pass. You
+  can keep working elsewhere in the document while it runs, each cite is
+  its own undo step, **Esc** stops the pass, and a summary at the end
+  reports what was reformatted and what needs a look. If several cites
+  fail in a row — a dead key, an exhausted quota — it stops rather than
+  working through the rest of the document to fail on each one.
 
 ## 0.1.0-beta.27 — 2026-07-30
 
@@ -45,6 +48,7 @@ see `DETAILED_CHANGELOG.md`.
   searching inside a dived-into file, right-clicking a result clears
   the query and reveals that hit in the file's outline — ancestors
   expanded, the row selected and pinned to the top of the list.
+
 - **`cardmirror-read`: a tiny companion tool for reading files without
   the app.** A single-file command-line utility (in
   `packaging/cardmirror-read/`, one `curl` to get) that turns a

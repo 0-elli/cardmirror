@@ -26,6 +26,9 @@
  *     (N undo steps) is called out in the confirm text.
  *   - **Escape stops it.** The pass checks a cancel flag between cites;
  *     the request already in flight still lands.
+ *   - **One pass at a time, app-wide.** Per-cite leases leave nothing for
+ *     a second invocation to collide with, so re-entrance is refused
+ *     explicitly (`passRunning`) rather than by the coordinator.
  */
 
 import type { EditorView } from 'prosemirror-view';
@@ -112,13 +115,28 @@ export interface ReformatAllCitesSummary {
   unstyled: number;
   /** Whether the user stopped the pass with Escape. */
   cancelled: boolean;
+  /** Whether the pass gave up after `FAILURE_STREAK_LIMIT` failures in a
+   *  row — a dead key or an exhausted quota fails identically on every
+   *  remaining cite, so grinding through hundreds of them helps nobody. */
+  halted: boolean;
+  /** Whether cites appeared after the confirm (pasted in mid-run) and
+   *  were left alone: the pass makes at most the number of requests the
+   *  user authorized. */
+  cappedOut: boolean;
 }
+
+/** Consecutive failures that end a pass. Two is within the noise of a
+ *  flaky connection (each request has already burned its own internal
+ *  retry); three in a row means the run is not going to recover. */
+const FAILURE_STREAK_LIMIT = 3;
 
 function summaryMessage(s: ReformatAllCitesSummary, total: number): string {
   const parts = [`Reformatted ${s.done} of ${total} cite${total === 1 ? '' : 's'}`];
   if (s.failed) parts.push(`${s.failed} failed`);
   if (s.skipped) parts.push(`${s.skipped} skipped (busy)`);
   if (s.unstyled) parts.push(`${s.unstyled} left unstyled — F8 the author/date`);
+  if (s.halted) parts.push('stopped after repeated failures');
+  if (s.cappedOut) parts.push('cites added during the run were left alone');
   if (s.cancelled) parts.push('stopped');
   return parts.join(' · ') + '.';
 }
@@ -139,42 +157,64 @@ function installCancelKey(onCancel: () => void): () => void {
 
 // --------------------------- command ----------------------------
 
+/** One pass at a time, app-wide. The single-selection AI commands get
+ *  this for free — each holds a lease over its selection for the whole
+ *  request, so `claimRegion` rejects a second invocation — but this pass
+ *  leases one cite at a time by design, leaving nothing to collide. Two
+ *  passes over the same document would send (and bill) every cite twice;
+ *  two over different panes would each install a window-level Escape
+ *  handler, so one press would stop both. Hence a module-level flag: the
+ *  cancel key and the progress cues are global, so the pass is too. */
+let passRunning = false;
+
 /** Entry point — fires on the `reformatAllCites` ribbon command. The
  *  returned promise settles when the whole pass is done (the ribbon hook
  *  voids it; the tests await it). */
 export async function runReformatAllCites(view: EditorView): Promise<void> {
-  if (!settings.get('aiFeaturesEnabled')) {
-    showToast('AI features are disabled — enable them in Settings.');
+  if (passRunning) {
+    showToast('A cite reformat pass is already running.');
     return;
   }
-  const apiKey = activeApiKey();
-  if (!apiKey) {
-    showToast('Set an API key in Settings to use AI features.');
-    return;
-  }
-  const total = collectCiteParagraphs(view.state.doc).length;
-  if (total === 0) {
-    showToast('No cites in this document.');
-    return;
-  }
+  passRunning = true;
+  try {
+    if (!settings.get('aiFeaturesEnabled')) {
+      showToast('AI features are disabled — enable them in Settings.');
+      return;
+    }
+    const apiKey = activeApiKey();
+    if (!apiKey) {
+      showToast('Set an API key in Settings to use AI features.');
+      return;
+    }
+    const total = collectCiteParagraphs(view.state.doc).length;
+    if (total === 0) {
+      showToast('No cites in this document.');
+      return;
+    }
 
-  const systemPrompt = resolveCitePrompt(
-    settings.get('aiCitePrompt').trim() || DEFAULT_AI_CITE_PROMPT,
-  );
+    const systemPrompt = resolveCitePrompt(
+      settings.get('aiCitePrompt').trim() || DEFAULT_AI_CITE_PROMPT,
+    );
 
-  const ok = await showConfirm({
-    title: 'Reformat every cite with AI?',
-    message:
-      `${total} cite${total === 1 ? '' : 's'} in this document will be sent to the AI ` +
-      `one at a time and rewritten in place.\n\n` +
-      `That is ${total} model request${total === 1 ? '' : 's'}, so it costs ${total} ` +
-      `call${total === 1 ? '' : 's'} against your API key and can take a while. ` +
-      `Each cite is its own undo step, and Escape stops the pass.`,
-    confirmLabel: `Reformat ${total} cite${total === 1 ? '' : 's'}`,
-    cancelLabel: 'Cancel',
-  });
-  if (!ok) return;
-  await reformatAllCites(view, apiKey, systemPrompt, total);
+    // The confirm is inside the guard: the dialog is the longest window
+    // in which a second invocation could land, and two stacked confirms
+    // would each start a pass.
+    const ok = await showConfirm({
+      title: 'Reformat every cite with AI?',
+      message:
+        `${total} cite${total === 1 ? '' : 's'} in this document will be sent to the AI ` +
+        `one at a time and rewritten in place.\n\n` +
+        `That is ${total} model request${total === 1 ? '' : 's'}, so it costs ${total} ` +
+        `call${total === 1 ? '' : 's'} against your API key and can take a while. ` +
+        `Each cite is its own undo step, and Escape stops the pass.`,
+      confirmLabel: `Reformat ${total} cite${total === 1 ? '' : 's'}`,
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+    await reformatAllCites(view, apiKey, systemPrompt, total);
+  } finally {
+    passRunning = false;
+  }
 }
 
 async function reformatAllCites(
@@ -189,6 +229,8 @@ async function reformatAllCites(
     skipped: 0,
     unstyled: 0,
     cancelled: false,
+    halted: false,
+    cappedOut: false,
   };
   let activity: AiActivity | null = null;
   const removeCancelKey = installCancelKey(() => {
@@ -203,16 +245,35 @@ async function reformatAllCites(
   // of real ones must not burn a number, or the readout reads "Cite 3
   // of 2".
   let n = 0;
+  // Failures since the last success — see FAILURE_STREAK_LIMIT.
+  let streak = 0;
 
   try {
     while (!s.cancelled) {
+      // Checked at the top so every failure path reaches it — two of
+      // them `continue` out of the middle of the loop. A key, quota or
+      // endpoint that is simply not working fails the same way on every
+      // remaining cite; stop once that is clear rather than walking the
+      // whole document to prove it.
+      if (streak >= FAILURE_STREAK_LIMIT) {
+        s.halted = true;
+        break;
+      }
       const target = nextCiteParagraph(view.state.doc, cursor);
       if (!target) break;
       // Advance past this paragraph BEFORE any await: a `continue` from
-      // here must not re-find it. Corrected to the post-edit end once
-      // the rewrite lands.
+      // here must not re-find it. Corrected from the live lease once the
+      // cite is done with, however it ended.
       cursor = target.to;
       if (!target.text) continue;
+      // The confirm authorized exactly `total` requests. Cites pasted in
+      // while the pass runs are none of its business — billing past the
+      // number the user agreed to is worse than leaving them for a
+      // second run, and the readout could otherwise say "Cite 9 of 7".
+      if (n >= total) {
+        s.cappedOut = true;
+        break;
+      }
       n++;
 
       const lease = claimRegion(view, { from: target.from, to: target.to }, { label: 'cite' });
@@ -241,6 +302,7 @@ async function reformatAllCites(
         if (!region) {
           console.warn(`[cite-all] cite ${n}: range no longer in the document`);
           s.failed++;
+          streak++;
           continue;
         }
         // `buildCiteTransaction` rather than `applyCiteToSelection`: the
@@ -249,17 +311,18 @@ async function reformatAllCites(
         const tr = buildCiteTransaction(view.state, region.from, region.to, parsed);
         if (!tr) {
           s.failed++;
+          streak++;
           continue;
         }
         lease.apply(tr);
         if (parsed.tokens.length > 0 && tr.getMeta(CITE_TOKENS_MARKED_META) === 0) s.unstyled++;
         s.done++;
-        const after = lease.region();
-        if (after) cursor = after.to;
+        streak = 0;
       } catch (e) {
         const msg = e instanceof LlmError ? e.message : e instanceof Error ? e.message : String(e);
         console.warn(`[cite-all] cite ${n} failed: ${msg}`);
         s.failed++;
+        streak++;
         // Auth / model / config failures repeat on every remaining cite;
         // stop rather than burning the whole document down on them.
         if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'model')) {
@@ -267,6 +330,16 @@ async function reformatAllCites(
           break;
         }
       } finally {
+        // Re-read the cursor from the LIVE lease on EVERY exit path, not
+        // just the rewrite: positions move while a request is in flight
+        // (the user edits above the cite), so a failed cite would
+        // otherwise leave the cursor pointing past cites that then never
+        // got visited — silently under-reporting the run. Null means the
+        // range is gone entirely, and there is no mapped position left to
+        // trust; the stale cursor at least cannot re-send an earlier
+        // cite. Must precede `release()`, which drops the lease.
+        const end = lease.region();
+        if (end) cursor = end.to;
         lease.release();
       }
     }

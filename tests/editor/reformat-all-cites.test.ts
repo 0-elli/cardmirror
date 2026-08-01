@@ -372,4 +372,164 @@ describe('runReformatAllCites', () => {
     expect(callLlm).toHaveBeenCalledTimes(1);
     expect(summary()).toBe('Reformatted 0 of 3 cites · 1 failed.');
   });
+
+  it('refuses a second pass while one is running, and frees the guard after', async () => {
+    // Double-invoking (stray palette re-entry, or the command fired from
+    // another pane) used to start a second interleaved pass: every cite
+    // sent — and billed — twice, and a single Escape stopping both.
+    const view = fakeView(
+      doc(card(tag('A'), cite('Smith 24', ', a')), card(tag('B'), cite('Jones 23', ', b'))),
+    );
+    let reachedRequest!: () => void;
+    const inFlight = new Promise<void>((r) => {
+      reachedRequest = r;
+    });
+    let releaseRequest!: () => void;
+    const held = new Promise<void>((r) => {
+      releaseRequest = r;
+    });
+    const canned = replyPerLastname({
+      Smith: 'Smith 24, NEW A, Journal.',
+      Jones: 'Jones 23, NEW B, Journal.',
+    });
+    callLlm.mockImplementation(async (req) => {
+      reachedRequest();
+      await held;
+      return canned(req);
+    });
+
+    const first = runReformatAllCites(view);
+    await inFlight; // the pass is provably mid-request now
+
+    await runReformatAllCites(view);
+    expect(showConfirm).toHaveBeenCalledTimes(1); // never got as far as asking
+    expect(showToast).toHaveBeenCalledWith('A cite reformat pass is already running.');
+
+    releaseRequest();
+    await first;
+
+    // Each cite sent exactly once, despite the second invocation.
+    expect(sentTexts()).toEqual(['Smith 24, a', 'Jones 23, b']);
+    expect(summary()).toBe('Reformatted 2 of 2 cites.');
+
+    // The guard is released, not stuck — a later run still gets to ask.
+    showConfirm.mockResolvedValue(false);
+    await runReformatAllCites(view);
+    expect(showConfirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps its place when a FAILED cite shifts under a user edit', async () => {
+    // The cursor was corrected from the lease only after a successful
+    // rewrite. A cite that failed while the user deleted text above it
+    // left the cursor at its pre-edit end — past the cites that followed,
+    // which were then never visited and never reported.
+    const filler = 'x'.repeat(400);
+    const view = fakeView(
+      doc(
+        card(tag('A'), body(filler), cite('Smith 24', ', a')),
+        card(tag('B'), cite('Jones 23', ', b')),
+      ),
+    );
+    callLlm.mockImplementation(async (req) => {
+      const content = req.messages[0]!.content;
+      const sent = typeof content === 'string' ? content : '';
+      if (sent.startsWith('Smith')) {
+        // The user deletes the long paragraph ABOVE the in-flight cite:
+        // every later position shifts left by its whole length.
+        let from = -1;
+        let to = -1;
+        view.state.doc.descendants((node, pos) => {
+          if (node.type.name === 'card_body' && node.textContent === filler) {
+            from = pos;
+            to = pos + node.nodeSize;
+          }
+          return true;
+        });
+        view.dispatch(view.state.tr.delete(from, to));
+        throw new LlmError('overloaded', 529, 'server');
+      }
+      return reply('Jones 23, NEW B, Journal.', ['Jones 23']);
+    });
+
+    await runReformatAllCites(view);
+
+    // The cite after the failure is still found and reformatted.
+    expect(sentTexts()).toEqual(['Smith 24, a', 'Jones 23, b']);
+    expect(citeTexts(view.state.doc)).toEqual(['Smith 24, a', 'Jones 23, NEW B, Journal.']);
+    expect(summary()).toBe('Reformatted 1 of 2 cites · 1 failed.');
+  });
+
+  it('gives up after three failures in a row instead of grinding the document', async () => {
+    const view = fakeView(
+      doc(
+        ...['Smith 24', 'Jones 23', 'Lee 22', 'Diaz 21', 'Okoye 20', 'Park 19'].map((c) =>
+          card(tag('T'), cite(c, ', x')),
+        ),
+      ),
+    );
+    // A rate-limit is NOT in the auth/model fail-fast list, so before the
+    // streak breaker this walked all six cites to fail on each one.
+    callLlm.mockRejectedValue(new LlmError('rate limited', 429, 'rate-limit'));
+
+    await runReformatAllCites(view);
+
+    expect(callLlm).toHaveBeenCalledTimes(3);
+    expect(summary()).toBe(
+      'Reformatted 0 of 6 cites · 3 failed · stopped after repeated failures.',
+    );
+  });
+
+  it('counts the streak from the last success, so scattered failures do not stop it', async () => {
+    const names = ['Smith 24', 'Jones 23', 'Lee 22', 'Diaz 21', 'Okoye 20'];
+    const view = fakeView(doc(...names.map((c) => card(tag('T'), cite(c, ', x')))));
+    // Fail, succeed, fail, succeed, fail — never three in a row.
+    let i = 0;
+    callLlm.mockImplementation(async (req) => {
+      const content = req.messages[0]!.content;
+      const sent = typeof content === 'string' ? content : '';
+      const head = sent.split(',')[0]!;
+      if (i++ % 2 === 0) throw new LlmError('blip', 500, 'server');
+      return reply(`${head}, NEW.`, [head]);
+    });
+
+    await runReformatAllCites(view);
+
+    expect(callLlm).toHaveBeenCalledTimes(5);
+    expect(summary()).toBe('Reformatted 2 of 5 cites · 3 failed.');
+  });
+
+  it('never sends more cites than the confirm authorized', async () => {
+    const view = fakeView(
+      doc(card(tag('A'), cite('Smith 24', ', a')), card(tag('B'), cite('Jones 23', ', b'))),
+    );
+    callLlm.mockImplementation(async (req) => {
+      const content = req.messages[0]!.content;
+      const sent = typeof content === 'string' ? content : '';
+      if (sent.startsWith('Smith')) {
+        // The user pastes another cite at the end of the doc mid-run. It
+        // was never in the confirmed count, so it must not be billed.
+        view.dispatch(
+          view.state.tr.insert(view.state.doc.content.size, card(tag('C'), cite('Novak 18', ', c'))),
+        );
+      }
+      return replyPerLastname({
+        Smith: 'Smith 24, NEW A.',
+        Jones: 'Jones 23, NEW B.',
+        Novak: 'Novak 18, NEW C.',
+      })(req);
+    });
+
+    await runReformatAllCites(view);
+
+    expect(showConfirm.mock.calls[0]![0].message).toContain('2 model requests');
+    expect(sentTexts()).toEqual(['Smith 24, a', 'Jones 23, b']);
+    expect(citeTexts(view.state.doc)).toEqual([
+      'Smith 24, NEW A.',
+      'Jones 23, NEW B.',
+      'Novak 18, c', // pasted mid-run, left for a second pass
+    ]);
+    expect(summary()).toBe(
+      'Reformatted 2 of 2 cites · cites added during the run were left alone.',
+    );
+  });
 });
