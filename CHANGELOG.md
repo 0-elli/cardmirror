@@ -21,7 +21,8 @@ see `DETAILED_CHANGELOG.md`.
   its own undo step, **Esc** stops the pass, and a summary at the end
   reports what was reformatted and what needs a look. If several cites
   fail in a row — a dead key, an exhausted quota — it stops rather than
-  working through the rest of the document to fail on each one.
+  working through the rest of the document to fail on each one. Thanks to
+  Shreeram Modi for building it.
 
 ## 0.1.0-beta.27 — 2026-07-30
 
