@@ -57,6 +57,21 @@ export function isFileChangedOnDiskError(err: unknown): boolean {
   return typeof message === 'string' && message.includes('EMODIFIED');
 }
 
+/** Whether an in-place save failed because the file's location REFUSED
+ *  the write — after the browser host's own refresh-and-retry. Raised
+ *  only by `BrowserHost.saveExisting`, which marks the message
+ *  'EWRITEBLOCKED' (same message-marker convention as EMODIFIED /
+ *  ELOCKED). Field case: cloud-backed ChromeOS mounts — Dropbox and
+ *  Google Drive appear in the Files app as provider filesystems whose
+ *  swap-file writes Chromium can reject deterministically
+ *  (InvalidStateError). The doc is intact in memory; the rescue is
+ *  Save-As to a local folder, never a blind retry. */
+export function isWriteBlockedError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const { message } = err as { message?: unknown };
+  return typeof message === 'string' && message.includes('EWRITEBLOCKED');
+}
+
 /** The friendly text of a "file locked" save failure, or null for
  *  every other error. Raised by the write pipeline in the Electron
  *  main process (doc-writes.ts) only when the atomic rename's retry
