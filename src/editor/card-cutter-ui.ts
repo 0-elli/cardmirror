@@ -432,7 +432,13 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
   // ── Composable settings (all optional) ──
   let dropRedundancy = false;
   let skeletonize = false;
-  let allowAdd = false;
+  // Adding is allowed BY DEFAULT: instructions like "bring back the
+  // impact" and U-flags should just work. The engine's guided pass is
+  // the only machinery that can add, and it only runs alongside the
+  // subtractive toggles when adding is permitted — so the old opt-IN
+  // silently inerted additive requests. Strictly-subtractive is the
+  // special intent, so IT is the thing the user must say.
+  let removeOnly = false;
   const toggleSection = document.createElement('div');
   toggleSection.className = 'pmd-cardcutter-section pmd-cardcutter-chips';
   const toggleChip = (text: string, onToggle: (on: boolean) => void): void => {
@@ -450,7 +456,7 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
   };
   toggleChip('Drop redundancy', (on) => (dropRedundancy = on));
   toggleChip('Skeletonize', (on) => (skeletonize = on));
-  toggleChip('Allow adding highlighting', (on) => (allowAdd = on));
+  toggleChip('Remove only \u2014 never add', (on) => (removeOnly = on));
   dialog.appendChild(toggleSection);
 
   // ── Target length (optional; None by default) ──
@@ -549,7 +555,7 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
       ...(skeletonize ? { skeletonize: true } : {}),
       ...(chosenSec !== null ? { readTimeSec: chosenSec } : {}),
       ...(feedback ? { feedback } : {}),
-      ...(allowAdd ? { allowAdd: true } : {}),
+      ...(removeOnly ? {} : { allowAdd: true }),
       // Act on the card this sheet was opened for, not wherever the
       // cursor drifted while it was open (or while a sheet stacked
       // above it was being answered).
