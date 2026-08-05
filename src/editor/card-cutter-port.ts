@@ -418,6 +418,28 @@ export function jumpToCard(view: EditorView, cardId: string): boolean {
   return true;
 }
 
+/** The read as it stands: highlighted word count and approximate spoken
+ *  seconds for the card, resolved by identity. Null if the card is gone.
+ *  Powers the review panel's stats line without another engine call. */
+export function cardReadStats(
+  view: EditorView,
+  cardId: string,
+): { words: number; seconds: number } | null {
+  const focused = resolveCardById(view, cardId);
+  if (!focused) return null;
+  let words = 0;
+  for (const s of focused.existing) {
+    if (s.layer !== 'hl') continue;
+    const para = focused.card.paras[s.p];
+    if (!para) continue;
+    words += para
+      .slice(s.start, s.end)
+      .split(/\s+/)
+      .filter(Boolean).length;
+  }
+  return { words, seconds: Math.max(1, Math.round((words / readerWpm()) * 60)) };
+}
+
 /** A short human label for a card — its tag, else the opening of its
  *  body. For telling stacked panels apart. */
 export function cardLabel(focused: FocusedCard): string {
@@ -1102,6 +1124,14 @@ export interface RefineInvocation {
    *  targeting the cursor would silently refine the wrong one. Omitted
    *  (older callers) falls back to the focused card. */
   cardId?: string;
+  /** Post-cut review mode: the cut is DONE and the user is pointing at
+   *  what to change. The model is told to make the smallest adjustment
+   *  that addresses the notes and leave every other highlight exactly
+   *  as it is — and the U/D directives switch from pre-cut hints
+   *  ("play up") to region edits ("add/remove highlighting here",
+   *  still imprecise by design: the model picks the right words in the
+   *  region; exact manual edits are what the editor itself is for). */
+  surgical?: boolean;
 }
 
 /** Refine (dehighlight) the focused card per the chosen combination of
@@ -1110,14 +1140,14 @@ export interface RefineInvocation {
 export async function refineHighlightFocusedCard(
   view: EditorView,
   inv: RefineInvocation,
-): Promise<void> {
+): Promise<boolean> {
   if (!(await ensureEngine())) {
     showToast('Card-cutter engine not loaded.');
-    return;
+    return false;
   }
   if (!activeApiKey()) {
     showToast('Set an API key in Settings to use the card cutter.');
-    return;
+    return false;
   }
   const feedback = inv.feedback?.trim() || undefined;
   if (
@@ -1128,7 +1158,7 @@ export async function refineHighlightFocusedCard(
     pendingCutterFlags().length === 0
   ) {
     showToast('Pick a target or a setting, point at some text, or type guidance.');
-    return;
+    return false;
   }
   // Identity first, cursor only as fallback — see RefineInvocation.cardId.
   const focused = inv.cardId ? resolveCardById(view, inv.cardId) : focusedPlainCard(view);
@@ -1138,30 +1168,55 @@ export async function refineHighlightFocusedCard(
         ? 'That card is no longer in the document — refine cancelled.'
         : 'Put the cursor in a card first.',
     );
-    return;
+    return false;
   }
   if (!cardState(focused).hasHighlight) {
     showToast('This card has no highlights to refine.');
-    return;
+    return false;
   }
   const targetWords = inv.readTimeSec
     ? Math.max(10, Math.round((inv.readTimeSec * readerWpm()) / 60))
     : undefined;
-  // Play-up / play-down annotations made while the refine panel was open.
+  // Play-up / play-down annotations made while the panel was open.
   // `refineHighlight` takes no directional args (only the cut passes do),
   // so fold them into the free-text guidance the refine prompt already
   // reads — the same instruction, expressed in the channel that exists.
+  // Wording depends on the mode: pre-cut they are emphasis HINTS; in the
+  // post-cut surgical review they are region EDITS (imprecise ones — the
+  // model chooses the right words in and around the pointed-at region).
   const flags = pendingCutterFlags();
-  const directives = [
-    ...flags.filter((f) => f.kind === 'up').map((f) => `Play UP (keep / read more of): "${f.text}"`),
-    ...flags
-      .filter((f) => f.kind === 'down')
-      .map((f) => `Play DOWN (trim / de-emphasise): "${f.text}"`),
-  ];
-  const guidance = [inv.feedback?.trim() || '', ...directives].filter(Boolean).join('\n');
+  const directives = inv.surgical
+    ? [
+        ...flags
+          .filter((f) => f.kind === 'up')
+          .map(
+            (f) =>
+              `ADD highlighting in this region (the selection is imprecise — pick the words that belong in the read): "${f.text}"`,
+          ),
+        ...flags
+          .filter((f) => f.kind === 'down')
+          .map(
+            (f) =>
+              `REMOVE highlighting in this region (the selection is imprecise — un-highlight what falls in it): "${f.text}"`,
+          ),
+      ]
+    : [
+        ...flags
+          .filter((f) => f.kind === 'up')
+          .map((f) => `Play UP (keep / read more of): "${f.text}"`),
+        ...flags
+          .filter((f) => f.kind === 'down')
+          .map((f) => `Play DOWN (trim / de-emphasise): "${f.text}"`),
+      ];
+  const surgicalRule = inv.surgical
+    ? 'SURGICAL ADJUSTMENT of an accepted cut: make the smallest change that addresses the notes below, and leave every other highlight exactly as it is. If a note only points at regions, change highlighting only there.'
+    : '';
+  const guidance = [surgicalRule, inv.feedback?.trim() || '', ...directives]
+    .filter(Boolean)
+    .join('\n');
   const original = buildMarkMap(focused);
   const lease = claimCardLease(view, focused, 'card-refine');
-  if (!lease) return;
+  if (!lease) return false;
   const activity = new AiActivity(view, { from: focused.cardFrom, to: focused.cardTo });
   activity.start();
   // Consumed — drop the tints now the directives are in the request.
@@ -1184,7 +1239,7 @@ export async function refineHighlightFocusedCard(
     const delta = lease.delta();
     if (delta === null) {
       showToast('The card moved while refining — refine not applied.');
-      return;
+      return false;
     }
     applyHlDiff(view, shiftFocused(focused, delta), original, result.map, (tr) => lease.apply(tr));
     for (const w of result.warnings) console.log(`[cardcutter] ${w}`);
@@ -1198,9 +1253,11 @@ export async function refineHighlightFocusedCard(
     } else {
       showToast(`Refined to ${result.words}w · ~${sec}s — ↶ to undo`);
     }
+    return true;
   } catch (err) {
     console.error('[cardcutter] refine failed:', err);
     showToast(`Refine failed: ${(err as Error).message}`);
+    return false;
   } finally {
     activity.stop();
     lease.release();

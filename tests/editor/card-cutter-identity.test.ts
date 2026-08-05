@@ -63,6 +63,7 @@ import {
   refineHighlightFocusedCard,
   addCutterFlag,
   clearCutterFlags,
+  cardReadStats,
 } from '../../src/editor/card-cutter-port.js';
 import { claimRegion } from '../../src/editor/ai/edit-coordinator.js';
 
@@ -296,6 +297,103 @@ describe('card identity', () => {
     expect(sentFeedback).toContain('Play DOWN');
     expect(sentFeedback).toContain('bravo'); // the flagged text itself
     clearCutterFlags(view);
+  });
+
+  it('surgical adjust: flags-only still goes THROUGH THE MODEL, with region-edit wording', async () => {
+    // U/D are imprecise gestures at every stage — the model interprets
+    // them; nothing applies marks mechanically. A flags-only adjustment
+    // must therefore still be one refine call, carrying the surgical
+    // rule and add/remove (not play-up/down) directives, with adding
+    // allowed so an "up" note can actually add.
+    const view = fakeView(
+      n['doc']!.createChecked(null, [
+        n['card']!.create(null, [
+          n['tag']!.create({ id: newHeadingId() }, schema.text('Reviewed card')),
+          n['card_body']!.create(null, [
+            schema.text('alpha bravo charlie delta', [
+              schema.marks['highlight']!.create({ color: 'yellow' }),
+            ]),
+          ]),
+        ]),
+      ]),
+    );
+    putCursorIn(view, 0);
+    const captured = focusedPlainCard(view)!;
+
+    const bodyStart = captured.paraStarts[0]!;
+    const at = captured.card.paras[0]!.indexOf('charlie');
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, bodyStart + at, bodyStart + at + 'charlie'.length),
+      ),
+    );
+    expect(addCutterFlag(view, 'up')).toBeTruthy();
+
+    vi.mocked(claimRegion).mockReturnValue({
+      id: 'l',
+      region: () => ({ from: 0, to: 0 }),
+      positions: () => [0, 0],
+      delta: () => 0,
+      apply: (tr: Parameters<EditorState['apply']>[0]) => view.dispatch(tr),
+      release: () => {},
+    } as unknown as ReturnType<typeof claimRegion>);
+
+    let calls = 0;
+    let sent: { feedback?: string; allowAdd?: boolean } = {};
+    installCardCutterRegistry();
+    window.__registerCardCutter!({
+      version: 'test',
+      refineHighlight: async (
+        _c: unknown,
+        map: unknown,
+        opts: { feedback?: string; allowAdd?: boolean },
+      ) => {
+        calls++;
+        sent = opts;
+        return { map, words: 4, warnings: [] };
+      },
+    } as never);
+
+    const ok = await refineHighlightFocusedCard(view, {
+      cardId: captured.cardId!,
+      surgical: true,
+      allowAdd: true,
+      // no feedback: the gesture is the whole instruction
+    });
+
+    expect(ok).toBe(true);
+    expect(calls).toBe(1); // the model call happened
+    expect(sent.allowAdd).toBe(true);
+    expect(sent.feedback).toContain('SURGICAL ADJUSTMENT');
+    expect(sent.feedback).toContain('smallest change');
+    expect(sent.feedback).toContain('ADD highlighting in this region');
+    expect(sent.feedback).toContain('charlie');
+    expect(sent.feedback).not.toContain('Play UP'); // post-cut wording, not the pre-cut hint
+    clearCutterFlags(view);
+  });
+
+  it('cardReadStats counts the highlighted words, and nulls for a gone card', () => {
+    const view = fakeView(
+      n['doc']!.createChecked(null, [
+        n['card']!.create(null, [
+          n['tag']!.create({ id: newHeadingId() }, schema.text('Stats card')),
+          n['card_body']!.create(null, [
+            schema.text('one two ', [schema.marks['highlight']!.create({ color: 'yellow' })]),
+            schema.text('middle plain stretch '),
+            schema.text('three', [schema.marks['highlight']!.create({ color: 'yellow' })]),
+          ]),
+        ]),
+      ]),
+    );
+    putCursorIn(view, 0);
+    const captured = focusedPlainCard(view)!;
+    const stats = cardReadStats(view, captured.cardId!)!;
+    expect(stats.words).toBe(3); // one, two, three — not the plain stretch
+    expect(stats.seconds).toBeGreaterThanOrEqual(1);
+
+    const from = cardPos(view.state.doc, 0);
+    view.dispatch(view.state.tr.delete(from, from + view.state.doc.child(0).nodeSize));
+    expect(cardReadStats(view, captured.cardId!)).toBeNull();
   });
 
   it('truncates a very long label', () => {

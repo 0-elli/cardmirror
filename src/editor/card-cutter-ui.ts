@@ -32,6 +32,7 @@ import {
   resolveCardById,
   jumpToCard,
   cardLabel,
+  cardReadStats,
   type CutFlag,
   type CutSession,
   type FocusedCard,
@@ -253,16 +254,19 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
       ...(readTimeSec ? { readTimeSec } : {}),
     });
     if (!session) return;
-    // Cap met cleanly → done. Cap missed → offer the manual trim
-    // checklist so the user decides what to drop.
-    if (!readTimeSec || !session.shortfall) return;
-    showToast('Finding optional sections…');
-    const sections = await proposeFocusedOmissions(session);
-    if (sections.length === 0) {
+    // Cap missed → the manual trim checklist first (its Done chains into
+    // the review loop). Otherwise straight to review: accept, or point
+    // at what to change and go around again.
+    if (readTimeSec && session.shortfall) {
+      showToast('Finding optional sections…');
+      const sections = await proposeFocusedOmissions(session);
+      if (sections.length > 0) {
+        openTrimChecklist(view, session, sections, readTimeSec);
+        return;
+      }
       showToast(`Couldn't reach ≤${readTimeSec}s without dropping a warrant.`);
-      return;
     }
-    openTrimChecklist(view, session, sections, readTimeSec);
+    if (session.focused.cardId) openPostCutReview(view, session.focused.cardId);
   }
 }
 
@@ -347,6 +351,9 @@ function openTrimChecklist(
     previewOmissionSection(view, session, null);
     panel.remove();
     document.removeEventListener('keydown', onKey);
+    // The cut is applied and trimmed — same review loop as the cap-met
+    // path: accept it, or point at what to change.
+    if (session.focused.cardId) openPostCutReview(view, session.focused.cardId);
   };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') close();
@@ -548,6 +555,151 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
       // above it was being answered).
       ...(target.cardId ? { cardId: target.cardId } : {}),
     });
+  }
+
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('keyup', retrackBox, true);
+  document.addEventListener('mouseup', retrackBox, true);
+  document.body.appendChild(dialog);
+}
+
+/** Post-cut review — the iteration loop. The cut is already applied;
+ *  this panel offers the verdict on it. Accept (the default, ⌘↩ with
+ *  nothing typed or flagged) simply closes. Otherwise the user points
+ *  at regions with U / D — imprecise by design, the same feathered
+ *  gesture as pre-cut — and/or types feedback, and Adjust sends ONE
+ *  surgical model pass: smallest change that addresses the notes,
+ *  everything else left exactly as highlighted. Then the panel reopens
+ *  with fresh numbers, and the loop continues until Accept. (Exact
+ *  by-the-character mark edits aren't this flow's job — that's just
+ *  editing, available the moment the panel closes.) */
+function openPostCutReview(view: EditorView, cardId: string): void {
+  const target = resolveCardById(view, cardId);
+  if (!target) return; // card gone (undo, delete) — nothing to review
+  const stats = cardReadStats(view, cardId);
+
+  const dialog = document.createElement('div');
+  dialog.className = 'pmd-cardcutter-panel';
+
+  const header = document.createElement('div');
+  header.className = 'pmd-route-header';
+  header.textContent = 'Review cut';
+  dialog.appendChild(header);
+  dialog.appendChild(cardIdentityRow(view, target));
+  if (stats) {
+    const statsRow = document.createElement('div');
+    statsRow.className = 'pmd-cardcutter-stats';
+    statsRow.textContent = `Read: ${stats.words}w \u00b7 ~${stats.seconds}s`;
+    dialog.appendChild(statsRow);
+  }
+
+  const targetBox = new AiWorkingBox('target');
+  targetBox.show(view, { from: target.cardFrom, to: target.cardTo });
+  const retrackBox = (): void => {
+    const live = resolveCardById(view, cardId);
+    if (live) targetBox.setRange({ from: live.cardFrom, to: live.cardTo });
+  };
+
+  const close = (discardFlags = true): void => {
+    if (discardFlags) clearCutterFlags(view);
+    targetBox.hide();
+    dialog.remove();
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('keyup', retrackBox, true);
+    document.removeEventListener('mouseup', retrackBox, true);
+  };
+  const inPanelInput = (t: EventTarget | null): boolean =>
+    t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT');
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close(); // accept-equivalent: the cut stays, notes are discarded
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      // Accept by default; with notes pending, ⌘↩ means "apply them".
+      if (feedbackEl.value.trim() || pendingCutterFlags().length > 0) void adjust();
+      else close();
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey || inPanelInput(e.target)) return;
+    const k = e.key.toLowerCase();
+    if (k !== 'u' && k !== 'd') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const flag = addCutterFlag(view, k === 'u' ? 'up' : 'down');
+    if (!flag) {
+      showToast(`Select text in the card, then press ${k.toUpperCase()}.`);
+      return;
+    }
+    appendFlagRow(flag);
+  };
+
+  // ── Notes: point (U / D) and/or type ──
+  const flagSection = document.createElement('div');
+  flagSection.className = 'pmd-cardcutter-section';
+  flagSection.appendChild(label('Not right? Point at it (optional)'));
+  const flagHint = document.createElement('div');
+  flagHint.className = 'pmd-cardcutter-flag-hint';
+  flagHint.innerHTML =
+    'Select roughly where, then press <kbd>U</kbd> to highlight more there or <kbd>D</kbd> to highlight less. Rough is fine \u2014 the model picks the words.';
+  flagSection.appendChild(flagHint);
+  const flagList = document.createElement('div');
+  flagSection.appendChild(flagList);
+  const appendFlagRow = (f: CutFlag): void => {
+    flagList.appendChild(flagRow(view, f));
+  };
+  for (const f of pendingCutterFlags()) appendFlagRow(f);
+  dialog.appendChild(flagSection);
+
+  const fbSection = document.createElement('div');
+  fbSection.className = 'pmd-cardcutter-section';
+  fbSection.appendChild(label('Feedback (optional)'));
+  const feedbackEl = document.createElement('textarea');
+  feedbackEl.className = 'pmd-cardcutter-feedback';
+  feedbackEl.rows = 2;
+  feedbackEl.placeholder = 'e.g. the warrant about delay got lost \u2014 bring it back';
+  fbSection.appendChild(feedbackEl);
+  dialog.appendChild(fbSection);
+
+  const buttons = document.createElement('div');
+  buttons.className = 'pmd-text-prompt-buttons';
+  const adjustBtn = document.createElement('button');
+  adjustBtn.type = 'button';
+  adjustBtn.className = 'pmd-route-cancel';
+  adjustBtn.textContent = 'Adjust';
+  adjustBtn.addEventListener('click', () => void adjust());
+  buttons.appendChild(adjustBtn);
+  const accept = document.createElement('button');
+  accept.type = 'button';
+  accept.className = 'pmd-text-prompt-ok';
+  accept.textContent = 'Accept';
+  accept.title = '\u2318\u21a9';
+  accept.addEventListener('click', () => close());
+  buttons.appendChild(accept);
+  dialog.appendChild(buttons);
+
+  async function adjust(): Promise<void> {
+    const feedback = feedbackEl.value.trim();
+    if (!feedback && pendingCutterFlags().length === 0) {
+      showToast('Point at a region (U / D) or type feedback \u2014 or Accept.');
+      return;
+    }
+    // Keep the flags — the refine consumes and clears them.
+    close(false);
+    const ok = await refineHighlightFocusedCard(view, {
+      cardId,
+      surgical: true,
+      // Adding must be possible: an "up" note is a request to read MORE.
+      allowAdd: true,
+      ...(feedback ? { feedback } : {}),
+    });
+    // Round again with fresh numbers — Accept is always the exit. On
+    // failure reopen too (the notes are gone, but the loop survives).
+    if (ok || resolveCardById(view, cardId)) openPostCutReview(view, cardId);
   }
 
   document.addEventListener('keydown', onKey, true);

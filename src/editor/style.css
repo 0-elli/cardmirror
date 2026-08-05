@@ -13640,6 +13640,12 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
 .pmd-cardcutter-card-id-jump:hover {
   filter: brightness(1.15);
 }
+.pmd-cardcutter-stats {
+  font-size: 0.82rem;
+  color: var(--pmd-c-text-secondary);
+  margin: -0.3rem 0 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
 .pmd-cardcutter-flag-hint {
   font-size: 0.8rem;
   color: var(--pmd-c-text-secondary);
