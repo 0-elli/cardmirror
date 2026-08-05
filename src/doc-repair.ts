@@ -110,9 +110,19 @@ export function buildMarkRepairTr(state: EditorState): Transaction | null {
 
 /** Build the full repair transaction for `state` (tables + exclusive
  *  marks + container invariant), or null when nothing needs repair.
- *  Used by import, offline merge, and the session's leader. */
-export function buildDocRepairTr(state: EditorState): Transaction | null {
-  const tr = fixTables(state) ?? state.tr;
+ *  Used by import, offline merge, and the session's leader.
+ *
+ *  `oldState` (when the caller has one — the session repair pass does)
+ *  puts prosemirror-tables on its own bounded fast path: only tables
+ *  in regions that CHANGED between the states are checked, instead of
+ *  a full-document scan per call (perf study 2026-08-06 — the leader
+ *  paid that scan on every remote frame). A table broken BY a merge is
+ *  necessarily inside that merge's changed region, so it is still
+ *  caught in the very pass that imported it; import/open callers pass
+ *  no oldState and keep the full scan, which also remains the backstop
+ *  for anything a bounded session pass could ever leave behind. */
+export function buildDocRepairTr(state: EditorState, oldState?: EditorState): Transaction | null {
+  const tr = fixTables(state, oldState) ?? state.tr;
 
   // Mark sweep scans tr.doc so positions reflect any table fixes above;
   // removeMark never shifts positions, so one scan can batch all fixes.

@@ -13,6 +13,7 @@ import { addRowAfter, addColumnAfter } from 'prosemirror-tables';
 import { TextSelection } from 'prosemirror-state';
 import { collabRepairPlugin, lowestPeerIsLeader } from '../../src/editor/collab/collab-repair.js';
 import { buildDocRepairTr } from '../../src/doc-repair.js';
+import { schema } from '../../src/schema/index.js';
 import { EditorState } from 'prosemirror-state';
 import {
   createLoroPeers,
@@ -73,6 +74,46 @@ describe('session-wired repair pass (leader-gated)', () => {
     expect(buildDocRepairTr(EditorState.create({ doc: b.doc() }))).toBeNull();
     a.destroy();
     b.destroy();
+  });
+
+  it('bounded fixTables: oldState scopes the scan; no-oldState remains the backstop', () => {
+    // Perf fix 2026-08-06: the session pass gives buildDocRepairTr its
+    // oldState, putting prosemirror-tables on the changed-regions fast
+    // path. Semantics pinned here: a PRE-EXISTING break untouched by
+    // the change is no longer opportunistically fixed by the bounded
+    // pass (liveness change, accepted) — while the import/open callers,
+    // which pass no oldState, still full-scan and remain the backstop.
+    // (A table broken BY a merge sits inside that merge's changed
+    // region and is covered end-to-end by T4 above.)
+    const brokenTable = (() => {
+      const cell = (t: string) =>
+        schema.nodes['table_cell']!.createChecked(null, [
+          schema.nodes['paragraph']!.createChecked(null, schema.text(t)),
+        ]);
+      return schema.nodes['table']!.create(null, [
+        schema.nodes['table_row']!.create(null, [cell('r0a'), cell('r0b')]),
+        schema.nodes['table_row']!.create(null, [cell('r1a')]), // ragged
+      ]);
+    })();
+    const para = (t: string) =>
+      schema.nodes['paragraph']!.createChecked(null, schema.text(t));
+    const oldState = EditorState.create({ doc: docOf(brokenTable, para('tail')) });
+    // The only change between states: text typed in the paragraph —
+    // far from the (already broken) table.
+    const newState = oldState.apply(
+      oldState.tr.insertText(' more', oldState.doc.content.size - 1),
+    );
+
+    // Bounded: the untouched broken table is left alone this pass.
+    const bounded = buildDocRepairTr(newState, oldState);
+    const boundedFixesTable =
+      bounded !== null && tableShapes(bounded.doc)[0]!.every((w, _i, a) => w === a[0]);
+    expect(boundedFixesTable).toBe(false);
+
+    // Backstop: the import/open path (no oldState) still squares it.
+    const full = buildDocRepairTr(newState);
+    expect(full).not.toBeNull();
+    expect(new Set(tableShapes(full!.doc)[0]!).size).toBe(1);
   });
 
   it('leader election: lowest peer id wins, numerically', () => {

@@ -37,6 +37,14 @@ const FRAME_LEASE = 0x02;
 // egress scales linearly with this while a typist holds the throttle
 // open (2026-07-24 egress audit).
 const CURSOR_THROTTLE_MS = 250;
+// Receive-side drain cadence (perf study 2026-08-06): every remote
+// cursor frame used to trigger its own full editor dispatch + an
+// all-peers decoration rebuild in the vendored cursor plugin — up to
+// ~20/sec with five active typists, and SSE chunk bursts amplified
+// rather than coalesced. One notch coarser than the send throttle:
+// arrivals from N peers interleave, so the receive side sees N× the
+// per-peer rate.
+const CURSOR_RECEIVE_COALESCE_MS = 150;
 const KEEPALIVE_MS = 15_000;
 const LEASE_MS = 2_000;
 const STORE_TIMEOUT_MS = 45_000;
@@ -47,6 +55,73 @@ export function peerColor(peerId: string): string {
   let h = 0;
   for (const ch of peerId) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return `hsl(${h}, 70%, 45%)`;
+}
+
+/** CursorEphemeralStore that can absorb a BATCH of remote payloads
+ *  with exactly ONE listener notification at the end — the vendored
+ *  cursor plugin schedules a full dispatch + decoration rebuild per
+ *  notification, so per-frame apply made every arriving frame a full
+ *  editor update. Presence is display-only state (nothing here touches
+ *  the document CRDT); the only behavior change is remote cursors
+ *  repainting on the drain cadence, and the send throttle's own
+ *  comment already declares 4/sec "reads as live". */
+/** CursorEphemeralStore that can absorb a BATCH of remote payloads
+ *  with exactly ONE listener notification at the end — the vendored
+ *  cursor plugin (via the ephemeral adapter's `subscribeBy`) schedules
+ *  a full dispatch + all-peers decoration rebuild per notification, so
+ *  per-frame apply made every arriving frame a full editor update.
+ *  Presence is display-only state (nothing here touches the document
+ *  CRDT); the only behavior change is remote cursors repainting on the
+ *  drain cadence, and the send throttle's own comment already declares
+ *  4/sec "reads as live".
+ *
+ *  NOTE the override target: the plugin subscribes through
+ *  `subscribeBy` (whose implementation calls super.subscribe directly),
+ *  NOT through `subscribe` — overriding the latter intercepts nothing. */
+class CoalescingCursorStore extends CursorEphemeralStore {
+  private readonly originals = new Set<(by: 'local' | 'import' | 'timeout') => void>();
+  private suppress = false;
+  private pending: 'import' | 'timeout' | null = null;
+
+  override subscribeBy(listener: (by: 'local' | 'import' | 'timeout') => void): () => void {
+    this.originals.add(listener);
+    const unsub = super.subscribeBy((by: 'local' | 'import' | 'timeout') => {
+      if (this.suppress && by !== 'local') {
+        // 'timeout' beats 'import' for the replay: expiry removes
+        // peers, and a rebuild must not resurrect them under a
+        // softer label.
+        this.pending = this.pending === 'timeout' ? 'timeout' : by;
+        return;
+      }
+      listener(by);
+    });
+    return () => {
+      this.originals.delete(listener);
+      unsub();
+    };
+  }
+
+  /** Apply buffered remote payloads; notify subscribers once. Store
+   *  notifications are synchronous within apply(), so a synchronous
+   *  release window is sufficient (verified against loro-crdt 1.13). */
+  applyBatch(payloads: Uint8Array[]): void {
+    this.suppress = true;
+    this.pending = null;
+    try {
+      for (const p of payloads) {
+        try {
+          this.apply(p);
+        } catch {
+          /* malformed/foreign frame — drop it alone */
+        }
+      }
+    } finally {
+      this.suppress = false;
+      const by = this.pending;
+      this.pending = null;
+      if (by) for (const l of this.originals) l(by);
+    }
+  }
 }
 
 function frame(type: number, payload: Uint8Array): Uint8Array {
@@ -91,7 +166,7 @@ export function installCursorPresence(
   getView: () => EditorView | null,
 ): CursorsHandle {
   const peerId = session.loroDoc.peerIdStr as PeerID;
-  const store = new CursorEphemeralStore(peerId, STORE_TIMEOUT_MS);
+  const store = new CoalescingCursorStore(peerId, STORE_TIMEOUT_MS);
   let disposed = false;
 
   // --- outbound: cursor bytes, throttled trailing-edge ---
@@ -136,6 +211,10 @@ export function installCursorPresence(
     name: settings.get('pairingDisplayName').trim() || 'Partner',
     color: peerColor(peerId),
   };
+
+  // --- inbound cursor coalescing buffer (see CURSOR_RECEIVE_COALESCE_MS) ---
+  let cursorBuf: Uint8Array[] = [];
+  let drainTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- outbound: lease ads on a slow heartbeat ---
   let lastLeaseCount = 0;
@@ -239,11 +318,17 @@ export function installCursorPresence(
       const type = bytes[0];
       const payload = bytes.subarray(1);
       if (type === FRAME_CURSOR) {
-        try {
-          store.apply(payload); // expiry is the store's own timer
-        } catch {
-          /* malformed/foreign frame — drop */
-        }
+        // Buffer + trailing drain: one store batch (→ one dispatch,
+        // one decoration rebuild) per window, however many frames or
+        // SSE-burst fragments arrived. Expiry stays the store's timer.
+        cursorBuf.push(payload);
+        drainTimer ??= setTimeout(() => {
+          drainTimer = null;
+          if (disposed) return;
+          const batch = cursorBuf;
+          cursorBuf = [];
+          store.applyBatch(batch);
+        }, CURSOR_RECEIVE_COALESCE_MS);
       } else if (type === FRAME_LEASE) {
         try {
           applyLeaseAd(JSON.parse(new TextDecoder().decode(payload)) as LeaseAd);
@@ -258,6 +343,7 @@ export function installCursorPresence(
       clearInterval(keepalive);
       clearInterval(leaseTimer);
       if (sendTimer) clearTimeout(sendTimer);
+      if (drainTimer) clearTimeout(drainTimer);
     },
   };
 }

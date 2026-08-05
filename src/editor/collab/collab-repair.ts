@@ -60,18 +60,24 @@ function noteHealedMerge(): void {
 
 export function collabRepairPlugin(isLeader: () => boolean): Plugin {
   return new Plugin({
-    appendTransaction(trs, _oldState, newState) {
+    appendTransaction(trs, oldState, newState) {
       if (!trs.some((tr) => tr.docChanged && isBindingTransaction(tr))) return null;
       // Surface display-layer merge heals (every peer sees its own).
-      // Scan is O(headings) over the post-merge doc — same order as
-      // the repair scans below, and only after binding transactions.
-      newState.doc.descendants((node) => {
-        if (node.type.name === 'tag' || node.type.name === 'analytic') {
-          if (String(node.attrs['id'] ?? '').startsWith('crdt-heal-')) noteHealedMerge();
-          return false;
-        }
-        return true;
-      });
+      // Gated by the toast's own 60s cooldown: a sentinel found during
+      // the cooldown would be dropped by noteHealedMerge AND
+      // canonicalized away in this same pass — it could never toast
+      // later — so skipping the walk during cooldown is
+      // behavior-identical, minus one full-doc traversal per remote
+      // frame (perf study 2026-08-06).
+      if (Date.now() - lastHealToastAt >= 60_000) {
+        newState.doc.descendants((node) => {
+          if (node.type.name === 'tag' || node.type.name === 'analytic') {
+            if (String(node.attrs['id'] ?? '').startsWith('crdt-heal-')) noteHealedMerge();
+            return false;
+          }
+          return true;
+        });
+      }
       // The exclusive-marks resolution runs on EVERY peer: it's
       // mark-level and deterministic (every peer picks the same winner
       // via the schema-derived total order), so double-application
@@ -81,7 +87,10 @@ export function collabRepairPlugin(isLeader: () => boolean): Plugin {
       // first-child) stays leader-gated: those are insertions, and two
       // peers repairing the same merged state emit concurrent ops with
       // distinct identities that would duplicate content.
-      const tr = isLeader() ? buildDocRepairTr(newState) : buildMarkRepairTr(newState);
+      // oldState → prosemirror-tables' bounded fast path (see
+      // buildDocRepairTr); the mark/sentinel sweeps inside are
+      // unchanged.
+      const tr = isLeader() ? buildDocRepairTr(newState, oldState) : buildMarkRepairTr(newState);
       if (!tr) return null;
       return guardNormalizerTr(trs, tr);
     },

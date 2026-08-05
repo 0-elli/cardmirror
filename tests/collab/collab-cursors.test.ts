@@ -80,7 +80,9 @@ describe('M4 presence cursors', () => {
     // B's doc (presence never mutates content).
     const before = docText(bView.state.doc);
     for (const f of bPresence) bCursors.applyRemote(f);
-    await settle();
+    // Cursor frames buffer on the 150ms receive-side drain (perf fix
+    // 2026-08-06) — wait past it before reading the store.
+    await sleep(250);
     expect(docText(bView.state.doc)).toBe(before);
 
     // …and B's presence roster now shows both people: self + A (with a name
@@ -166,5 +168,64 @@ describe('M4 presence cursors', () => {
   it('peer colors are deterministic and distinct-ish', () => {
     expect(peerColor('12345')).toBe(peerColor('12345'));
     expect(peerColor('12345')).not.toBe(peerColor('54321'));
+  });
+});
+
+describe('receive-side cursor coalescing (perf fix 2026-08-06)', () => {
+  it('a burst of remote cursor frames drains as ONE dispatch, not one each', async () => {
+    // Sender side: real stores encode valid ephemeral payloads.
+    const { CursorEphemeralStore } = await import('loro-prosemirror');
+    const encodeFrom = (peer: string): Promise<Uint8Array> =>
+      new Promise((resolve) => {
+        const s = new CursorEphemeralStore(peer as never, 45_000);
+        const unsub = s.subscribeLocalUpdates((bytes: Uint8Array) => {
+          unsub();
+          resolve(bytes);
+        });
+        s.setLocal({ user: { name: `P${peer}`, color: '#123456' } } as never);
+      });
+
+    // Receiver: a fake session (presence layer needs only peer id +
+    // sendPresence) and a dispatch-counting view.
+    const fakeSession = {
+      loroDoc: { peerIdStr: '1' },
+      sendPresence: async () => {},
+    } as unknown as Parameters<typeof installCursorPresence>[0];
+    let view: ReturnType<typeof mkView>;
+    const cursors = installCursorPresence(fakeSession, () => view);
+    let presenceDispatches = 0;
+    view = mkView(cursors.plugins());
+    const innerDispatch = view.dispatch.bind(view);
+    (view as { dispatch: (tr: unknown) => void }).dispatch = (tr) => {
+      // The vendored cursor plugin marks its redraws with its meta.
+      const metas = (tr as { meta?: Record<string, unknown> }).meta ?? {};
+      if (Object.keys(metas).some((k) => k.includes('cursor') || k.includes('Cursor'))) {
+        presenceDispatches++;
+      }
+      innerDispatch(tr as never);
+    };
+
+    // Six frames from three peers land inside one drain window…
+    const frames = await Promise.all(['7', '8', '9', '7', '8', '9'].map(encodeFrom));
+    const framed = (b: Uint8Array): Uint8Array => {
+      const out = new Uint8Array(b.length + 1);
+      out[0] = 0x01;
+      out.set(b, 1);
+      return out;
+    };
+    for (const f of frames) cursors.applyRemote(framed(f));
+    expect(presenceDispatches).toBe(0); // buffered — nothing yet
+    await sleep(300); // > the 150ms drain
+    expect(presenceDispatches).toBe(1); // ONE dispatch for the whole burst
+    // …and the whole batch actually landed in the store.
+    expect(new Set(cursors.visiblePeers())).toEqual(new Set(['7', '8', '9']));
+
+    // A later frame opens a new window: exactly one more dispatch.
+    cursors.applyRemote(framed(await encodeFrom('7')));
+    await sleep(300);
+    expect(presenceDispatches).toBe(2);
+
+    cursors.dispose();
+    view.destroy();
   });
 });
