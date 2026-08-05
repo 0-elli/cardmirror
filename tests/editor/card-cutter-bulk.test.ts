@@ -381,5 +381,10 @@ describe('bulk cutting', () => {
     expect(session).toBeTruthy();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.paras).toBe('alpha');
+    // And the finished cut must NOT yank the user over to card A: the
+    // cursor stays exactly where they were working. (The old behavior
+    // parked the selection at the cut card's top + scrolled to it —
+    // the pill is the status indicator, the jump button the way over.)
+    expect(view.state.selection.from).toBe(bPos);
   });
 });

@@ -729,9 +729,11 @@ export function applyCutToCard(
     tr.addMark(from, to, s.layer === 'hl' ? type.create({ color }) : type.create());
   }
   if (!tr.docChanged && tr.steps.length === 0) return;
-  // Park the selection at the top of the card so the result is visible.
-  tr.setSelection(TextSelection.create(tr.doc, focused.cardFrom + 1));
-  dispatch(tr.scrollIntoView());
+  // Deliberately NO selection move and NO scroll: the user may be
+  // working elsewhere while the cut runs (especially in a bulk run),
+  // and the purple activity pill already says where the work landed.
+  // The review panel's jump button is the explicit way over.
+  dispatch(tr);
 }
 
 /** Shift a focused card's doc positions by `delta` — used after the
@@ -1360,7 +1362,7 @@ function applyHlDiff(
       } else i++;
     }
   }
-  if (tr.steps.length > 0) dispatch(tr.scrollIntoView());
+  if (tr.steps.length > 0) dispatch(tr); // no scroll — see applyCutToCard
 }
 
 /** Options for the dehighlight skill — every field optional and
@@ -1611,7 +1613,7 @@ export async function addHighlightFocusedCard(view: EditorView): Promise<void> {
       tr.addMark(from, to, s.layer === 'hl' ? type.create({ color }) : type.create());
     }
     for (const w of result.warnings) console.log(`[cardcutter] ${w}`);
-    if (tr.steps.length > 0) lease.apply(tr.scrollIntoView());
+    if (tr.steps.length > 0) lease.apply(tr); // no scroll — see applyCutToCard
     showToast('Highlight added — ↶ to undo');
   } catch (err) {
     console.error('[cardcutter] add-highlight failed:', err);
