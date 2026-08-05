@@ -476,10 +476,13 @@ function sessionCallbacks(deps: CollabUiDeps, getSess: () => ActiveSession | nul
           'official relay requires no account.)',
       );
     },
-    onBacklogMerged: (count: number) => {
-      // Merge-visibility (M3): a travel-day backlog just landed — say
-      // so, instead of the doc silently reshaping under the user.
-      showToast(`Synced ${count} offline updates from the session — recent sections may have moved`);
+    onBacklogMerged: (_count: number) => {
+      // Merge-visibility (M3): a real offline backlog just landed — say
+      // so, instead of the doc silently reshaping under the user. The
+      // session only fires this after a genuine blind window whose
+      // catch-up actually changed the doc (frame counts never mapped to
+      // user-perceived edits, so the number is gone from the message).
+      showToast('Caught up on edits made while you were offline — recent sections may have moved');
     },
     onEnded: () => {
       // The explicit end/leave flows clean up themselves before the

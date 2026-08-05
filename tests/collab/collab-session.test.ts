@@ -127,6 +127,109 @@ describe('collab session end-to-end', () => {
     await host.stop();
   });
 
+  it('backlog notice: silent when catch-up re-fetches frames the stream already delivered', async () => {
+    // The field complaint (2026-08-05): the "synced N edits" toast fired
+    // constantly during healthy sessions. The fetch cursor deliberately
+    // lags the live stream, so every periodic catch-up re-fetches frames
+    // that are ALREADY in the doc — the notice must gate on the doc
+    // actually changing.
+    const merged: number[] = [];
+    const { session: host, shareCode } = await CollabSession.host({
+      pmDoc: mixedDoc(),
+      client,
+      ...FAST,
+    });
+    const hostView = mkView(host.plugins());
+    await settle();
+    host.start();
+    const decoded = decodeShareCode(shareCode)!;
+    const joiner = await CollabSession.join({
+      ...decoded,
+      client,
+      ...FAST,
+      backlogNoticeMinBlindMs: 30,
+      callbacks: { onBacklogMerged: (n) => merged.push(n) },
+    });
+    const joinView = mkView(joiner.plugins());
+    await settle();
+    joiner.start();
+    await sleep(300); // both streams up, live delivery flowing
+
+    // ≥25 frames of live typing (flush every 25ms), all stream-delivered.
+    for (let i = 0; i < 30; i++) {
+      typeAfter(hostView, 'riverbank', ` w${i}`);
+      await sleep(30);
+    }
+    await sleep(300);
+    expect(docText(joinView.state.doc)).toContain('w29'); // stream delivered
+
+    await joiner.catchUp(); // the periodic tick, driven manually
+    expect(merged).toEqual([]); // re-fetched frames changed nothing → silent
+
+    await joiner.stop();
+    await host.stop();
+    hostView.destroy();
+    joinView.destroy();
+  });
+
+  it('backlog notice: a genuine blind window with novel edits announces once', async () => {
+    const merged: number[] = [];
+    const { session: host, shareCode } = await CollabSession.host({
+      pmDoc: mixedDoc(),
+      client,
+      ...FAST,
+    });
+    const hostView = mkView(host.plugins());
+    await settle();
+    host.start();
+    const decoded = decodeShareCode(shareCode)!;
+    // Slow reconnect backoff keeps the joiner stream-blind while the
+    // host publishes, so the catch-up runs INSIDE the blind window.
+    const joiner = await CollabSession.join({
+      ...decoded,
+      client,
+      flushMs: 25,
+      minBackoffMs: 4000,
+      maxBackoffMs: 4000,
+      catchUpMs: 600_000,
+      backlogNoticeMinBlindMs: 30,
+      callbacks: { onBacklogMerged: (n) => merged.push(n) },
+    });
+    const joinView = mkView(joiner.plugins());
+    await settle();
+    joiner.start();
+    await sleep(200);
+
+    // Sever the joiner's stream while the relay is down; it stays down
+    // for the 4s backoff even after the relay comes back.
+    mock.pause();
+    joiner.restart();
+    await sleep(80); // connect fails → onDown → blind window opens
+    mock.resume();
+
+    // The host (stream alive, posts retrying) publishes ≥25 frames the
+    // joiner cannot see.
+    for (let i = 0; i < 30; i++) {
+      typeAfter(hostView, 'riverbank', ` b${i}`);
+      await sleep(30);
+    }
+    await sleep(300);
+    expect(docText(joinView.state.doc)).not.toContain('b29'); // truly blind
+
+    await joiner.catchUp();
+    expect(merged.length).toBe(1); // novel + blind ≥30ms → one notice
+    expect(merged[0]!).toBeGreaterThanOrEqual(25);
+    expect(docText(joinView.state.doc)).toContain('b29');
+
+    await joiner.catchUp();
+    expect(merged.length).toBe(1); // nothing new → still one
+
+    await joiner.stop();
+    await host.stop();
+    hostView.destroy();
+    joinView.destroy();
+  });
+
   it('preserves the highlight union through the full stack (P1 regression)', async () => {
     const { host, hostView, joiner, joinView } = await hostAndJoin(
       simpleDoc('The quick fox jumped over the lazy dog tonight.'),

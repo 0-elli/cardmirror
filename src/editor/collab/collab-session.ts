@@ -94,6 +94,9 @@ export interface CollabSessionOptions {
   /** Belt-and-suspenders catch-up cadence while streaming (heals shed
    *  push frames). */
   catchUpMs?: number;
+  /** Minimum stream-blind duration before a merged catch-up backlog is
+   *  worth announcing (onBacklogMerged). Injectable for tests. */
+  backlogNoticeMinBlindMs?: number;
   /** Stream backoff bounds, injectable for tests. */
   minBackoffMs?: number;
   maxBackoffMs?: number;
@@ -110,6 +113,12 @@ export interface CollabSessionOptions {
   updateByteLimit?: number;
 }
 
+function bytesEq(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 export class CollabSession {
   readonly loroDoc: LoroDoc;
   readonly roomId: string;
@@ -120,6 +129,13 @@ export class CollabSession {
   private readonly callbacks: CollabSessionCallbacks;
   private readonly flushMs: number;
   private readonly catchUpMs: number;
+  private readonly backlogNoticeMinBlindMs: number;
+  /** When the live stream went down (null while it's up) and the
+   *  duration of the last COMPLETED blind window — consumed by the
+   *  next catch-up's backlog-notice decision, so one blind window can
+   *  announce at most once. */
+  private blindSince: number | null = null;
+  private lastBlindMs = 0;
   private readonly snapshotEvery: number;
   private readonly echoTimeoutMs: number;
   private readonly auditDelayMs: number;
@@ -207,6 +223,7 @@ export class CollabSession {
     this.callbacks = opts.callbacks ?? {};
     this.flushMs = opts.flushMs ?? 500;
     this.catchUpMs = opts.catchUpMs ?? 300_000;
+    this.backlogNoticeMinBlindMs = opts.backlogNoticeMinBlindMs ?? 60_000;
     this.snapshotEvery = opts.snapshotEvery ?? 50;
     this.echoTimeoutMs = opts.echoTimeoutMs ?? 8000;
     this.auditDelayMs = opts.auditDelayMs ?? 15_000;
@@ -229,6 +246,7 @@ export class CollabSession {
     callbacks?: CollabSessionCallbacks;
     flushMs?: number;
     catchUpMs?: number;
+    backlogNoticeMinBlindMs?: number;
     minBackoffMs?: number;
     maxBackoffMs?: number;
     snapshotEvery?: number;
@@ -275,6 +293,7 @@ export class CollabSession {
     callbacks?: CollabSessionCallbacks;
     flushMs?: number;
     catchUpMs?: number;
+    backlogNoticeMinBlindMs?: number;
     minBackoffMs?: number;
     maxBackoffMs?: number;
     updateByteLimit?: number;
@@ -317,6 +336,7 @@ export class CollabSession {
     callbacks?: CollabSessionCallbacks;
     flushMs?: number;
     catchUpMs?: number;
+    backlogNoticeMinBlindMs?: number;
     minBackoffMs?: number;
     maxBackoffMs?: number;
     snapshotEvery?: number;
@@ -383,6 +403,12 @@ export class CollabSession {
       callbacks: {
         onHello: () => {
           this.connected = true;
+          // Close the blind window; the hello catch-up (below) consumes
+          // its duration for the backlog-notice decision.
+          if (this.blindSince !== null) {
+            this.lastBlindMs = Date.now() - this.blindSince;
+            this.blindSince = null;
+          }
           this.emitStatus();
           void this.catchUp();
           void this.drainQueue();
@@ -407,6 +433,7 @@ export class CollabSession {
         },
         onDown: () => {
           this.connected = false;
+          if (this.blindSince === null) this.blindSince = Date.now();
           this.awaitingEcho = null;
           this.emitStatus();
         },
@@ -741,6 +768,11 @@ export class CollabSession {
       let pendingLeft = false;
       let importedAny = false;
       let importedCount = 0;
+      // For the backlog notice: frames re-fetched but ALREADY applied
+      // (the cursor deliberately lags the live stream) import as no-ops
+      // — only a doc-version change means the user actually missed
+      // something.
+      const versionBefore = this.loroDoc.version().encode();
       for (;;) {
         // Conditional snapshot: if the room's snapshot is the exact one we
         // already imported (tag match), the server ships only the tail —
@@ -834,7 +866,18 @@ export class CollabSession {
         }
         if (after > this.lastSeq) this.lastSeq = after;
       }
-      if (importedCount >= 25) this.callbacks.onBacklogMerged?.(importedCount);
+      // Backlog notice (M3), gated three ways: enough frames to matter,
+      // the doc actually changed (novelty — periodic catch-ups re-fetch
+      // frames the stream already delivered), and a real blind window
+      // (a healthy session's micro-reconnects stay silent). The blind
+      // duration is consumed so one window announces at most once.
+      const blindMs = this.blindSince !== null ? Date.now() - this.blindSince : this.lastBlindMs;
+      this.lastBlindMs = 0;
+      const docChanged =
+        importedCount > 0 && !bytesEq(versionBefore, this.loroDoc.version().encode());
+      if (importedCount >= 25 && docChanged && blindMs >= this.backlogNoticeMinBlindMs) {
+        this.callbacks.onBacklogMerged?.(importedCount);
+      }
       // "Connected" is the STREAM's state (live push flowing) — a
       // successful catch-up over plain HTTP must not paint the chip
       // synced while push delivery is still down.
