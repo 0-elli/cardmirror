@@ -58,7 +58,7 @@ function mount(doc: PMNode): void {
 
 /** Select the doc range containing `needle`, then release a paint
  *  stroke (mouseup inside the editor), with optional modifiers. */
-function stroke(needle: string, alt: boolean, meta = false): void {
+function stroke(needle: string, alt: boolean, ctrl = false): void {
   let from = -1;
   let to = -1;
   view.state.doc.descendants((node, pos) => {
@@ -72,7 +72,7 @@ function stroke(needle: string, alt: boolean, meta = false): void {
   });
   if (from < 0) throw new Error(`"${needle}" not found`);
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-  view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, altKey: alt, metaKey: meta }));
+  view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, altKey: alt, ctrlKey: ctrl }));
 }
 
 /** Does any text node containing `needle` carry the highlight mark? */
@@ -129,7 +129,7 @@ describe('paintbrush Alt strip-pen', () => {
     expect(highlighted('untouched')).toBe(false);
   });
 
-  it('on macOS the override is ⌘ — ⌥ is ignored, since ⌥-drag moves the window there', () => {
+  it('on macOS the override is ⌃ — ⌥ is ignored, since ⌥-drag moves the window there', () => {
     withPlatform('MacIntel', () => {
       mount(cardWith([schema.text('plain words '), schema.text('marked words', [hl])]));
       handle.togglePaintbrush('highlight');
@@ -139,18 +139,18 @@ describe('paintbrush Alt strip-pen', () => {
       stroke('plain', true);
       expect(highlighted('plain')).toBe(true);
 
-      // ⌘ is the strip override.
+      // ⌃ is the strip override.
       stroke('marked', false, true);
       expect(highlighted('marked')).toBe(false);
     });
   });
 
-  it('off macOS, ⌘ does not strip — Alt remains the override', () => {
+  it('off macOS, ⌃ does not strip — Alt remains the override', () => {
     mount(cardWith([schema.text('untouched words')]));
     handle.togglePaintbrush('highlight');
-    stroke('untouched', false, true); // meta on a non-mac platform
+    stroke('untouched', false, true); // ctrl on a non-mac platform
     // A strip-pen stroke over unmarked text adds nothing (see above),
-    // so paint landing here proves ⌘ was NOT treated as the override.
+    // so paint landing here proves ⌃ was NOT treated as the override.
     expect(highlighted('untouched')).toBe(true);
   });
 

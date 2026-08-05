@@ -81,23 +81,23 @@ interface ColorControlSetup {
 }
 
 /** Which modifier flips an armed colored pen to the strip-pen for one
- *  stroke. ⌥-drag moves the whole window on current macOS, so an
- *  Option-held paint stroke turns into a window drag before the stroke
- *  can land — the override lives on ⌘ there instead. Alt everywhere
- *  else. Read per call so tests can stub the platform. */
+ *  stroke. ⌥-drag moves the whole window on current macOS (so an
+ *  Option-held stroke turns into a window drag before it can land),
+ *  and ⌘ is spoken for too — the override lives on ⌃ Control there.
+ *  Alt everywhere else. Read per call so tests can stub the platform. */
 function onMac(): boolean {
   return typeof navigator !== 'undefined' && /mac/i.test(navigator.platform ?? '');
 }
 function stripKeyHeld(e: MouseEvent): boolean {
-  return onMac() ? e.metaKey : e.altKey;
+  return onMac() ? e.ctrlKey : e.altKey;
 }
 function isStripKey(e: KeyboardEvent): boolean {
-  return e.key === (onMac() ? 'Meta' : 'Alt');
+  return e.key === (onMac() ? 'Control' : 'Alt');
 }
 
 export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   let activePaintbrush: PaintbrushMode | null = null;
-  // Strip key (⌘ on macOS, Alt elsewhere) held = temporary strip-pen
+  // Strip key (⌃ on macOS, Alt elsewhere) held = temporary strip-pen
   // ("paint no color") while a colored pen is armed. This flag only
   // keeps the CURSOR truthful — the actual apply decision reads the
   // modifier off the mouseup itself, so a missed keyup can never make
@@ -209,7 +209,7 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   // re-apply the last selection. After applying, collapse the
   // selection to the end of the painted range so the user can see
   // what they just painted (Word's "lift the brush" UX). The strip
-  // key (⌘ on macOS, Alt elsewhere) held at release turns a colored
+  // key (⌃ on macOS, Alt elsewhere) held at release turns a colored
   // pen into the strip-pen for this stroke ("paint no color"); a pen
   // already set to "none" ignores it — it strips either way.
   document.addEventListener('mouseup', (e) => {
