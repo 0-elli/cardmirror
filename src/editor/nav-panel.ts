@@ -17,6 +17,7 @@ import { type Mappable } from 'prosemirror-transform';
 import { settings, SETTINGS_DEFAULTS } from './settings.js';
 import { CLIPBOARD_BUSY_MESSAGE, writeClipboardHtml } from './clipboard-write.js';
 import { showToast } from './toast.js';
+import { setManualShadowSelection } from './similar-selection-plugin.js';
 import { registerOpenContextMenu, clearOpenContextMenu } from './context-menu-registry.js';
 import { dragController, type DragItem, type DragSurface } from './drag-controller.js';
 import { isTransclusionNode, zoneIdentity } from './transclusion.js';
@@ -2104,18 +2105,25 @@ export class NavigationPanel {
     if (!this.view) return;
     const targets = this.contextTargets(entry);
     if (targets.length > 1) {
-      // ProseMirror has no discontinuous selection — select the covering
-      // span (first selected heading through last selected subtree).
-      // Exact for a shift-click run; for a scattered ⌘-click set it
-      // necessarily includes what lies between.
       const ranges = this.headingRanges(targets);
       const first = ranges[0];
-      const last = ranges[ranges.length - 1];
-      if (!first || !last) return;
-      const tr = this.view.state.tr;
-      tr.setSelection(TextSelection.create(this.view.state.doc, first.from, last.to));
-      tr.scrollIntoView();
-      this.view.dispatch(tr);
+      if (!first) return;
+      if (ranges.length === 1) {
+        // A shift-click run merges into one contiguous span (adjacent
+        // subtrees abut) — a plain native selection is exact.
+        const tr = this.view.state.tr;
+        tr.setSelection(TextSelection.create(this.view.state.doc, first.from, first.to));
+        tr.scrollIntoView();
+        this.view.dispatch(tr);
+        this.view.focus();
+        return;
+      }
+      // Scattered ⌘-click set → the app's discontinuous shadow selection
+      // (same machinery as the manual Ctrl/Cmd selection and Select
+      // Similar): each subtree selected exactly, nothing in between.
+      // Format commands, copy, etc. consume it via getOperatingRanges.
+      setManualShadowSelection(this.view, ranges);
+      this.view.dispatch(this.view.state.tr.scrollIntoView());
       this.view.focus();
       return;
     }
