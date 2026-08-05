@@ -8718,11 +8718,11 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
      of width tracking (fixed-width column placeholder) still
      get a stretchy line below. The cap WRAPS, never clips: the
      old 22rem + nowrap pairing sheared long stage narration
-     ("…card 1 of 2 · Esc to sto") mid-word. 30rem keeps common
-     lines on one line; longer ones wrap to a second — the cycler
-     measures height too and animates the stage to fit. Viewport
-     clamp for tiny windows. */
-  max-width: min(30rem, calc(100vw - 2rem));
+     ("…card 1 of 2 · Esc to sto") mid-word. Back at the original
+     22rem now that it wraps — a wider pill over the doc reads
+     worse than a second line; the cycler measures height too and
+     animates the stage to fit. Viewport clamp for tiny windows. */
+  max-width: min(22rem, calc(100vw - 2rem));
   white-space: normal;
   transition: transform 280ms ease-out, opacity 280ms ease-out;
 }
