@@ -576,6 +576,22 @@ const CLOD_PRONOUNS = PRONOUN_PRESETS.he;
  *  `himself`) with the configured persona's name and pronouns.
  *  Word-boundary regex so we don't munge substrings inside other
  *  words. Idempotent for the default persona (Clod + he/him). */
+/** Compose the one-line in-flight narration for an AI feature from a
+ *  gerund phrase: the persona voice ("Clod is skeletonizing…", with
+ *  the CONFIGURED name, never a hardcoded "Clod") when clod mode is
+ *  on, the plain capitalized gerund ("Skeletonizing…") when it's off.
+ *  Pure — callers pass mode + name — so the thinking pill and any
+ *  toast narrating an in-flight step compose through one function and
+ *  the persona voice can never fork. Stage strings passed here must be
+ *  gerund phrases with NO trailing ellipsis (this adds it); anything
+ *  else reads as nonsense in the clod branch ("Clod is Cite 3 of 12…").
+ */
+export function inFlightLine(gerund: string, clodEnabled: boolean, personaName: string): string {
+  return clodEnabled
+    ? `${personaName.trim() || 'Clod'} is ${gerund}…`
+    : `${gerund.charAt(0).toUpperCase()}${gerund.slice(1)}…`;
+}
+
 export function personalizeActivity(text: string, persona: AiPersona): string {
   let out = text;
   // Order matters: longer tokens first so "himself" replaces before

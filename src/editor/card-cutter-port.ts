@@ -25,6 +25,7 @@ import { schema } from '../schema/index.js';
 import { settings } from './settings.js';
 import { compileShrinkProtections, findProtectedRanges } from './ribbon-commands.js';
 import { callLlm, activeApiKey } from './ai/llm.js';
+import { getAiPersona } from './comments-ui.js';
 import { resolveAiModel } from './ai/llm.js';
 import { showToast } from './toast.js';
 import { AiActivity } from './ai/ai-activity.js';
@@ -592,7 +593,13 @@ function shiftFocused(focused: FocusedCard, delta: number): FocusedCard {
 function claimCardLease(view: EditorView, focused: FocusedCard, label: string): EditLease | null {
   const lease = claimRegion(view, { from: focused.cardFrom, to: focused.cardTo }, { label });
   if (!lease) {
-    showToast('Another AI edit is working on this card — try again in a moment.');
+    // Under clod mode "another AI edit" breaks the fiction — there is
+    // only the one named persona, who is simply busy.
+    showToast(
+      settings.get('clodEnabled')
+        ? `${getAiPersona().name.trim() || 'Clod'} is already working on this card — try again in a moment.`
+        : 'Another AI edit is working on this card — try again in a moment.',
+    );
   }
   return lease;
 }

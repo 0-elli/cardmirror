@@ -24,6 +24,7 @@ import {
   activitiesForNow,
   pickRandomActivity,
   personalizeActivity,
+  inFlightLine,
 } from './clod.js';
 import { getAiPersona } from '../comments-ui.js';
 import { makeActivityStage, cycleActivityText } from './activity-cycler.js';
@@ -270,12 +271,11 @@ export class ThinkingTooltip {
   }
 
   private currentText(): string {
-    // Card-cutter stage narration overrides the generic activity.
+    // Stage narration (card cutter, cite reformat) overrides the
+    // generic activity — composed by the shared persona-aware line so
+    // a configured persona name shows here too, not a hardcoded Clod.
     if (this.stageText) {
-      const s = this.stageText;
-      return settings.get('clodEnabled')
-        ? `Clod is ${s}…`
-        : `${s.charAt(0).toUpperCase()}${s.slice(1)}…`;
+      return inFlightLine(this.stageText, settings.get('clodEnabled'), getAiPersona().name);
     }
     if (!settings.get('clodEnabled')) return 'Thinking…';
     const pool = activitiesForNow({

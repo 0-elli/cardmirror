@@ -28,6 +28,7 @@ import {
   hasAiMention,
 } from './ai/explain-context.js';
 import {
+  inFlightLine,
   activitiesForNow,
   pickRandomActivity,
   personalizeActivity,
@@ -83,6 +84,13 @@ export function getAiPersona(): AiPersona {
     return { name, pronouns: settings.get('aiPersonaCustomPronouns') };
   }
   return { name, pronouns: PRONOUN_PRESETS[choice] ?? PRONOUN_PRESETS.he };
+}
+
+/** Persona-aware in-flight narration ("Clod is finding optional
+ *  sections…" under clod mode, "Finding optional sections…" without) —
+ *  the settings-reading wrapper every UI call site goes through. */
+export function aiInFlightText(gerund: string): string {
+  return inFlightLine(gerund, settings.get('clodEnabled'), getAiPersona().name);
 }
 
 /** Cycle the Clod-activity placeholder text every this many

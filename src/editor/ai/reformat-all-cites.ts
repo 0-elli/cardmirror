@@ -259,7 +259,7 @@ async function reformatAllCites(
   const removeCancelKey = installCancelKey(view, () => {
     if (s.cancelled) return;
     s.cancelled = true;
-    activity?.setStage('Stopping after this cite…');
+    activity?.setStage('stopping after this cite');
   });
   let cursor = 0;
   // Ordinal for the progress readout. Bumped only for paragraphs the
@@ -311,7 +311,7 @@ async function reformatAllCites(
           activity = new AiActivity(view, range, 'selection');
           activity.start();
         }
-        activity.setStage(`Cite ${n} of ${total} · Esc to stop`);
+        activity.setStage(`reformatting cite ${n} of ${total} · Esc to stop`);
 
         const reply = await callLlm({
           apiKey,

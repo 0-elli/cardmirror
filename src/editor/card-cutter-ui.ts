@@ -13,6 +13,7 @@
 import type { EditorView } from 'prosemirror-view';
 import { settings } from './settings.js';
 import { AiWorkingBox } from './ai/ai-working-box.js';
+import { aiInFlightText } from './comments-ui.js';
 import { showToast } from './toast.js';
 import {
   cutFocusedCard,
@@ -274,7 +275,7 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     // the review loop). Otherwise straight to review: accept, or point
     // at what to change and go around again.
     if (readTimeSec && session.shortfall) {
-      showToast('Finding optional sections…');
+      showToast(aiInFlightText('finding optional sections'));
       const sections = await proposeFocusedOmissions(session);
       if (sections.length > 0) {
         openTrimChecklist(view, session, sections, readTimeSec);
