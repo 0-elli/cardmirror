@@ -77,6 +77,7 @@ export const commentsKey = new PluginKey<CommentsState>('comments');
 export type CommentsMeta =
   | { type: 'load'; threads: Thread[] }
   | { type: 'add'; thread: Thread }
+  | { type: 'add-batch'; threads: Thread[] }
   | { type: 'reply'; threadId: string; comment: Comment }
   | { type: 'edit-text'; threadId: string; commentId: string; text: string }
   | { type: 'delete-thread'; threadId: string }
@@ -112,6 +113,14 @@ export const commentsPlugin: Plugin<CommentsState> = new Plugin<CommentsState>({
         case 'add': {
           const threads = new Map(prev.threads);
           threads.set(meta.thread.id, meta.thread);
+          return { ...prev, threads };
+        }
+        case 'add-batch': {
+          // Multiple threads in one transaction (a paste restoring the
+          // comments of a copied section) — the meta slot holds one
+          // payload per tr, so batching lives in the payload.
+          const threads = new Map(prev.threads);
+          for (const t of meta.threads) threads.set(t.id, t);
           return { ...prev, threads };
         }
         case 'reply': {
@@ -365,6 +374,10 @@ export function getCommentsState(state: EditorState): CommentsState {
 
 /** Build a `meta` payload to add a new thread. Caller is responsible
  *  for also applying the `comment_range` mark to the selected text. */
+export function addThreadsMeta(threads: Thread[]): CommentsMeta {
+  return { type: 'add-batch', threads };
+}
+
 export function addThreadMeta(thread: Thread): CommentsMeta {
   return { type: 'add', thread };
 }

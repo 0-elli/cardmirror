@@ -144,6 +144,7 @@ import { openSaveAs } from './save-as-ui.js';
 import { highlightColorLabel, shadingColorLabel } from './color-palette.js';
 import { viewportSpellcheckPlugin } from './viewport-spellcheck.js';
 import { commentsPlugin, commentsKey, loadThreads, getCommentsState, gcOrphanThreads, newCommentId, setCommentIdSessionResolver } from './comments-plugin.js';
+import { commentClipboardPlugin } from './comment-clipboard.js';
 import { scheduleIdle, cancelIdle, type IdleHandle } from './idle-scheduler.js';
 import { CommentsColumn, addCommentToSelection, FC_PREFIX, AI_PREFIX, NOTE_PREFIX } from './comments-ui.js';
 import { runAiCreateCite } from './ai/cite-creator.js';
@@ -5152,6 +5153,9 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
     readModePlugin,
     markUnreadPlugin,
     commentsPlugin,
+    // Copied comments carry their threads through the clipboard
+    // (comment-clipboard.ts) — restore on paste, both shells.
+    commentClipboardPlugin(),
     learnHighlightPlugin,
     repairHighlightPlugin,
     aiWorkingPlugin,

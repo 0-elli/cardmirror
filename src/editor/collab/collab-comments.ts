@@ -110,6 +110,9 @@ export function installCommentsSync(
       case 'add':
         writeThread(root, meta.thread);
         break;
+      case 'add-batch':
+        for (const t of meta.threads) writeThread(root, t);
+        break;
       case 'load':
         // Mid-session docx import into the session pane: bulk-push so
         // the map stays a superset of plugin state.
