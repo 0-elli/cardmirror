@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import { EditorState } from 'prosemirror-state';
+import { EditorState, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema, newHeadingId } from '../../src/schema/index.js';
@@ -238,5 +238,63 @@ describe('nav-pane Select on a multi-selection', () => {
     expect(covered).toContain('alpha body');
     expect(covered).toContain('beta body');
     expect(covered).not.toContain('gamma');
+  });
+});
+
+describe('nav-pane create live view / linked copy of heading', () => {
+  const callCreate = (nav: NavigationPanel, method: string, entry: unknown): void => {
+    (nav as unknown as Record<string, (e: unknown) => void>)[method]!(entry);
+  };
+  const countNodes = (view: EditorView, name: string): number => {
+    let n = 0;
+    view.state.doc.descendants((node) => {
+      if (node.type.name === name) n++;
+      return true;
+    });
+    return n;
+  };
+
+  it('creates a live view of the clicked heading at the editor cursor', () => {
+    const { view, nav } = setup(card('Alpha tag', 'alpha body'), card('Beta tag', 'beta body'));
+    // Cursor inside Beta — OUTSIDE the mirrored Alpha section.
+    const betaPos = view.state.doc.content.size - 4;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, betaPos)));
+
+    callCreate(nav, 'createLiveViewFrom', entryFor(nav, 'Alpha tag'));
+
+    expect(countNodes(view, 'self_ref')).toBe(1);
+    let attrs: Record<string, unknown> | null = null;
+    view.state.doc.descendants((node) => {
+      if (node.type.name === 'self_ref') attrs = node.attrs;
+      return true;
+    });
+    expect(String((attrs as unknown as { source_heading_id: string }).source_heading_id)).toBe(
+      (entryFor(nav, 'Alpha tag') as { id: string }).id,
+    );
+  });
+
+  it('refuses to create a live view INSIDE the section it mirrors', () => {
+    const { view, nav } = setup(card('Alpha tag', 'alpha body'), card('Beta tag', 'beta body'));
+    // Cursor inside Alpha — the section being mirrored.
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)));
+    callCreate(nav, 'createLiveViewFrom', entryFor(nav, 'Alpha tag'));
+    expect(countNodes(view, 'self_ref')).toBe(0);
+  });
+
+  it('creates an in-doc linked copy of the clicked heading', () => {
+    const { view, nav } = setup(card('Alpha tag', 'alpha body'), card('Beta tag', 'beta body'));
+    const betaPos = view.state.doc.content.size - 4;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, betaPos)));
+
+    callCreate(nav, 'createLinkedCopyFrom', entryFor(nav, 'Alpha tag'));
+
+    expect(countNodes(view, 'transclusion_ref')).toBe(1);
+    // The copy carries Alpha's content, editable, inside the zone.
+    let zoneText = '';
+    view.state.doc.descendants((node) => {
+      if (node.type.name === 'transclusion_ref') zoneText = node.textContent;
+      return true;
+    });
+    expect(zoneText).toContain('alpha body');
   });
 });

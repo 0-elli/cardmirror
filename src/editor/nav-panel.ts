@@ -18,6 +18,7 @@ import { settings, SETTINGS_DEFAULTS } from './settings.js';
 import { CLIPBOARD_BUSY_MESSAGE, writeClipboardHtml } from './clipboard-write.js';
 import { showToast } from './toast.js';
 import { setManualShadowSelection } from './similar-selection-plugin.js';
+import { insertSelfRef, insertInDocCopy } from './self-transclusion-commands.js';
 import { registerOpenContextMenu, clearOpenContextMenu } from './context-menu-registry.js';
 import { dragController, type DragItem, type DragSurface } from './drag-controller.js';
 import { isTransclusionNode, zoneIdentity } from './transclusion.js';
@@ -2001,6 +2002,24 @@ export class NavigationPanel {
         label: `Delete ${what} and contents`,
         action: () => this.deleteHeadingAndContents(entry),
       },
+      // Creators — deliberately NOT multi-select aware: a live view or
+      // linked copy mirrors ONE section, so these always act on the
+      // clicked row alone, whatever the selection is.
+      ...(entry.id != null && !entry.windowed
+        ? ([
+            { kind: 'separator' },
+            {
+              kind: 'item',
+              label: 'Create live view of heading',
+              action: () => this.createLiveViewFrom(entry),
+            },
+            {
+              kind: 'item',
+              label: 'Create linked copy of heading',
+              action: () => this.createLinkedCopyFrom(entry),
+            },
+          ] as ContextMenuItem[])
+        : []),
       { kind: 'separator' },
       ...[1, 2, 3, 4].map((lvl): ContextMenuItem => ({
         kind: 'item',
@@ -2099,6 +2118,51 @@ export class NavigationPanel {
       else merged.push({ from: r.from, to: r.to });
     }
     return merged;
+  }
+
+  /** The self-containment guard the section picker enforces via
+   *  guardPos, for the menu creators: the EDITOR cursor is the
+   *  insertion point, and it must sit outside the mirrored section —
+   *  a window can't live inside what it mirrors. Null = fine;
+   *  otherwise the toast to show. */
+  private creatorGuardMessage(entry: HeadingEntry, what: string): string | null {
+    if (!this.view) return 'No document.';
+    const range = this.computeHeadingRange(entry);
+    if (!range || range.to <= range.from) return `This heading has no content to ${what}.`;
+    const at = this.view.state.selection.from;
+    if (at >= range.from && at <= range.to) {
+      return `Put the cursor where the ${what} should go — outside this section — first.`;
+    }
+    return null;
+  }
+
+  /** Insert a read-only live view of this heading's section at the
+   *  editor cursor (same insertion the picker command performs; the
+   *  clicked nav row replaces the pick). */
+  private createLiveViewFrom(entry: HeadingEntry): void {
+    if (!this.view || entry.id == null) return;
+    const blocked = this.creatorGuardMessage(entry, 'live view');
+    if (blocked) {
+      showToast(blocked);
+      return;
+    }
+    if (!insertSelfRef(this.view, entry.id)) {
+      showToast('Couldn\u2019t create a live view of this heading.');
+    }
+  }
+
+  /** Insert an editable in-doc linked copy of this heading's section
+   *  at the editor cursor. */
+  private createLinkedCopyFrom(entry: HeadingEntry): void {
+    if (!this.view || entry.id == null) return;
+    const blocked = this.creatorGuardMessage(entry, 'linked copy');
+    if (blocked) {
+      showToast(blocked);
+      return;
+    }
+    // insertInDocCopy surfaces its own error toasts (shared zone
+    // error messages) on failure.
+    insertInDocCopy(this.view, entry.id);
   }
 
   private selectHeadingAndContents(entry: HeadingEntry): void {
