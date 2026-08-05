@@ -200,6 +200,82 @@ describe('collab UI flows through the editor seams', () => {
     hostView.destroy();
   }, 20_000);
 
+  it('untitled host: saving mid-session republishes the title and joiner windows adopt it live', async () => {
+    // Field trace (2026-08-05): a session started on an UNSAVED doc
+    // published an empty title; nothing republished when the host later
+    // saved, and joiners read the title exactly once — so those joiner
+    // windows stayed nameless forever.
+    const HOST_UID = 'title-host';
+    const JOIN_UID = 'title-joiner';
+    let hostView = mkIndexStyleView(HOST_UID);
+    const hostDeps = {
+      getView: () => hostView,
+      getOwnerUid: () => HOST_UID,
+      refreshPlugins: () => {
+        hostView.updateState(hostView.state.reconfigure({ plugins: buildMiniPlugins(HOST_UID) }));
+      },
+      newSessionDoc: () => true,
+    };
+    let shareCode = '';
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (t: string) => {
+          shareCode = t;
+          return Promise.resolve();
+        },
+      },
+    });
+    collabUi.setCollabDocTitleResolver(() => null); // untitled: no name to resolve
+    document.title = 'CardMirror';
+    await startSession(hostDeps);
+    const hostSess = collabUi.activeSession()!;
+    expect((hostSess.loroDoc.getMap('meta').get('title') as string | undefined) ?? '').toBe('');
+
+    // A second "window" joins through the real flow (installSeams runs,
+    // including the meta watcher). Distinct owner uid; adoption spied.
+    let joinerView = mkIndexStyleView(JOIN_UID);
+    const adopted: string[] = [];
+    const joinDeps = {
+      getView: () => joinerView,
+      getOwnerUid: () => JOIN_UID,
+      refreshPlugins: () => {
+        joinerView.updateState(
+          joinerView.state.reconfigure({ plugins: buildMiniPlugins(JOIN_UID) }),
+        );
+      },
+      newSessionDoc: () => true,
+      setDocTitle: (t: string) => adopted.push(t),
+    };
+    expect(await collabUi.joinSessionWithCode(joinDeps, shareCode)).toBe(true);
+    await sleep(150);
+    expect(adopted).toEqual([]); // nothing published yet — nothing adopted
+
+    // The host saves the doc: the resolver now knows its name, and the
+    // save path republishes to the room's meta map.
+    collabUi.setCollabDocTitleResolver((uid) => (uid === HOST_UID ? 'Neg Blocks.cmir' : null));
+    collabUi.republishSessionTitle(HOST_UID);
+    expect(hostSess.loroDoc.getMap('meta').get('title')).toBe('Neg Blocks.cmir');
+    await sleep(400); // flush → stream → joiner meta watcher
+    expect(adopted).toContain('Neg Blocks.cmir');
+
+    // Cleanup: host ends; the joiner session tears down on the remote end.
+    const endP = collabUi.endSessionFlow(hostDeps);
+    await settle();
+    clickPromptButton('End Session');
+    await endP;
+    await sleep(200);
+    // Both seams really gone (the joiner tears down on the remote end)…
+    expect(collabPluginSourceFor(HOST_UID)).toBeNull();
+    expect(collabPluginSourceFor(JOIN_UID)).toBeNull();
+    // …then reset shared test DOM: the chip is focus-resolved and this
+    // test's synthetic windows aren't deterministically chip-bound.
+    document.getElementById('collab-chip')!.hidden = true;
+    collabUi.setCollabDocTitleResolver(null);
+    hostView.destroy();
+    joinerView.destroy();
+  }, 20_000);
+
   it('cancelling the session-doc swap unwinds the join without touching the room', async () => {
     // A live room hosted outside the UI flows (module `active` state stays free).
     const client = new RoomsClient({ baseUrl: () => mock.url, token: () => mock.token });

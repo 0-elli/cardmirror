@@ -1293,6 +1293,9 @@ const collabDeps = {
   // the save-as default all follow currentDocFilename. No handle — the
   // first save still prompts for a location, pre-filled with this name.
   setDocTitle: (title: string) => {
+    // Never clobber a doc the user has SAVED — their on-disk name wins
+    // over a host's mid-session rename arriving through the meta map.
+    if (currentDocHandle) return;
     currentDocFilename = title;
     updateWindowTitle();
   },
@@ -6876,6 +6879,11 @@ function commitSaveResult(filename: string, handle: unknown | null, format: 'cmi
     setCurrentDocHandle(handle);
     currentDocFormat = format;
   }
+  // A (re)named doc that owns a live session republishes its title to
+  // the room — a session started on an untitled doc gets its name the
+  // moment the host saves, and joiners adopt it via the meta watcher.
+  // `?.` on the module promise: never force-loads collab for a plain save.
+  void collabUiModule?.then((m) => m.republishSessionTitle(activeDocIdentity().sessionUid));
   // A committed save (e.g. Save-As of a recovered draft) writes the content
   // to a real file, so it's no longer a stale-recovery-overwrite candidate.
   clearRecoveredDraftMark(activeDocIdentity().sessionUid);

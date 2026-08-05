@@ -104,6 +104,8 @@ interface ActiveSession {
   commentsSync: CommentsSyncHandle;
   persist: PersistHandle;
   wakeCleanup: () => void;
+  /** Unsubscribe the meta-map (title) watcher installed by installSeams. */
+  metaUnsub: () => void;
   /** Latest connection status for THIS session. The shared status-bar chip only
    *  ever reflects the focused doc's session; storing status per session lets
    *  each multi-pane slot footer render its own visible doc's state. */
@@ -346,6 +348,15 @@ function installSeams(
   // Comment-id allocation is per-doc now (the host's resolver tests each doc's
   // session state), so nothing to toggle on here — a co-edited doc's new
   // comments get random ids to avoid two peers colliding on the counter.
+  // Live title adoption: the host may (re)name the doc mid-session —
+  // a session started on an untitled doc was permanently nameless in
+  // every joiner window before this, because the title was read exactly
+  // once at join/resume. Hosts never adopt (their local filename is the
+  // source of truth the republish flows FROM).
+  const metaUnsub = session.loroDoc.getMap('meta').subscribe((e) => {
+    if (e.by === 'local' || session.role === 'host') return;
+    queueMicrotask(() => adoptSharedTitle(deps, session));
+  });
   const sess: ActiveSession = {
     session,
     shareCode,
@@ -354,6 +365,7 @@ function installSeams(
     commentsSync,
     persist,
     wakeCleanup,
+    metaUnsub,
     lastStatus: null,
   };
   sessions.set(ownerUid, sess);
@@ -414,6 +426,7 @@ function teardownSession(sess: ActiveSession, keepRecord = false): Promise<void>
   // A session went away — repaint slot footers (this doc's may be visible).
   notifyCollabCopresenceChange();
   sess.wakeCleanup();
+  sess.metaUnsub();
   sess.commentsSync.dispose();
   sess.cursors.dispose();
   let cleared: Promise<void> = Promise.resolve();
@@ -907,6 +920,24 @@ export async function copyShareCodeFlow(): Promise<void> {
     () => false,
   );
   showToast(ok ? 'Share code copied' : 'Could not copy the share code');
+}
+
+/** Re-publish the owner doc's display name to its live session's meta
+ *  map. Host-only (the shared title tracks the HOST's file; a joiner's
+ *  local Save-As must not rename the session for everyone), and a
+ *  no-op without a session for `uid`, without a resolvable name, or
+ *  when the name is unchanged. The shells call this whenever a doc's
+ *  filename commits (Save / Save-As), so a session started on an
+ *  untitled doc gets its name the moment the host saves — and every
+ *  joiner's meta subscription adopts it live. */
+export function republishSessionTitle(uid: string | null): void {
+  if (!uid) return;
+  const sess = sessions.get(uid);
+  if (!sess || sess.session.role !== 'host') return;
+  const name = sessionDocTitle(uid);
+  if (!name || name === sharedDocTitle(sess.session)) return;
+  sess.session.loroDoc.getMap('meta').set('title', name);
+  sess.session.loroDoc.commit({ origin: META_COMMIT_ORIGIN });
 }
 
 /** The host-published doc title from the room's meta map ('' when the

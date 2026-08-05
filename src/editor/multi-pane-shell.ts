@@ -2747,6 +2747,9 @@ class MultiPaneShell {
       const slot = this.slots[id];
       for (const rec of slot.stack) {
         if (rec.uid !== uid) continue;
+        // A SAVED record keeps its on-disk name — the collab title
+        // adoption must not rename a doc the user already saved.
+        if (rec.handle != null) return;
         rec.filename = name;
         // Repaints from the slot's VISIBLE record — correct whether or
         // not that is the renamed one.
