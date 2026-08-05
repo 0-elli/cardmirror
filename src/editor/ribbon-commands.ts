@@ -1996,20 +1996,28 @@ export function applyShading(activeColor: () => string | null): Command {
     const op = getOperatingRangesForFormatting(state);
     if (op.ranges.length === 0) return false;
 
-    let allMarked = true;
+    const color = activeColor();
+    let allInActiveColor = true;
     let anyText = false;
     for (const { from, to } of op.ranges) {
-      const r = scanTextMarkPresence(state.doc, from, to, 'shading');
+      const r = scanTextMarkPresence(
+        state.doc,
+        from,
+        to,
+        'shading',
+        color === null ? undefined : { color },
+      );
       if (r.anyText) anyText = true;
-      if (!r.allMarked) allMarked = false;
+      if (!r.allMarkedMatching) allInActiveColor = false;
     }
     if (!anyText) return false;
 
     if (!dispatch) return true;
     const tr = state.tr;
-    const color = activeColor();
-    // Null pen ("No background color") — strip, mirroring highlight.
-    if (allMarked || color === null) {
+    // Same-color-only toggle, mirroring highlight: a different active
+    // color repaints; only repeating the exact color strips. Null pen
+    // ("No background color") — strip.
+    if (allInActiveColor || color === null) {
       for (const { from, to } of op.ranges) tr.removeMark(from, to, shadingType);
     } else {
       for (const { from, to } of op.ranges) {

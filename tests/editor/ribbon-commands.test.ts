@@ -2903,7 +2903,9 @@ describe('applyShading (Mod-F11)', () => {
     expect(hasMarkOfNameWithAttr(next!.doc, 'text', 'shading', 'color')).toBe('D2D2D2');
   });
 
-  it('uniformly shaded: toggle off regardless of color', () => {
+  it('uniformly shaded in a DIFFERENT color: repaints, never strips', () => {
+    // Same defect class as the highlight field report (2026-08-05):
+    // the color-agnostic toggle erased shading when repainting.
     const doc = makeDoc([
       cardWithChildren(
         tag('T'),
@@ -2923,6 +2925,29 @@ describe('applyShading (Mod-F11)', () => {
       base.tr.setSelection(TextSelection.create(base.doc, start, start + 6)),
     );
     const next = apply(state, applyShading(() => 'D2D2D2'));
+    expect(hasMarkOfNameWithAttr(next!.doc, 'shaded', 'shading', 'color')).toBe('D2D2D2');
+  });
+
+  it('uniformly shaded in the SAME color: toggles off', () => {
+    const doc = makeDoc([
+      cardWithChildren(
+        tag('T'),
+        schema.nodes['card_body']!.create(
+          null,
+          schema.text('shaded', [schema.marks['shading']!.create({ color: 'FFFF00' })]),
+        ),
+      ),
+    ]);
+    let start = -1;
+    doc.descendants((n, p) => {
+      if (n.isText && n.text === 'shaded') start = p;
+      return true;
+    });
+    const base = EditorState.create({ doc });
+    const state = base.apply(
+      base.tr.setSelection(TextSelection.create(base.doc, start, start + 6)),
+    );
+    const next = apply(state, applyShading(() => 'FFFF00'));
     expect(hasMarkOfNameWithAttr(next!.doc, 'shaded', 'shading', 'color')).toBeUndefined();
   });
 
