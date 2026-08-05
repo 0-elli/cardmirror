@@ -6174,6 +6174,32 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
    Diverge by pulling a selector out, not by re-copying. */
 .pmd-typography-flag-desc,
 .pmd-line-height-unit,
+/* Thread resolve check + resolved look. The check button reuses the
+   head-delete sizing; aria-pressed drives the filled state. A resolved
+   thread dims — still readable, visibly "handled". */
+.pmd-comment-resolve[aria-pressed='true'] {
+  color: var(--pmd-c-accent);
+  opacity: 1;
+}
+.pmd-comment-thread-resolved {
+  opacity: 0.62;
+}
+.pmd-comment-thread-resolved.pmd-comment-thread-active {
+  opacity: 0.85;
+}
+/* One-click 👍 reply — sits after the reply box's send button. */
+.pmd-comment-thumb {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 0 0.3rem;
+  opacity: 0.7;
+}
+.pmd-comment-thumb:hover {
+  opacity: 1;
+}
+
 .pmd-comment-date,
 .pmd-learn-session-hint,
 .pmd-timer-durations-unit {

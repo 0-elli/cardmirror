@@ -484,6 +484,57 @@ describe('exporter — full docx', () => {
     expect(rels).toContain('relationships/comments"');
     expect(rels).toContain('office/2011/relationships/commentsExtended');
   });
+
+  it('round-trips a resolved thread through w15:done', async () => {
+    const doc = schema.nodes['doc']!.createChecked(null, [
+      schema.nodes['card']!.create(null, [
+        schema.nodes['tag']!.create({ id: newHeadingId() }, schema.text('T')),
+        schema.nodes['card_body']!.create(null, [
+          schema.text('handled', [schema.marks['comment_range']!.create({ threadId: '1' })]),
+          schema.text(' open', [schema.marks['comment_range']!.create({ threadId: '5' })]),
+        ]),
+      ]),
+    ]);
+    const mk = (id: string, text: string, resolved?: boolean) => ({
+      id,
+      comments: [
+        {
+          id,
+          author: 'A',
+          initials: 'A',
+          date: '2026-08-05T00:00:00Z',
+          text,
+          kind: 'human' as const,
+          parentId: null,
+          ...(resolved ? { resolved: true } : {}),
+        },
+        {
+          id: `${id}9`,
+          author: 'B',
+          initials: 'B',
+          date: '2026-08-05T01:00:00Z',
+          text: 'a reply',
+          kind: 'human' as const,
+          parentId: id,
+        },
+      ],
+    });
+    const bytes = await toDocx(doc, { threads: [mk('1', 'fixed it', true), mk('5', 'todo')] });
+    const reloaded = await Docx.load(bytes);
+    const ext = (await reloaded.readText('word/commentsExtended.xml'))!;
+    // Resolved thread: done=1 on BOTH its comments (what Word writes);
+    // open thread: done=0 throughout.
+    expect((ext.match(/w15:done="1"/g) ?? []).length).toBe(2);
+    expect((ext.match(/w15:done="0"/g) ?? []).length).toBe(2);
+
+    // And back in: the importer maps done → resolved on the root only.
+    const { importComments } = await import('../../src/import/comments.js');
+    const threads = importComments(await reloaded.readText('word/comments.xml'), ext);
+    const byId = new Map(threads.map((t) => [t.id, t]));
+    expect(byId.get('1')?.comments[0]?.resolved).toBe(true);
+    expect(byId.get('1')?.comments[1]?.resolved).toBeUndefined();
+    expect(byId.get('5')?.comments[0]?.resolved).toBeUndefined();
+  });
 });
 
 describe('image alt text round-trip', () => {

@@ -66,8 +66,10 @@ export function importComments(
     });
   }
 
-  // Second pass: build the paraId → parentParaId map from extended.
+  // Second pass: build the paraId → parentParaId map (and the
+  // paraId → resolved flag) from extended.
   const parentByParaId = new Map<string, string>();
+  const doneByParaId = new Map<string, boolean>();
   if (commentsExtendedXml) {
     const extRoot = parseXml(commentsExtendedXml);
     // Top-level element name varies (`w15:commentsEx`); we walk
@@ -81,6 +83,8 @@ export function importComments(
             const paraId = ea['w15:paraId'] ?? ea['paraId'];
             const parentId = ea['w15:paraIdParent'] ?? ea['paraIdParent'];
             if (paraId && parentId) parentByParaId.set(paraId, parentId);
+            const done = ea['w15:done'] ?? ea['done'];
+            if (paraId && done != null) doneByParaId.set(paraId, done !== '0' && done !== 'false');
           }
           const value = (n as Record<string, unknown>)[key];
           if (Array.isArray(value)) walk(value as ReturnType<typeof parseXml>);
@@ -149,6 +153,13 @@ export function importComments(
       if (ad !== bd) return ad < bd ? -1 : 1;
       return Number(a.id) - Number(b.id);
     });
+    // Word marks a resolved thread by w15:done on its comments; the
+    // root's flag is authoritative. Carried on the root only.
+    const rootParaId = raws.get(rootId)?.paraId;
+    const rootComment = comments[0];
+    if (rootComment && rootParaId && doneByParaId.get(rootParaId)) {
+      rootComment.resolved = true;
+    }
     out.push({ id: rootId, comments });
   }
   return out;

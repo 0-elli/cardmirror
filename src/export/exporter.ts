@@ -840,7 +840,9 @@ class DocxExporter {
 
   /** Build `word/commentsExtended.xml`. One `<w15:commentEx>` per
    *  comment, declaring the parent relationship (root comments are
-   *  also emitted, with no `paraIdParent` attribute). */
+   *  also emitted, with no `paraIdParent` attribute). A resolved
+   *  thread writes `w15:done="1"` on EVERY comment in it — matching
+   *  what Word itself writes when a thread is resolved. */
   private buildCommentsExtendedXml(): string {
     const out: string[] = [];
     out.push(XML_PROLOG);
@@ -848,6 +850,7 @@ class DocxExporter {
       '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">',
     );
     for (const thread of this.threads) {
+      const done = thread.comments[0]?.resolved ? '1' : '0';
       for (const c of thread.comments) {
         const paraId = this.paraIdByCommentId.get(c.id);
         if (!paraId) continue;
@@ -857,7 +860,7 @@ class DocxExporter {
         const parentAttr = parentParaId
           ? ` w15:paraIdParent="${parentParaId}"`
           : '';
-        out.push(`<w15:commentEx w15:paraId="${paraId}" w15:done="0"${parentAttr}/>`);
+        out.push(`<w15:commentEx w15:paraId="${paraId}" w15:done="${done}"${parentAttr}/>`);
       }
     }
     out.push('</w15:commentsEx>');

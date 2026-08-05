@@ -22,6 +22,7 @@ import {
   addReplyMeta,
   editCommentTextMeta,
   deleteThreadMeta,
+  setResolvedMeta,
   type Comment,
   type Thread,
 } from '../../src/editor/comments-plugin.js';
@@ -117,6 +118,31 @@ describe('collab comment-thread sync', () => {
     for (const peer of [a, b]) {
       const t = threadsOf(peer).get('7');
       expect(t?.comments.map((c) => c.text)).toEqual(['root', 'reply from B', 'reply from A']);
+    }
+    a.destroy();
+    b.destroy();
+  });
+
+  it('resolve propagates to the partner and back', async () => {
+    const [a, b] = await commentPeers();
+    a.view.dispatch(a.view.state.tr.setMeta(commentsKey, addThreadMeta(thread('4', 'check me'))));
+    await settle();
+    await syncAll([a, b]);
+
+    // B (the student) resolves; A (the teacher) sees it.
+    b.view.dispatch(b.view.state.tr.setMeta(commentsKey, setResolvedMeta('4', true)));
+    await settle();
+    await syncAll([a, b]);
+    for (const peer of [a, b]) {
+      expect(threadsOf(peer).get('4')?.comments[0]?.resolved).toBe(true);
+    }
+
+    // Reopen flows the other way.
+    a.view.dispatch(a.view.state.tr.setMeta(commentsKey, setResolvedMeta('4', false)));
+    await settle();
+    await syncAll([a, b]);
+    for (const peer of [a, b]) {
+      expect(threadsOf(peer).get('4')?.comments[0]?.resolved).toBe(false);
     }
     a.destroy();
     b.destroy();

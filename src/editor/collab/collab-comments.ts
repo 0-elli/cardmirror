@@ -128,6 +128,15 @@ export function installCommentsSync(
         }
         break;
       }
+      case 'set-resolved': {
+        // Root-comment LWW, same granularity as edit-text.
+        const t = threadMap(root, meta.threadId, false);
+        const existing = t?.get(meta.threadId);
+        if (t && existing && typeof existing === 'object' && !(existing instanceof LoroMap)) {
+          t.set(meta.threadId, { ...(existing as Comment), resolved: meta.resolved });
+        }
+        break;
+      }
       case 'delete-thread':
         root.delete(meta.threadId);
         break;

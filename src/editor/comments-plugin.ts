@@ -40,6 +40,12 @@ export interface Comment {
    *  `word/commentsExtended.xml`'s paraId/paraIdParent linkage; we
    *  flatten that to a parent comment-id reference. */
   parentId: string | null;
+  /** Thread resolved ("seen and acted on") — meaningful on the ROOT
+   *  comment only; replies never carry it. Round-trips with Word as
+   *  `w15:done` in commentsExtended.xml, the one comment primitive
+   *  beyond replies the format durably supports. Optional so every
+   *  existing save/export/collab payload stays valid. */
+  resolved?: boolean;
 }
 
 export interface Thread {
@@ -75,6 +81,7 @@ export type CommentsMeta =
   | { type: 'edit-text'; threadId: string; commentId: string; text: string }
   | { type: 'delete-thread'; threadId: string }
   | { type: 'delete-comment'; threadId: string; commentId: string }
+  | { type: 'set-resolved'; threadId: string; resolved: boolean }
   | { type: 'gc'; threads: Thread[]; tombstone: Thread[] }
   | { type: 'sync-load'; threads: Thread[] }
   | { type: 'set-visible'; visible: boolean };
@@ -172,6 +179,18 @@ export const commentsPlugin: Plugin<CommentsState> = new Plugin<CommentsState>({
             else threads.set(t.id, t);
           }
           return { ...prev, threads, tombstone };
+        }
+        case 'set-resolved': {
+          const threads = new Map(prev.threads);
+          const t = threads.get(meta.threadId);
+          const root = t?.comments[0];
+          if (t && root) {
+            threads.set(meta.threadId, {
+              ...t,
+              comments: [{ ...root, resolved: meta.resolved }, ...t.comments.slice(1)],
+            });
+          }
+          return { ...prev, threads };
         }
         case 'set-visible':
           return { ...prev, visible: meta.visible };
@@ -360,6 +379,10 @@ export function editCommentTextMeta(
   text: string,
 ): CommentsMeta {
   return { type: 'edit-text', threadId, commentId, text };
+}
+
+export function setResolvedMeta(threadId: string, resolved: boolean): CommentsMeta {
+  return { type: 'set-resolved', threadId, resolved };
 }
 
 export function deleteThreadMeta(threadId: string): CommentsMeta {

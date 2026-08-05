@@ -123,6 +123,7 @@ import {
   newCommentId,
   addThreadMeta,
   addReplyMeta,
+  setResolvedMeta,
   editCommentTextMeta,
   deleteThreadMeta,
   deleteCommentMeta,
@@ -888,6 +889,7 @@ export class CommentsColumn {
     chip: HTMLElement,
     dateISO: string | null,
     onDelete?: () => void,
+    resolve?: { resolved: boolean; onToggle: () => void },
   ): HTMLElement {
     const header = document.createElement('header');
     header.className = 'pmd-card-head';
@@ -900,6 +902,21 @@ export class CommentsColumn {
       date.className = 'pmd-comment-date';
       date.textContent = formatDate(dateISO);
       header.appendChild(date);
+    }
+    if (resolve) {
+      // One-click "seen and acted on" — no typing. Round-trips with
+      // Word as the thread's resolved state (w15:done).
+      const res = document.createElement('button');
+      res.type = 'button';
+      res.className = 'pmd-comment-resolve pmd-card-head-delete';
+      res.title = resolve.resolved ? 'Reopen' : 'Resolve';
+      res.setAttribute('aria-pressed', String(resolve.resolved));
+      setIcon(res, 'check');
+      res.addEventListener('click', (e) => {
+        e.stopPropagation();
+        resolve.onToggle();
+      });
+      header.appendChild(res);
     }
     if (onDelete) {
       const del = document.createElement('button');
@@ -919,6 +936,8 @@ export class CommentsColumn {
   private populateThread(card: HTMLElement, thread: Thread, isActive: boolean): void {
     card.replaceChildren();
     card.classList.toggle('pmd-comment-thread-active', isActive);
+    const isResolved = thread.comments[0]?.resolved === true;
+    card.classList.toggle('pmd-comment-thread-resolved', isResolved);
 
     // A freshly-created thread starts as a single empty-text root —
     // render it as a primary "add comment" input so the user can type
@@ -930,14 +949,29 @@ export class CommentsColumn {
       card.appendChild(this.renderPrimaryInput(thread, root));
       return;
     }
+    const resolveCtl = {
+      resolved: isResolved,
+      onToggle: () => this.toggleResolved(thread.id, !isResolved),
+    };
     if (!isActive) {
       // Collapsed: chip header (own row, with date) + excerpt below — the
-      // same silhouette as a collapsed flashcard. No avatar.
-      card.appendChild(this.buildThreadHeader(makeCardTypeChip('comment'), root?.date ?? null));
+      // same silhouette as a collapsed flashcard. No avatar. The resolve
+      // check shows (and toggles) here too, so acknowledging a comment
+      // never requires expanding it first.
+      card.appendChild(
+        this.buildThreadHeader(makeCardTypeChip('comment'), root?.date ?? null, undefined, resolveCtl),
+      );
       card.appendChild(this.renderThreadPreview(thread));
       return;
     }
-    card.appendChild(this.buildThreadHeader(makeCardTypeChip('comment'), root?.date ?? null, () => this.deleteThread(thread.id)));
+    card.appendChild(
+      this.buildThreadHeader(
+        makeCardTypeChip('comment'),
+        root?.date ?? null,
+        () => this.deleteThread(thread.id),
+        resolveCtl,
+      ),
+    );
     for (const c of thread.comments) {
       card.appendChild(this.renderComment(thread, c, c.id === thread.id));
     }
@@ -2003,9 +2037,24 @@ export class CommentsColumn {
   }
 
   private renderReplyForm(thread: Thread): HTMLElement {
-    return this.buildInputForm(thread, 'Reply…', (text) => {
+    const form = this.buildInputForm(thread, 'Reply…', (text) => {
       this.submitReply(thread.id, text);
     }, 'Reply');
+    // One-click 👍 — an ordinary emoji-only reply, so it round-trips
+    // through docx/Word as a plain comment reply (the format has no
+    // durable reaction primitive; this is the portable equivalent).
+    const thumb = document.createElement('button');
+    thumb.type = 'button';
+    thumb.className = 'pmd-comment-thumb';
+    thumb.title = 'Reply 👍';
+    thumb.textContent = '\u{1F44D}';
+    thumb.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.submitReply(thread.id, '\u{1F44D}');
+    });
+    form.appendChild(thumb);
+    return form;
   }
 
   private buildInputForm(
@@ -2204,6 +2253,15 @@ export class CommentsColumn {
     block.appendChild(header);
     block.appendChild(body);
     return block;
+  }
+
+  /** Flip a thread's resolved flag — the checkmark's action. Goes
+   *  through the plugin meta so undo, collab mirroring, and every
+   *  serialization path see it like any other comment mutation. */
+  private toggleResolved(threadId: string, resolved: boolean): void {
+    const view = this.getView();
+    if (!view) return;
+    view.dispatch(view.state.tr.setMeta(commentsKey, setResolvedMeta(threadId, resolved)));
   }
 
   private submitReply(threadId: string, text: string): void {
