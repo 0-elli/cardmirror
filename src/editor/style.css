@@ -8629,6 +8629,14 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
   background: color-mix(in srgb, var(--pmd-c-comment-thread) 7%, transparent);
   border-radius: 4px;
 }
+/* Target variant: what an OPEN panel will act on, as opposed to what the
+   AI is working on right now. Same purple so they read as one idea;
+   dashed + fainter fill so "about to" never looks like "in progress". */
+.pmd-ai-target-box {
+  outline-style: dashed;
+  outline-width: 2px;
+  background: color-mix(in srgb, var(--pmd-c-comment-thread) 4%, transparent);
+}
 /* Rare fallback (container scope with no enclosing card): a subtle tint. */
 :is(#editor, .pmd-pane-editor) .pmd-ai-working-inline {
   background: color-mix(in srgb, var(--pmd-c-comment-thread) 12%, transparent);
@@ -13645,14 +13653,50 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
   border-radius: 4px;
   background: var(--pmd-c-bg);
 }
-/* In-doc annotation tints (decorations, never serialized). */
-.pmd-cc-flag-up {
-  background: rgba(46, 160, 67, 0.28);
-  border-bottom: 2px solid rgba(46, 160, 67, 0.75);
+/* In-doc annotation tints (decorations, never serialized).
+
+   Deliberately NOT highlight-shaped. These mark a REGION the user is
+   pointing at — "play this part up / down" — not a precise span the way
+   a highlight mark does. A crisp edge with an underline read as exactly
+   that precision and implied the engine would treat the selection
+   literally, which is wrong: it takes them as directional hints.
+
+   So: a soft radial wash that fades out at its own edges. The vertical
+   bleed comes from PADDING on an inline element — which paints beyond
+   the line box while contributing nothing to line height, so the wash
+   spills over neighbouring lines and NO text moves. (Vertical margins
+   are ignored on inlines; the negative horizontal one just pulls the
+   side padding back so the wash starts at the text edge.) The editor's
+   scroll container clips any overflow at the editor's own bounds.
+   box-decoration-break: clone gives each wrapped line its own wash
+   rather than one stretched box. No border, no underline, no hard
+   edge — nothing that could read as "these exact words". */
+:is(#editor, .pmd-pane-editor) :is(.pmd-cc-flag-up, .pmd-cc-flag-down) {
+  padding: 0.55em 0.5em;
+  margin: -0.55em -0.5em;
+  border-radius: 0.9em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
-.pmd-cc-flag-down {
-  background: rgba(218, 54, 51, 0.24);
-  border-bottom: 2px solid rgba(218, 54, 51, 0.7);
+:is(#editor, .pmd-pane-editor) .pmd-cc-flag-up {
+  background:
+    radial-gradient(
+      ellipse 100% 130% at 50% 50%,
+      rgba(46, 160, 67, 0.34) 0%,
+      rgba(46, 160, 67, 0.22) 45%,
+      rgba(46, 160, 67, 0.07) 72%,
+      rgba(46, 160, 67, 0) 100%
+    );
+}
+:is(#editor, .pmd-pane-editor) .pmd-cc-flag-down {
+  background:
+    radial-gradient(
+      ellipse 100% 130% at 50% 50%,
+      rgba(218, 54, 51, 0.32) 0%,
+      rgba(218, 54, 51, 0.2) 45%,
+      rgba(218, 54, 51, 0.06) 72%,
+      rgba(218, 54, 51, 0) 100%
+    );
 }
 .pmd-cardcutter-intent {
   width: 100%;

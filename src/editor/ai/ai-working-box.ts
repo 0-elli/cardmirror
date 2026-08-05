@@ -53,6 +53,13 @@ export class AiWorkingBox {
   private range: Range = { from: 0, to: 0 };
   private readonly onScroll = (): void => this.reposition();
 
+  /** `variant` picks the box's look: the default solid purple means
+   *  "AI is working here right now"; 'target' is the dashed version
+   *  meaning "this is what the open panel will act on" — same colour so
+   *  the two read as one idea, different stroke so they never get
+   *  confused for each other. */
+  constructor(private readonly variant: 'working' | 'target' = 'working') {}
+
   show(view: EditorView, range: Range): void {
     if (this.el) {
       this.setRange(range);
@@ -61,7 +68,8 @@ export class AiWorkingBox {
     this.view = view;
     this.range = range;
     const el = document.createElement('div');
-    el.className = 'pmd-ai-working-box';
+    el.className =
+      this.variant === 'target' ? 'pmd-ai-working-box pmd-ai-target-box' : 'pmd-ai-working-box';
     el.setAttribute('aria-hidden', 'true');
     document.body.appendChild(el);
     this.el = el;

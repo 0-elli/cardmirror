@@ -45,6 +45,7 @@ vi.mock('../../src/editor/ai/ai-activity.js', () => ({
 vi.mock('../../src/editor/ai/edit-coordinator.js', () => ({ claimRegion: vi.fn() }));
 vi.mock('../../src/editor/card-cutter-preview-plugin.js', () => ({
   setCardCutterPreview: vi.fn(),
+  setCutterFlagDecorations: vi.fn(),
 }));
 vi.mock('../../src/editor/host/index.js', () => ({ getElectronHost: () => null }));
 vi.mock('../../src/editor/learn-store-host.js', async () => {
@@ -60,6 +61,8 @@ import {
   cardLabel,
   installCardCutterRegistry,
   refineHighlightFocusedCard,
+  addCutterFlag,
+  clearCutterFlags,
 } from '../../src/editor/card-cutter-port.js';
 import { claimRegion } from '../../src/editor/ai/edit-coordinator.js';
 
@@ -232,6 +235,67 @@ describe('card identity', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toContain('alpha'); // card A — the captured one
     expect(seen[0]).not.toContain('bravo'); // NOT wherever the cursor went
+  });
+
+  it('folds U/D annotations into the refine guidance', async () => {
+    // refineHighlight has no play-up/down parameters (only the cut passes
+    // do), so flags must reach the model through the free-text guidance
+    // the refine prompt already reads — otherwise they vanish silently.
+    const view = fakeView(
+      n['doc']!.createChecked(null, [
+        n['card']!.create(null, [
+          n['tag']!.create({ id: newHeadingId() }, schema.text('Flagged card')),
+          n['card_body']!.create(null, [
+            schema.text('alpha bravo charlie delta', [
+              schema.marks['highlight']!.create({ color: 'yellow' }),
+            ]),
+          ]),
+        ]),
+      ]),
+    );
+    putCursorIn(view, 0);
+    const captured = focusedPlainCard(view)!;
+
+    // Select "bravo" and flag it down. paraStarts[0] is the body
+    // textblock's content start, so offsets into it are inline positions.
+    const bodyStart = captured.paraStarts[0]!;
+    const text = captured.card.paras[0]!;
+    const at = text.indexOf('bravo');
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, bodyStart + at, bodyStart + at + 'bravo'.length),
+      ),
+    );
+    expect(addCutterFlag(view, 'down')).toBeTruthy();
+
+    vi.mocked(claimRegion).mockReturnValue({
+      id: 'l',
+      region: () => ({ from: 0, to: 0 }),
+      positions: () => [0, 0],
+      delta: () => 0,
+      apply: (tr: Parameters<EditorState['apply']>[0]) => view.dispatch(tr),
+      release: () => {},
+    } as unknown as ReturnType<typeof claimRegion>);
+
+    let sentFeedback = '';
+    installCardCutterRegistry();
+    window.__registerCardCutter!({
+      version: 'test',
+      refineHighlight: async (_c: unknown, map: unknown, opts: { feedback?: string }) => {
+        sentFeedback = opts.feedback ?? '';
+        return { map, words: 4, warnings: [] };
+      },
+    } as never);
+
+    await refineHighlightFocusedCard(view, {
+      feedback: 'keep the impact',
+      cardId: captured.cardId!,
+    });
+
+    expect(sentFeedback).toContain('keep the impact'); // typed guidance survives
+    expect(sentFeedback).toContain('Play DOWN');
+    expect(sentFeedback).toContain('bravo'); // the flagged text itself
+    clearCutterFlags(view);
   });
 
   it('truncates a very long label', () => {

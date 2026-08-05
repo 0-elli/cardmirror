@@ -12,8 +12,8 @@
 
 import type { EditorView } from 'prosemirror-view';
 import { settings } from './settings.js';
+import { AiWorkingBox } from './ai/ai-working-box.js';
 import { showToast } from './toast.js';
-import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 import {
   cutFocusedCard,
   focusedCardStatus,
@@ -29,6 +29,7 @@ import {
   removeCutterFlag,
   clearCutterFlags,
   focusedPlainCard,
+  resolveCardById,
   jumpToCard,
   cardLabel,
   type CutFlag,
@@ -67,6 +68,13 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     return;
   }
   const highlightOnly = status.hasUnderline; // underlined → highlight only
+  // The card this panel is FOR — captured now, so the cut targets it even
+  // if the cursor wanders (or a stacked panel steals focus) meanwhile.
+  const target = focusedPlainCard(view);
+  if (!target) {
+    showToast('Put the cursor in a card with body text first.');
+    return;
+  }
 
   // NON-MODAL panel: the doc stays interactive so the user can select
   // chunks of the card and annotate them (U = play up / green, D =
@@ -79,11 +87,25 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   header.className = 'pmd-route-header';
   header.textContent = highlightOnly ? 'Highlight card' : 'Cut card';
   dialog.appendChild(header);
+  dialog.appendChild(cardIdentityRow(view, target));
+
+  // Dashed purple box around the card the panel will act on — the
+  // "about to work here" counterpart to the solid working box. Tracks
+  // the card's live position, so annotating or editing keeps it aligned.
+  const targetBox = new AiWorkingBox('target');
+  targetBox.show(view, { from: target.cardFrom, to: target.cardTo });
+  const retrackBox = (): void => {
+    const live = target.cardId ? resolveCardById(view, target.cardId) : null;
+    if (live) targetBox.setRange({ from: live.cardFrom, to: live.cardTo });
+  };
 
   const close = (discardFlags: boolean): void => {
     if (discardFlags) clearCutterFlags(view);
+    targetBox.hide();
     dialog.remove();
     document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('keyup', retrackBox, true);
+    document.removeEventListener('mouseup', retrackBox, true);
   };
   const inPanelInput = (t: EventTarget | null): boolean =>
     t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT');
@@ -186,28 +208,7 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   const flagList = document.createElement('div');
   flagSection.appendChild(flagList);
   const appendFlagRow = (f: CutFlag): void => {
-    const row = document.createElement('div');
-    row.className = 'pmd-cardcutter-flag';
-    const dir = document.createElement('span');
-    dir.className = `pmd-cardcutter-flag-dir is-${f.kind}`;
-    dir.textContent = f.kind === 'up' ? '▲' : '▼';
-    row.appendChild(dir);
-    const quote = document.createElement('span');
-    quote.className = 'pmd-cardcutter-flag-text';
-    const t = f.text.length > 90 ? `${f.text.slice(0, 87)}…` : f.text;
-    quote.textContent = `“${t}”`;
-    row.appendChild(quote);
-    const x = document.createElement('button');
-    x.type = 'button';
-    x.className = 'pmd-cardcutter-flag-remove';
-    x.textContent = '✕';
-    x.title = 'Remove this annotation';
-    x.addEventListener('click', () => {
-      removeCutterFlag(view, f);
-      row.remove();
-    });
-    row.appendChild(x);
-    flagList.appendChild(row);
+    flagList.appendChild(flagRow(view, f));
   };
   // Stale flags from an earlier panel in this doc (e.g. it was closed
   // by a failed cut) are still pending — show them.
@@ -236,6 +237,10 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   dialog.appendChild(buttons);
 
   document.addEventListener('keydown', onKey, true);
+  // Re-anchor after anything that can move the card (typing above it,
+  // a selection change that scrolls). Cheap: one id lookup.
+  document.addEventListener('keyup', retrackBox, true);
+  document.addEventListener('mouseup', retrackBox, true);
   document.body.appendChild(dialog);
 
   async function onGo(): Promise<void> {
@@ -358,10 +363,12 @@ function openTrimChecklist(
  *  skeletonize, and a target length are all OPTIONAL, composable
  *  settings; free-text guidance steers them, and can run on its own. */
 function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'pmd-route-overlay';
+  // NON-MODAL, matching the cut panel: refining is an iterative act —
+  // the user needs to read the live card, and to point at parts of it
+  // with U / D, while deciding what to ask for. A modal overlay made
+  // both impossible (it dimmed the card and swallowed every keystroke).
   const dialog = document.createElement('div');
-  dialog.className = 'pmd-route-dialog pmd-cardcutter-dialog';
+  dialog.className = 'pmd-cardcutter-panel';
 
   const header = document.createElement('div');
   header.className = 'pmd-route-header';
@@ -369,26 +376,50 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
   dialog.appendChild(header);
   dialog.appendChild(cardIdentityRow(view, target));
 
-  const overlayToken = pushOverlay();
-  const close = (): void => {
-    popOverlay(overlayToken);
-    overlay.remove();
-    document.removeEventListener('keydown', onKey, true);
+  // Same dashed "this is what I'll act on" box as the cut panel.
+  const targetBox = new AiWorkingBox('target');
+  targetBox.show(view, { from: target.cardFrom, to: target.cardTo });
+  const retrackBox = (): void => {
+    const live = target.cardId ? resolveCardById(view, target.cardId) : null;
+    if (live) targetBox.setRange({ from: live.cardFrom, to: live.cardTo });
   };
-  // Modal: swallow every keystroke that isn't aimed at the dialog's own
-  // controls, so the underlying doc never sees it (capture phase, before
-  // ProseMirror's keydown handler on the editor). Guarded to the topmost
-  // overlay so a dialog stacked above keeps its own keys.
+
+  const close = (discardFlags = true): void => {
+    if (discardFlags) clearCutterFlags(view);
+    targetBox.hide();
+    dialog.remove();
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('keyup', retrackBox, true);
+    document.removeEventListener('mouseup', retrackBox, true);
+  };
+  const inPanelInput = (t: EventTarget | null): boolean =>
+    t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT');
   const onKey = (e: KeyboardEvent): void => {
-    if (!isTopOverlay(overlayToken)) return;
     if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       close();
       return;
     }
-    if (!dialog.contains(e.target as Node)) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
+      run();
+      return;
     }
+    // U / D annotate the live card, exactly as in the cut panel — so a
+    // refine can be steered by pointing as well as by typing.
+    if (e.metaKey || e.ctrlKey || e.altKey || inPanelInput(e.target)) return;
+    const k = e.key.toLowerCase();
+    if (k !== 'u' && k !== 'd') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const flag = addCutterFlag(view, k === 'u' ? 'up' : 'down');
+    if (!flag) {
+      showToast(`Select text in the card, then press ${k.toUpperCase()}.`);
+      return;
+    }
+    appendFlagRow(flag);
   };
 
   // ── Composable settings (all optional) ──
@@ -463,25 +494,49 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
   fbSection.appendChild(feedbackEl);
   dialog.appendChild(fbSection);
 
+  // ── Point at parts of the card (U / D) ──
+  const flagSection = document.createElement('div');
+  flagSection.className = 'pmd-cardcutter-section';
+  flagSection.appendChild(label('Play up / play down (optional)'));
+  const flagHint = document.createElement('div');
+  flagHint.className = 'pmd-cardcutter-flag-hint';
+  flagHint.innerHTML =
+    'Select text in the card, then press <kbd>U</kbd> to play up (green) or <kbd>D</kbd> to play down (red).';
+  flagSection.appendChild(flagHint);
+  const flagList = document.createElement('div');
+  flagSection.appendChild(flagList);
+  const appendFlagRow = (f: CutFlag): void => {
+    flagList.appendChild(flagRow(view, f));
+  };
+  for (const f of pendingCutterFlags()) appendFlagRow(f);
+  dialog.appendChild(flagSection);
+
   const buttons = document.createElement('div');
   buttons.className = 'pmd-text-prompt-buttons';
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'pmd-route-cancel';
   cancel.textContent = 'Cancel';
-  cancel.addEventListener('click', close);
+  cancel.addEventListener('click', () => close());
   buttons.appendChild(cancel);
   const go = document.createElement('button');
   go.type = 'button';
   go.className = 'pmd-text-prompt-ok';
   go.textContent = 'Refine';
-  go.addEventListener('click', () => {
+  go.title = '⌘↩';
+  go.addEventListener('click', run);
+  buttons.appendChild(go);
+  dialog.appendChild(buttons);
+
+  function run(): void {
     const feedback = feedbackEl.value.trim();
-    if (!dropRedundancy && !skeletonize && chosenSec === null && !feedback) {
-      showToast('Pick a target or a setting, or type some guidance.');
+    const flags = pendingCutterFlags();
+    if (!dropRedundancy && !skeletonize && chosenSec === null && !feedback && flags.length === 0) {
+      showToast('Pick a target or a setting, point at some text, or type guidance.');
       return;
     }
-    close();
+    // Keep the flags — refine consumes and clears them (and their tints).
+    close(false);
     void refineHighlightFocusedCard(view, {
       ...(dropRedundancy ? { dropRedundancy: true } : {}),
       ...(skeletonize ? { skeletonize: true } : {}),
@@ -493,19 +548,40 @@ function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
       // above it was being answered).
       ...(target.cardId ? { cardId: target.cardId } : {}),
     });
-  });
-  buttons.appendChild(go);
-  dialog.appendChild(buttons);
+  }
 
-  overlay.appendChild(dialog);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
   document.addEventListener('keydown', onKey, true);
-  document.body.appendChild(overlay);
-  // Pull focus off the editor so the doc stops receiving keystrokes.
-  dialog.tabIndex = -1;
-  dialog.focus();
+  document.addEventListener('keyup', retrackBox, true);
+  document.addEventListener('mouseup', retrackBox, true);
+  document.body.appendChild(dialog);
+}
+
+/** One annotation row: direction glyph, the quoted text, and a ✕ that
+ *  removes both the row and its in-doc tint. Shared by the cut and
+ *  refine panels — both point at text the same way. */
+function flagRow(view: EditorView, f: CutFlag): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'pmd-cardcutter-flag';
+  const dir = document.createElement('span');
+  dir.className = `pmd-cardcutter-flag-dir is-${f.kind}`;
+  dir.textContent = f.kind === 'up' ? '▲' : '▼';
+  row.appendChild(dir);
+  const quote = document.createElement('span');
+  quote.className = 'pmd-cardcutter-flag-text';
+  const t = f.text.length > 90 ? `${f.text.slice(0, 87)}…` : f.text;
+  quote.textContent = `“${t}”`;
+  row.appendChild(quote);
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'pmd-cardcutter-flag-remove';
+  x.textContent = '✕';
+  x.title = 'Remove this annotation';
+  x.addEventListener('click', () => {
+    removeCutterFlag(view, f);
+    row.remove();
+  });
+  row.appendChild(x);
+  return row;
 }
 
 /** "Card: <tag> — Jump to card". Every panel that can outlive the

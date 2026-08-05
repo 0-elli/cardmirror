@@ -1120,8 +1120,14 @@ export async function refineHighlightFocusedCard(
     return;
   }
   const feedback = inv.feedback?.trim() || undefined;
-  if (!inv.dropRedundancy && !inv.skeletonize && !inv.readTimeSec && !feedback) {
-    showToast('Pick a target or a setting, or type some guidance.');
+  if (
+    !inv.dropRedundancy &&
+    !inv.skeletonize &&
+    !inv.readTimeSec &&
+    !feedback &&
+    pendingCutterFlags().length === 0
+  ) {
+    showToast('Pick a target or a setting, point at some text, or type guidance.');
     return;
   }
   // Identity first, cursor only as fallback — see RefineInvocation.cardId.
@@ -1141,11 +1147,25 @@ export async function refineHighlightFocusedCard(
   const targetWords = inv.readTimeSec
     ? Math.max(10, Math.round((inv.readTimeSec * readerWpm()) / 60))
     : undefined;
+  // Play-up / play-down annotations made while the refine panel was open.
+  // `refineHighlight` takes no directional args (only the cut passes do),
+  // so fold them into the free-text guidance the refine prompt already
+  // reads — the same instruction, expressed in the channel that exists.
+  const flags = pendingCutterFlags();
+  const directives = [
+    ...flags.filter((f) => f.kind === 'up').map((f) => `Play UP (keep / read more of): "${f.text}"`),
+    ...flags
+      .filter((f) => f.kind === 'down')
+      .map((f) => `Play DOWN (trim / de-emphasise): "${f.text}"`),
+  ];
+  const guidance = [inv.feedback?.trim() || '', ...directives].filter(Boolean).join('\n');
   const original = buildMarkMap(focused);
   const lease = claimCardLease(view, focused, 'card-refine');
   if (!lease) return;
   const activity = new AiActivity(view, { from: focused.cardFrom, to: focused.cardTo });
   activity.start();
+  // Consumed — drop the tints now the directives are in the request.
+  if (flags.length > 0) clearCutterFlags(view);
   try {
     const result = await engine!.refineHighlight(
       focused.card,
@@ -1154,7 +1174,7 @@ export async function refineHighlightFocusedCard(
         ...(inv.dropRedundancy ? { dropRedundancy: true } : {}),
         ...(inv.skeletonize ? { skeletonize: true } : {}),
         ...(targetWords ? { targetWords } : {}),
-        ...(feedback ? { feedback } : {}),
+        ...(guidance ? { feedback: guidance } : {}),
         ...(inv.allowAdd ? { allowAdd: true } : {}),
         model: resolveAiModel(),
         onStage: (s) => activity.setStage(STAGE_LABEL[s]),
