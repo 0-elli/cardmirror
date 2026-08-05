@@ -23,6 +23,8 @@ import { createSelfRefNode } from '../../src/editor/self-transclusion.js';
 // Mock the source-read layer: pretend we're on desktop and return whatever
 // content the test wants the "source now" to be.
 const resolveMock = vi.fn<(...a: unknown[]) => Promise<ResolveOutcome>>();
+import { settings } from '../../src/editor/settings.js';
+
 vi.mock('../../src/editor/transclusion-resolve.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/editor/transclusion-resolve.js')>();
   return {
@@ -113,6 +115,34 @@ describe('checkAllZoneDivergence', () => {
     const { diverged, checked } = await checkAllZoneDivergence(view);
     expect(checked).toBe(0);
     expect(diverged.size).toBe(0);
+    view.destroy();
+  });
+});
+
+describe('per-view read-mode gate (the multi-pane red-rail bug)', () => {
+  it('a pane NOT in read mode checks even when the GLOBAL setting is on', async () => {
+    // The failure story: single-doc session leaves settings.readMode on,
+    // user opens a second doc → multi-doc shell (per-pane read mode,
+    // global deliberately ignored) → every pane's check used to no-op
+    // and the nav's red rail never appeared.
+    settings.set('readMode', true);
+    try {
+      resolveMock.mockResolvedValue(sourced(frag(card('A', 'a'), card('B', 'CHANGED'))));
+      const view = makeView(docWithZone());
+      await requestDivergenceCheck(view);
+      expect(transclusionDivergenceKey.getState(view.state)?.diverged.size).toBe(1);
+      view.destroy();
+    } finally {
+      settings.set('readMode', false);
+    }
+  });
+
+  it('a pane whose OWN host is in read mode skips the automatic check', async () => {
+    resolveMock.mockResolvedValue(sourced(frag(card('A', 'a'), card('B', 'CHANGED'))));
+    const view = makeView(docWithZone());
+    (view.dom.parentElement as HTMLElement).classList.add('pmd-read-mode');
+    await requestDivergenceCheck(view);
+    expect(transclusionDivergenceKey.getState(view.state)?.diverged.size ?? 0).toBe(0);
     view.destroy();
   });
 });

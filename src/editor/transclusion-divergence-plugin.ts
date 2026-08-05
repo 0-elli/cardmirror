@@ -73,10 +73,24 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
   return true;
 }
 
+/** Effective read mode for THIS view. Read mode is per-pane in multi-doc
+ *  mode — the shell keeps it on each DocRecord and deliberately ignores
+ *  the global setting — so consulting `settings.readMode` here silently
+ *  killed every pane's divergence check whenever the global flag was
+ *  left on by a single-doc session (the missing-red-rail-in-multi-pane
+ *  bug). Both shells stamp `pmd-read-mode` on the view's host element,
+ *  so the DOM is the one answer honest in every shell; the setting is
+ *  only the fallback for a view not (yet) in the document. */
+function viewInReadMode(view: EditorView): boolean {
+  if (view.dom.closest('.pmd-read-mode')) return true;
+  return view.dom.isConnected ? false : settings.get('readMode');
+}
+
 /** Run a check now and, if the diverged set changed, publish it. No-op in read
- *  mode / off-desktop. Shared by the on-open trigger and the idle scheduler. */
+ *  mode (this view's own — see viewInReadMode) / off-desktop. Shared by the
+ *  on-open trigger and the idle scheduler. */
 export async function requestDivergenceCheck(view: EditorView): Promise<void> {
-  if (!transclusionSupported() || settings.get('readMode')) return;
+  if (!transclusionSupported() || viewInReadMode(view)) return;
   const { diverged } = await checkAllZoneDivergence(view);
   const current = transclusionDivergenceKey.getState(view.state)?.diverged ?? new Set<string>();
   if (setsEqual(diverged, current)) return;
