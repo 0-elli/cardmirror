@@ -8723,11 +8723,17 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
      worse than a second line; the cycler measures height too and
      animates the stage to fit. Viewport clamp for tiny windows. */
   max-width: min(22rem, calc(100vw - 2rem));
+  /* max-content, NOT shrink-to-fit: an abs-pos line would otherwise
+     wrap at the stage's CURRENT width — which JS set from the last
+     line's measurement — so one short line would squeeze every line
+     after it into a narrow square. Natural width, capped above. */
+  width: max-content;
   white-space: normal;
   transition: transform 280ms ease-out, opacity 280ms ease-out;
 }
 .pmd-activity-stage-fixed-width .pmd-activity-line {
   right: 0;
+  width: auto;
   max-width: none;
   white-space: normal;
 }
