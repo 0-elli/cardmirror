@@ -2668,9 +2668,10 @@ describe('applyHighlight (F11)', () => {
     expect(hasMarkOfNameWithAttr(next!.doc, 'hi', 'highlight', 'color')).toBeUndefined();
   });
 
-  it('uniformly highlighted in different color: still toggle off (color-agnostic)', () => {
+  it('uniformly highlighted in a DIFFERENT color: repaints, never strips', () => {
     // Selection is all-yellow; user invokes F11 with active color = green.
-    // Color-agnostic toggle: every char has SOME highlight → strip.
+    // Field report 2026-08-05: the old color-agnostic toggle stripped the
+    // highlight entirely; a different active color must repaint instead.
     const doc = makeDoc([
       cardWithChildren(
         tag('T'),
@@ -2690,7 +2691,7 @@ describe('applyHighlight (F11)', () => {
       base.tr.setSelection(TextSelection.create(base.doc, start, start + 2)),
     );
     const next = apply(state, applyHighlight(() => 'green'));
-    expect(hasMarkOfNameWithAttr(next!.doc, 'hi', 'highlight', 'color')).toBeUndefined();
+    expect(hasMarkOfNameWithAttr(next!.doc, 'hi', 'highlight', 'color')).toBe('green');
   });
 
   it('partially highlighted: applies active color to the entire range', () => {

@@ -1940,21 +1940,29 @@ export function applyHighlight(activeColor: () => string | null): Command {
     const op = getOperatingRangesForFormatting(state);
     if (op.ranges.length === 0) return false;
 
-    let allMarked = true;
+    const color = activeColor();
+    let allInActiveColor = true;
     let anyText = false;
     for (const { from, to } of op.ranges) {
-      const r = scanTextMarkPresence(state.doc, from, to, 'highlight');
+      const r = scanTextMarkPresence(
+        state.doc,
+        from,
+        to,
+        'highlight',
+        color === null ? undefined : { color },
+      );
       if (r.anyText) anyText = true;
-      if (!r.allMarked) allMarked = false;
+      if (!r.allMarkedMatching) allInActiveColor = false;
     }
     if (!anyText) return false;
 
     if (!dispatch) return true;
     const tr = state.tr;
-    const color = activeColor();
-    // A null pen ("No highlight" picked in the dropdown) paints
-    // nothing: always strip, no toggle branch.
-    if (allMarked || color === null) {
+    // Toggle off only when the whole range already wears THIS color —
+    // a different color repaints instead of erasing (field report
+    // 2026-08-05: green over yellow used to strip everything). A null
+    // pen ("No highlight") always strips, no toggle branch.
+    if (allInActiveColor || color === null) {
       for (const { from, to } of op.ranges) tr.removeMark(from, to, highlightType);
     } else {
       // Replace any existing highlight color with the active one
@@ -3391,16 +3399,28 @@ function scanTextMarkPresence(
   from: number,
   to: number,
   markName: string,
-): { allMarked: boolean; anyText: boolean } {
+  attrs?: Record<string, unknown>,
+): { allMarked: boolean; anyText: boolean; allMarkedMatching: boolean } {
   let allMarked = true;
   let anyText = false;
+  // With `attrs`: every text run carries the mark AND every such mark
+  // matches those attrs (e.g. the highlight is in THIS color). Drives
+  // the toggle-vs-recolor decision: same color toggles off, a
+  // different color repaints.
+  let allMarkedMatching = true;
   doc.nodesBetween(from, to, (node) => {
     if (!node.isText) return true;
     anyText = true;
-    if (!node.marks.some((m) => m.type.name === markName)) allMarked = false;
+    const m = node.marks.find((mk) => mk.type.name === markName);
+    if (!m) {
+      allMarked = false;
+      allMarkedMatching = false;
+    } else if (attrs && !Object.entries(attrs).every(([k, v]) => m.attrs[k] === v)) {
+      allMarkedMatching = false;
+    }
     return true;
   });
-  return { allMarked, anyText };
+  return { allMarked, anyText, allMarkedMatching };
 }
 
 /**
