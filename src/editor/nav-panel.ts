@@ -1975,25 +1975,29 @@ export class NavigationPanel {
     const menu = document.createElement('div');
     menu.className = 'pmd-nav-context-menu';
 
+    // Right-click on a row that's part of the multi-selection → the
+    // menu acts on ALL selected rows; on any other row → just that one.
+    const n = this.contextTargets(entry).length;
+    const what = n > 1 ? `${n} headings` : 'heading';
     const items: ContextMenuItem[] = [
       {
         kind: 'item',
-        label: 'Select heading and contents',
+        label: `Select ${what} and contents`,
         action: () => this.selectHeadingAndContents(entry),
       },
       {
         kind: 'item',
-        label: 'Cut heading and contents',
+        label: `Cut ${what} and contents`,
         action: () => { void this.cutHeadingAndContents(entry); },
       },
       {
         kind: 'item',
-        label: 'Copy heading and contents',
+        label: `Copy ${what} and contents`,
         action: () => { void this.copyHeadingAndContents(entry); },
       },
       {
         kind: 'item',
-        label: 'Delete heading and contents',
+        label: `Delete ${what} and contents`,
         action: () => this.deleteHeadingAndContents(entry),
       },
       { kind: 'separator' },
@@ -2058,8 +2062,63 @@ export class NavigationPanel {
     return computeHeadingRange(this.view.state.doc, entry);
   }
 
+  /** The entries a context-menu action should act on: the whole
+   *  multi-selection when the clicked row belongs to it, else just the
+   *  clicked row (matching every OS file manager). Re-collected from
+   *  the live doc so positions are current at action time, not
+   *  right-click time. */
+  private contextTargets(entry: HeadingEntry): HeadingEntry[] {
+    if (
+      !this.view ||
+      entry.id == null ||
+      !this.selectedIds.has(entry.id) ||
+      this.selectedIds.size < 2
+    ) {
+      return [entry];
+    }
+    const picked = collectOutlineWithWindows(this.view.state.doc).filter(
+      (e) => e.id != null && this.selectedIds.has(e.id),
+    );
+    return picked.length > 0 ? picked : [entry];
+  }
+
+  /** Doc-order, overlap-merged subtree ranges for a set of headings.
+   *  Merging is a belt (multi-select is same-level, so subtrees are
+   *  disjoint), but a parent+child pair must never double-copy or
+   *  double-delete. */
+  private headingRanges(entries: HeadingEntry[]): { from: number; to: number }[] {
+    const ranges = entries
+      .map((e) => this.computeHeadingRange(e))
+      .filter((r): r is NonNullable<ReturnType<NavigationPanel['computeHeadingRange']>> => r != null)
+      .sort((a, b) => a.from - b.from);
+    const merged: { from: number; to: number }[] = [];
+    for (const r of ranges) {
+      const last = merged[merged.length - 1];
+      if (last && r.from <= last.to) last.to = Math.max(last.to, r.to);
+      else merged.push({ from: r.from, to: r.to });
+    }
+    return merged;
+  }
+
   private selectHeadingAndContents(entry: HeadingEntry): void {
     if (!this.view) return;
+    const targets = this.contextTargets(entry);
+    if (targets.length > 1) {
+      // ProseMirror has no discontinuous selection — select the covering
+      // span (first selected heading through last selected subtree).
+      // Exact for a shift-click run; for a scattered ⌘-click set it
+      // necessarily includes what lies between.
+      const ranges = this.headingRanges(targets);
+      const first = ranges[0];
+      const last = ranges[ranges.length - 1];
+      if (!first || !last) return;
+      const tr = this.view.state.tr;
+      tr.setSelection(TextSelection.create(this.view.state.doc, first.from, last.to));
+      tr.scrollIntoView();
+      this.view.dispatch(tr);
+      this.view.focus();
+      return;
+    }
     const range = this.computeHeadingRange(entry);
     if (!range) return;
     const doc = this.view.state.doc;
@@ -2074,28 +2133,37 @@ export class NavigationPanel {
     this.view.focus();
   }
 
-  /** Delete the heading and its outline subtree. Undo via Cmd+Z. */
+  /** Delete the heading subtree(s) — all targets in ONE transaction
+   *  (one undo step), applied back-to-front so earlier positions never
+   *  need remapping. Undo via Cmd+Z. */
   private deleteHeadingAndContents(entry: HeadingEntry): void {
     if (!this.view) return;
-    const range = this.computeHeadingRange(entry);
-    if (!range) return;
-    const tr = this.view.state.tr.delete(range.from, range.to);
+    const ranges = this.headingRanges(this.contextTargets(entry));
+    if (ranges.length === 0) return;
+    const tr = this.view.state.tr;
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      const r = ranges[i]!;
+      tr.delete(r.from, r.to);
+    }
     this.view.dispatch(tr);
   }
 
-  /** HTML + plain-text clipboard payload for a heading range. */
-  private rangeClipboardPayload(range: { from: number; to: number }): {
+  /** HTML + plain-text clipboard payload for one or more heading
+   *  ranges, concatenated in doc order — a discontinuous ⌘-click set
+   *  pastes exactly as if the sections had been dragged together. */
+  private rangeClipboardPayload(...ranges: { from: number; to: number }[]): {
     html: string;
     text: string;
   } {
-    const slice = this.view!.state.doc.slice(range.from, range.to);
     const serializer = DOMSerializer.fromSchema(this.view!.state.schema);
     const tmp = document.createElement('div');
-    tmp.appendChild(serializer.serializeFragment(slice.content));
-    return {
-      html: tmp.innerHTML,
-      text: slice.content.textBetween(0, slice.content.size, '\n', '\n'),
-    };
+    const texts: string[] = [];
+    for (const range of ranges) {
+      const slice = this.view!.state.doc.slice(range.from, range.to);
+      tmp.appendChild(serializer.serializeFragment(slice.content));
+      texts.push(slice.content.textBetween(0, slice.content.size, '\n', '\n'));
+    }
+    return { html: tmp.innerHTML, text: texts.join('\n') };
   }
 
   /**
@@ -2104,9 +2172,9 @@ export class NavigationPanel {
    */
   private async copyHeadingAndContents(entry: HeadingEntry): Promise<void> {
     if (!this.view) return;
-    const range = this.computeHeadingRange(entry);
-    if (!range) return;
-    const { html, text } = this.rangeClipboardPayload(range);
+    const ranges = this.headingRanges(this.contextTargets(entry));
+    if (ranges.length === 0) return;
+    const { html, text } = this.rangeClipboardPayload(...ranges);
 
     // Shared host-first / retrying path; every outcome surfaces —
     // the silent version of this taught a user that copy buttons
@@ -2125,10 +2193,10 @@ export class NavigationPanel {
    */
   private async cutHeadingAndContents(entry: HeadingEntry): Promise<void> {
     if (!this.view) return;
-    const range = this.computeHeadingRange(entry);
-    if (!range) return;
+    const ranges = this.headingRanges(this.contextTargets(entry));
+    if (ranges.length === 0) return;
     const docAtCopy = this.view.state.doc;
-    const { html, text } = this.rangeClipboardPayload(range);
+    const { html, text } = this.rangeClipboardPayload(...ranges);
 
     if (!(await writeClipboardHtml(html, text))) {
       showToast(CLIPBOARD_BUSY_MESSAGE);
@@ -2138,7 +2206,13 @@ export class NavigationPanel {
       showToast('Document changed while cutting — copied, but nothing was deleted.');
       return;
     }
-    this.view.dispatch(this.view.state.tr.delete(range.from, range.to));
+    // One transaction, back-to-front (see deleteHeadingAndContents).
+    const tr = this.view.state.tr;
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      const r = ranges[i]!;
+      tr.delete(r.from, r.to);
+    }
+    this.view.dispatch(tr);
     showToast('Cut!');
   }
 

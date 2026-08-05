@@ -59,6 +59,24 @@ async function cut(nav: NavigationPanel, entry: unknown): Promise<void> {
   ).cutHeadingAndContents(entry);
 }
 
+/** Put the nav into a multi-select of the entries labeled `labels`. */
+function multiSelect(nav: NavigationPanel, ...labels: string[]): void {
+  const ids = labels.map((l) => (entryFor(nav, l) as { id: string }).id);
+  (nav as unknown as { selectedIds: Set<string> }).selectedIds = new Set(ids);
+}
+
+function del(nav: NavigationPanel, entry: unknown): void {
+  (nav as unknown as { deleteHeadingAndContents: (e: unknown) => void }).deleteHeadingAndContents(
+    entry,
+  );
+}
+
+async function copy(nav: NavigationPanel, entry: unknown): Promise<void> {
+  await (
+    nav as unknown as { copyHeadingAndContents: (e: unknown) => Promise<void> }
+  ).copyHeadingAndContents(entry);
+}
+
 afterEach(() => {
   writeClipboardHtml.mockClear();
   writeClipboardHtml.mockImplementation(async () => true);
@@ -97,6 +115,75 @@ describe('nav-pane cut heading', () => {
     });
     await cut(nav, entryFor(nav, 'Alpha tag'));
     // Copy half happened, delete half aborted — both cards survive.
+    expect(view.state.doc.textContent).toContain('Alpha tag');
+    expect(view.state.doc.textContent).toContain('Beta tag');
+  });
+});
+
+describe('nav-pane context ops on a multi-selection', () => {
+  it('cut concatenates a DISCONTINUOUS selection in doc order and deletes only it', async () => {
+    const { view, nav } = setup(
+      card('Alpha tag', 'alpha body'),
+      card('Beta tag', 'beta body'),
+      card('Gamma tag', 'gamma body'),
+    );
+    multiSelect(nav, 'Alpha tag', 'Gamma tag'); // ⌘-click set, Beta skipped
+    await cut(nav, entryFor(nav, 'Gamma tag')); // right-click on a member
+
+    const [html, text] = writeClipboardHtml.mock.calls[0]! as [string, string];
+    // Doc order (Alpha before Gamma) regardless of click order; Beta absent.
+    expect(html.indexOf('Alpha tag')).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf('Alpha tag')).toBeLessThan(html.indexOf('Gamma tag'));
+    expect(html).not.toContain('Beta tag');
+    expect(text.indexOf('alpha body')).toBeLessThan(text.indexOf('gamma body'));
+
+    const docText = view.state.doc.textContent;
+    expect(docText).not.toContain('Alpha tag');
+    expect(docText).not.toContain('Gamma tag');
+    expect(docText).toContain('Beta tag'); // the unselected middle survives
+  });
+
+  it('delete removes every selected subtree in ONE undo step', async () => {
+    const { view, nav } = setup(
+      card('Alpha tag', 'alpha body'),
+      card('Beta tag', 'beta body'),
+      card('Gamma tag', 'gamma body'),
+    );
+    multiSelect(nav, 'Alpha tag', 'Gamma tag');
+    del(nav, entryFor(nav, 'Alpha tag'));
+
+    const docText = view.state.doc.textContent;
+    expect(docText).not.toContain('Alpha tag');
+    expect(docText).not.toContain('Gamma tag');
+    expect(docText).toContain('Beta tag');
+  });
+
+  it('right-clicking a row OUTSIDE the selection acts on that row alone', async () => {
+    const { view, nav } = setup(
+      card('Alpha tag', 'alpha body'),
+      card('Beta tag', 'beta body'),
+      card('Gamma tag', 'gamma body'),
+    );
+    multiSelect(nav, 'Alpha tag', 'Gamma tag');
+    await cut(nav, entryFor(nav, 'Beta tag')); // not a member
+
+    const [html] = writeClipboardHtml.mock.calls[0]! as [string, string];
+    expect(html).toContain('Beta tag');
+    expect(html).not.toContain('Alpha tag');
+    const docText = view.state.doc.textContent;
+    expect(docText).toContain('Alpha tag');
+    expect(docText).toContain('Gamma tag');
+    expect(docText).not.toContain('Beta tag');
+  });
+
+  it('copy of a multi-selection leaves the doc untouched', async () => {
+    const { view, nav } = setup(card('Alpha tag', 'alpha body'), card('Beta tag', 'beta body'));
+    multiSelect(nav, 'Alpha tag', 'Beta tag');
+    await copy(nav, entryFor(nav, 'Alpha tag'));
+
+    const [html] = writeClipboardHtml.mock.calls[0]! as [string, string];
+    expect(html).toContain('Alpha tag');
+    expect(html).toContain('Beta tag');
     expect(view.state.doc.textContent).toContain('Alpha tag');
     expect(view.state.doc.textContent).toContain('Beta tag');
   });
