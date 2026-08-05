@@ -8716,12 +8716,14 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
      width — the ResizeObserver in `activity-cycler.ts` reads
      that width and pushes it onto the stage. Stages opting out
      of width tracking (fixed-width column placeholder) still
-     get a stretchy line below. No hard cap: stage narration
-     ("<persona> is pruning for redundancy · card 1 of 2 · Esc to
-     stop") was getting sheared mid-word at the old 22rem; the
-     only limit is the viewport edge. */
-  max-width: calc(100vw - 2rem);
-  white-space: nowrap;
+     get a stretchy line below. The cap WRAPS, never clips: the
+     old 22rem + nowrap pairing sheared long stage narration
+     ("…card 1 of 2 · Esc to sto") mid-word. 30rem keeps common
+     lines on one line; longer ones wrap to a second — the cycler
+     measures height too and animates the stage to fit. Viewport
+     clamp for tiny windows. */
+  max-width: min(30rem, calc(100vw - 2rem));
+  white-space: normal;
   transition: transform 280ms ease-out, opacity 280ms ease-out;
 }
 .pmd-activity-stage-fixed-width .pmd-activity-line {
@@ -8753,9 +8755,9 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
   z-index: 900;
   /* Width tracks the inner activity-stage, which itself tracks
      the current rest line's measured width — so the pill is
-     exactly as wide as whichever activity is showing. No hard
-     cap (the line inside never wrapped anyway — it clipped);
-     the line clamps itself to the viewport edge instead. */
+     exactly as wide as whichever activity is showing. No cap of
+     its own: the line inside caps itself and WRAPS there, and
+     the stage's measured height carries the second line. */
   width: max-content;
   padding: 0.35rem 0.7rem;
   background: var(--pmd-c-comment-thread-toast);
