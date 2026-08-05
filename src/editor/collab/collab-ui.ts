@@ -42,6 +42,7 @@ import { relayClient as pairingRelayClient } from '../pairing/relay-client.js';
 import { resolveStarredTarget } from '../pairing/send-to-starred.js';
 import { buildRoomInviteItem, ROOM_INVITE_MIN_VERSION } from '../pairing/room-invite.js';
 import { collabInvariantHealPlugin } from './collab-invariants.js';
+import { causalMarkHealPlugin } from './causal-mark-heal.js';
 import {
   installCommentsSync,
   COMMENTS_COMMIT_ORIGIN,
@@ -411,6 +412,10 @@ function installSeams(
         }),
       }),
       collabInvariantHealPlugin(),
+      // Inserter-intent for the read layers: strips highlight/underline/
+      // emphasis/shading inherited by text whose typist never saw the
+      // mark (Peritext interior coverage) — see causal-mark-heal.ts.
+      causalMarkHealPlugin(session.loroDoc),
       collabRepairPlugin(() =>
         lowestPeerIsLeader(session.loroDoc.peerIdStr, cursors.visiblePeers()),
       ),
