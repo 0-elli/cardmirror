@@ -97,6 +97,12 @@ export interface CollabSessionOptions {
   /** Minimum stream-blind duration before a merged catch-up backlog is
    *  worth announcing (onBacklogMerged). Injectable for tests. */
   backlogNoticeMinBlindMs?: number;
+  /** Inbound micro-batch window: stream frames arriving within this
+   *  window import as ONE batch → one ProseMirror transaction → one
+   *  plugin-pipeline pass, instead of a full cycle per frame (perf
+   *  study 2026-08-06: ~10 cycles/sec with five typists). Remote-edit
+   *  display latency grows by at most this much. Injectable for tests. */
+  receiveBatchMs?: number;
   /** Stream backoff bounds, injectable for tests. */
   minBackoffMs?: number;
   maxBackoffMs?: number;
@@ -130,6 +136,13 @@ export class CollabSession {
   private readonly flushMs: number;
   private readonly catchUpMs: number;
   private readonly backlogNoticeMinBlindMs: number;
+  private readonly receiveBatchMs: number;
+  /** Decrypted stream frames awaiting the micro-batch drain. Safe to
+   *  DROP at teardown: the fetch cursor never advanced past them (it
+   *  advances only in catch-up), so the next catch-up re-fetches
+   *  anything a dropped buffer held. */
+  private inboundBuf: Uint8Array[] = [];
+  private inboundTimer: ReturnType<typeof setTimeout> | null = null;
   /** When the live stream went down (null while it's up) and the
    *  duration of the last COMPLETED blind window — consumed by the
    *  next catch-up's backlog-notice decision, so one blind window can
@@ -224,6 +237,7 @@ export class CollabSession {
     this.flushMs = opts.flushMs ?? 500;
     this.catchUpMs = opts.catchUpMs ?? 300_000;
     this.backlogNoticeMinBlindMs = opts.backlogNoticeMinBlindMs ?? 60_000;
+    this.receiveBatchMs = opts.receiveBatchMs ?? 120;
     this.snapshotEvery = opts.snapshotEvery ?? 50;
     this.echoTimeoutMs = opts.echoTimeoutMs ?? 8000;
     this.auditDelayMs = opts.auditDelayMs ?? 15_000;
@@ -247,6 +261,7 @@ export class CollabSession {
     flushMs?: number;
     catchUpMs?: number;
     backlogNoticeMinBlindMs?: number;
+    receiveBatchMs?: number;
     minBackoffMs?: number;
     maxBackoffMs?: number;
     snapshotEvery?: number;
@@ -294,6 +309,7 @@ export class CollabSession {
     flushMs?: number;
     catchUpMs?: number;
     backlogNoticeMinBlindMs?: number;
+    receiveBatchMs?: number;
     minBackoffMs?: number;
     maxBackoffMs?: number;
     updateByteLimit?: number;
@@ -337,6 +353,7 @@ export class CollabSession {
     flushMs?: number;
     catchUpMs?: number;
     backlogNoticeMinBlindMs?: number;
+    receiveBatchMs?: number;
     minBackoffMs?: number;
     maxBackoffMs?: number;
     snapshotEvery?: number;
@@ -452,6 +469,15 @@ export class CollabSession {
   /** Leave the session (participant) or just stop syncing: final flush
    *  attempt, then tear down timers and the stream. */
   async stop(): Promise<void> {
+    // Land anything the micro-batch window still holds before the
+    // final flush/drain, so stop() is as current as per-frame import
+    // was. (Dropping would also be safe — the cursor never advanced
+    // past buffered frames — but landing them is free here.)
+    if (this.inboundTimer) {
+      clearTimeout(this.inboundTimer);
+      this.inboundTimer = null;
+    }
+    this.drainInbound();
     this.flush();
     await this.drainQueue().catch(() => {});
     if (this.flushTimer) clearInterval(this.flushTimer);
@@ -730,9 +756,27 @@ export class CollabSession {
       // is deliberately untouched (see below).
       return;
     }
+    // Per-FRAME bookkeeping happens at arrival: the audit ledger is
+    // per relay row (foldTailMeta), and the echo watchdog already
+    // cleared in onUpdate. The IMPORT is micro-batched below — frames
+    // arriving within receiveBatchMs land as one importBatch → one
+    // binding transaction → one plugin-pipeline pass, instead of a
+    // full cycle per frame (perf study 2026-08-06).
     this.foldTailMeta(u.seq, plain);
+    this.inboundBuf.push(plain);
+    this.inboundTimer ??= setTimeout(() => {
+      this.inboundTimer = null;
+      this.drainInbound();
+    }, this.receiveBatchMs);
+  }
+
+  /** Import everything the micro-batch window collected, as one batch. */
+  private drainInbound(): void {
+    if (this.ended || this.inboundBuf.length === 0) return;
+    const batch = this.inboundBuf;
+    this.inboundBuf = [];
     this.flush(); // capture local diff before import (see module doc)
-    const status = this.loroDoc.importBatch([plain]);
+    const status = this.loroDoc.importBatch(batch);
     if (status.pending && status.pending.size > 0) this.pendingImports = true;
     this.markImportedSent();
     // The cursor does NOT advance from stream frames — ONLY from
@@ -749,8 +793,8 @@ export class CollabSession {
     // Ops whose causal dependencies we lack (a shed push frame, or a
     // window the cursor skipped) sit pending until the deps arrive —
     // fetch them now instead of waiting for the periodic catch-up. The
-    // missing deps sit BELOW our cursor (this frame advanced it), so
-    // the catch-up must be allowed to escalate to a full resync.
+    // missing deps sit BELOW our cursor, so the catch-up must be
+    // allowed to escalate to a full resync.
     if (status.pending && status.pending.size > 0) {
       void this.catchUp(true);
     }
@@ -1145,6 +1189,9 @@ export class CollabSession {
   private handleEnded(): void {
     if (this.ended) return;
     this.ended = true;
+    if (this.inboundTimer) clearTimeout(this.inboundTimer);
+    this.inboundTimer = null;
+    this.inboundBuf = [];
     if (this.flushTimer) clearInterval(this.flushTimer);
     if (this.catchUpTimer) clearInterval(this.catchUpTimer);
     if (this.auditTimer) clearInterval(this.auditTimer);

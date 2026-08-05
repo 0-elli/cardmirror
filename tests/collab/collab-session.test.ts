@@ -127,6 +127,57 @@ describe('collab session end-to-end', () => {
     await host.stop();
   });
 
+  it('inbound micro-batching: a burst of frames imports as ONE binding transaction', async () => {
+    const { session: host, shareCode } = await CollabSession.host({
+      pmDoc: mixedDoc(),
+      client,
+      ...FAST,
+    });
+    const hostView = mkView(host.plugins());
+    await settle();
+    host.start();
+    const decoded = decodeShareCode(shareCode)!;
+    const joiner = await CollabSession.join({
+      ...decoded,
+      client,
+      ...FAST,
+      receiveBatchMs: 250, // wide window so the whole burst lands in one drain
+    });
+    // Count the joiner's doc-changing dispatches (the binding's imports).
+    let docDispatches = 0;
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const { EditorState } = await import('prosemirror-state');
+    const { EditorView } = await import('prosemirror-view');
+    const { schema } = await import('../../src/schema/index.js');
+    const joinView: InstanceType<typeof EditorView> = new EditorView(el, {
+      state: EditorState.create({ schema, plugins: joiner.plugins() }),
+      dispatchTransaction(tx) {
+        if (tx.docChanged) docDispatches++;
+        joinView.updateState(joinView.state.apply(tx));
+      },
+    });
+    await settle();
+    joiner.start();
+    await sleep(400);
+    const baseline = docDispatches; // initial sync import(s)
+
+    // Three flush-frames' worth of typing inside one 250ms window.
+    for (let i = 0; i < 3; i++) {
+      typeAfter(hostView, 'riverbank', ` batch${i}`);
+      await sleep(45); // > flushMs(25): each burst ships as its own frame
+    }
+    await sleep(600); // drain + settle
+    expect(docText(joinView.state.doc)).toContain('batch2');
+    // All frames landed, but as ONE import → ONE doc-changing dispatch.
+    expect(docDispatches - baseline).toBe(1);
+
+    await joiner.stop();
+    await host.stop();
+    hostView.destroy();
+    joinView.destroy();
+  });
+
   it('backlog notice: silent when catch-up re-fetches frames the stream already delivered', async () => {
     // The field complaint (2026-08-05): the "synced N edits" toast fired
     // constantly during healthy sessions. The fetch cursor deliberately

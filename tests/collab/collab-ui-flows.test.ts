@@ -256,7 +256,9 @@ describe('collab UI flows through the editor seams', () => {
     collabUi.setCollabDocTitleResolver((uid) => (uid === HOST_UID ? 'Neg Blocks.cmir' : null));
     collabUi.republishSessionTitle(HOST_UID);
     expect(hostSess.loroDoc.getMap('meta').get('title')).toBe('Neg Blocks.cmir');
-    await sleep(400); // flush → stream → joiner meta watcher
+    // Default flush cadence (500ms) + the inbound micro-batch drain
+    // (120ms) + margin — the flows here run on production timings.
+    await sleep(1000);
     expect(adopted).toContain('Neg Blocks.cmir');
 
     // Cleanup: host ends; the joiner session tears down on the remote end.
