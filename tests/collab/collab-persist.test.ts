@@ -155,6 +155,43 @@ describe('M3 session persistence', () => {
     resumedView.destroy();
   }, 20_000);
 
+  it('stamps the doc\u2019s persistent id into the record once known, and keeps it sticky', async () => {
+    // The open-from-disk rejoin gate matches a file to its session by
+    // this docId; it appears on the record after the doc's first save
+    // (resolver answers null before that) and survives resolver blips.
+    const { session, shareCode } = await CollabSession.host({
+      pmDoc: simpleDoc('stamp me'),
+      client,
+      flushMs: 40,
+    });
+    const view = mkView(session.plugins());
+    await settle();
+    session.start();
+
+    let docId: string | null = null; // unsaved: no persistent id yet
+    const handle = attachSessionPersistence(session, shareCode, () => 'Stamp Doc', () => docId);
+    await handle.flush();
+    expect((await loadSessionRecord(session.roomId))!.docId ?? null).toBeNull();
+
+    // The user saves — the doc mints its id; the next write stamps it.
+    docId = 'doc-abc-123';
+    typeAfter(view, 'stamp', ' more');
+    await sleep(100);
+    await handle.flush();
+    expect((await loadSessionRecord(session.roomId))!.docId).toBe('doc-abc-123');
+
+    // Sticky: a transient null from the resolver must not erase it.
+    docId = null;
+    typeAfter(view, 'stamp', ' again');
+    await sleep(100);
+    await handle.flush();
+    expect((await loadSessionRecord(session.roomId))!.docId).toBe('doc-abc-123');
+
+    await handle.clear();
+    await session.stop();
+    view.destroy();
+  }, 20_000);
+
   it('a prefetched seed joins fully offline and syncs on reconnect', async () => {
     // Host seeds a room while online.
     const { session: host, shareCode } = await CollabSession.host({

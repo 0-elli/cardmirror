@@ -91,6 +91,7 @@ import { showToast } from './toast.js';
 import { recordRecent } from './recents-store.js';
 import { maybeDecryptForOpen, OpenCancelledError } from './open-encrypted.js';
 import {
+  checkSessionRejoinForOpenedDoc,
   buildEditorPlugins,
   enableMultiDocMode,
   setActiveView,
@@ -2239,6 +2240,15 @@ class MultiPaneShell {
    *  (stacked, non-visible) tab still resolves its own name. Null if no open
    *  doc has that uid. Lets collab publish/label a session with its OWNER doc's
    *  name rather than the whole-window title (every open doc joined by " · "). */
+  docIdForUid(uid: string): string | null {
+    for (const id of SLOT_IDS) {
+      for (const rec of this.slots[id].stack) {
+        if (rec.uid === uid) return rec.docId;
+      }
+    }
+    return null;
+  }
+
   filenameForUid(uid: string): string | null {
     for (const id of SLOT_IDS) {
       for (const rec of this.slots[id].stack) {
@@ -2652,6 +2662,10 @@ class MultiPaneShell {
       threads,
     });
     slot.push(record);
+    // Open-from-disk rejoin gate (same as the single-doc open path):
+    // a file with a resumable session offers rejoin-or-leave instead
+    // of silently diverging.
+    void checkSessionRejoinForOpenedDoc(docId ?? null);
     // Multi-pane opens are recents too — this is the one funnel every
     // slot open passes through (Open dialog, palette, drag-drop, OS
     // association, spawn payloads, show-in-context). String-handle only:
@@ -3320,6 +3334,7 @@ export function mountMultiPaneShell(): void {
     findViewForDocId: (id) => shell!.findViewForDocId(id),
     getAllFilenames: () => shell!.getAllFilenames(),
     getFilenameForUid: (uid) => shell!.filenameForUid(uid),
+    getDocIdForUid: (uid) => shell!.docIdForUid(uid),
     createSessionDoc: () => shell!.createSessionDocIntoSlot(),
     setFilenameForUid: (uid, name) => shell!.setFilenameForUid(uid, name),
     promptSaveAllForQuit: () => shell!.promptSaveAllForQuit(),

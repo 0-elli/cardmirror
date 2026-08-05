@@ -46,6 +46,11 @@ export interface PersistedSessionRecord {
    *  persistence manager diffs from here on the next write. */
   persistedVersion: Uint8Array;
   docTitle: string;
+  /** Persistent docId of the doc holding this session in THIS window,
+   *  when known (stamped once the doc is saved). Lets the open-from-disk
+   *  path detect "this file has a session" and offer rejoin-or-leave
+   *  instead of silently diverging. Absent on older records. */
+  docId?: string | null;
   updatedAt: number;
 }
 

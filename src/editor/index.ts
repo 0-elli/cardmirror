@@ -224,6 +224,7 @@ import { buildImageNodeFromBlob, insertImageNode } from './image-insert.js';
 import { imageContextMenuPlugin } from './image-context-menu-plugin.js';
 import { editorNodeViews } from './image-resize-nodeview.js';
 import { setViewDocPath, getViewDocPath } from './transclusion-doc-path.js';
+import { listSessionRecords, deleteSessionRecord } from './collab/collab-store.js';
 import { setRePickOpener, setOpenSourceOpener } from './transclusion-actions.js';
 import { isTransclusionNode, fragmentHasZone } from './transclusion.js';
 import { showConfirm } from './confirm-dialog.js';
@@ -908,6 +909,7 @@ let multiDocGetAllFilenames: (() => (string | null)[]) | null = null;
 /** Resolve one doc uid → its filename (across all panes + stacks). Used by
  *  collab to name a session after its OWNER doc, not the whole-window title. */
 let multiDocGetFilenameForUid: ((uid: string) => string | null) | null = null;
+let multiDocGetDocIdForUid: ((uid: string) => string | null) | null = null;
 // Collab join/resume in the workspace (slot-picker session docs).
 let multiDocCreateSessionDoc: (() => Promise<string | null>) | null = null;
 let multiDocSetFilenameForUid: ((uid: string, name: string) => void) | null = null;
@@ -1018,6 +1020,7 @@ export function enableMultiDocMode(opts: {
    *  Lets collab publish/label a session with its OWNER doc's name rather than
    *  the whole-window title. */
   getFilenameForUid?: (uid: string) => string | null;
+  getDocIdForUid?: (uid: string) => string | null;
   /** Collab join/resume in the workspace: create a fresh unsaved doc in a
    *  user-picked slot to hold the session. Returns its uid, or null when the
    *  user cancels the slot picker. */
@@ -1072,6 +1075,7 @@ export function enableMultiDocMode(opts: {
   multiDocFindViewForDocId = opts.findViewForDocId ?? null;
   multiDocGetAllFilenames = opts.getAllFilenames ?? null;
   multiDocGetFilenameForUid = opts.getFilenameForUid ?? null;
+  multiDocGetDocIdForUid = opts.getDocIdForUid ?? null;
   multiDocCreateSessionDoc = opts.createSessionDoc ?? null;
   multiDocSetFilenameForUid = opts.setFilenameForUid ?? null;
   multiDocPromptSaveAllForQuit = opts.promptSaveAllForQuit ?? null;
@@ -1229,6 +1233,14 @@ function resolveDocFilename(uid: string): string | null {
   return uid === currentDocUid ? currentDocFilename : null;
 }
 
+/** Persistent docId for a doc uid (null before first save) — stamped
+ *  into session records so open-from-disk can match a file to its
+ *  session (see checkSessionRejoinForOpenedDoc). */
+function resolveDocPersistentId(uid: string): string | null {
+  if (multiDocActive && multiDocGetDocIdForUid) return multiDocGetDocIdForUid(uid);
+  return uid === currentDocUid ? currentDocId : null;
+}
+
 function loadCollabUi(): Promise<typeof import('./collab/collab-ui.js')> {
   return (collabUiModule ??= import('./collab/collab-ui.js').then((m) => {
     // Tell collab-ui which doc is focused so its shared chip / no-deps flows
@@ -1239,6 +1251,7 @@ function loadCollabUi(): Promise<typeof import('./collab/collab-ui.js')> {
     // to joiners (and invite labels) is that doc's name — not the whole-window
     // title, which in multi-pane is every open doc joined by " · ".
     m.setCollabDocTitleResolver((uid) => resolveDocFilename(uid));
+    m.setCollabDocIdResolver((uid) => resolveDocPersistentId(uid));
     return m;
   }));
 }
@@ -5744,6 +5757,72 @@ function adoptDocId(docId: string | null, name: string, handle: unknown, format:
   currentDocId = docId;
   if (docId) {
     learnStore.registerDoc({ docId, path: typeof handle === 'string' ? handle : null, name, format });
+  }
+  void checkSessionRejoinForOpenedDoc(docId);
+}
+
+/** RoomIds currently mid-prompt — a re-open while the dialog is up
+ *  must not stack a second one. */
+const rejoinPromptsInFlight = new Set<string>();
+
+/** Open-from-disk rejoin gate. A file whose docId matches a resumable
+ *  session record must not be edited outside its session while the
+ *  session lives — silent divergence: two copies under one name, no
+ *  merge between them. Exactly two doors, per the settled design:
+ *  REJOIN (bind the session into this just-opened doc — clean from
+ *  disk, so nothing local is lost) or LEAVE (discard this window's
+ *  session record and continue with the file, divergence accepted
+ *  explicitly). Esc/cancel counts as Rejoin — the non-destructive
+ *  door; there is deliberately no "just edit locally" option. */
+export async function checkSessionRejoinForOpenedDoc(docId: string | null): Promise<void> {
+  if (!docId) return;
+  let records: Awaited<ReturnType<typeof listSessionRecords>>;
+  try {
+    records = await listSessionRecords();
+  } catch {
+    return; // storage unavailable — nothing to offer
+  }
+  const record = records.find((r) => (r.docId ?? null) === docId);
+  if (!record || rejoinPromptsInFlight.has(record.roomId)) return;
+  // Session already live in this window → its copy is already open;
+  // don't prompt, just say so.
+  const loaded = await collabUiModule;
+  if (loaded?.roomLiveInWindow(record.roomId)) {
+    showToast('This document\u2019s co-editing session is already open in this window.');
+    return;
+  }
+  rejoinPromptsInFlight.add(record.roomId);
+  try {
+    const choice = await promptForRouteChoice<'rejoin' | 'leave'>({
+      message: 'This document has a co-editing session',
+      detail:
+        'It was saved from a live session. Editing it outside the session would ' +
+        'split it into two diverging copies with the same name.',
+      choices: [
+        {
+          value: 'rejoin',
+          label: 'Rejoin session',
+          description: 'Reconnect — this document becomes the live session copy.',
+        },
+        {
+          value: 'leave',
+          label: 'Leave session',
+          description: 'Forget the session here and keep this file as an independent copy.',
+        },
+      ],
+      cancelLabel: 'Rejoin session',
+    });
+    if (choice === 'leave') {
+      await deleteSessionRecord(record.roomId);
+      showToast('Left the session \u2014 this copy is now independent.');
+      return;
+    }
+    // 'rejoin' or Esc/cancel: bind the session into the doc just opened.
+    const m = await loadCollabUi();
+    const deps = multiDocActive ? makeMultiPaneSessionDeps() : collabDeps;
+    await m.resumeSessionFlow(deps, record.roomId, { existingDoc: true });
+  } finally {
+    rejoinPromptsInFlight.delete(record.roomId);
   }
 }
 

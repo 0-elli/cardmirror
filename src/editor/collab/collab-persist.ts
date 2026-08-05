@@ -47,6 +47,7 @@ export function attachSessionPersistence(
   session: CollabSession,
   shareCode: string,
   getDocTitle: () => string,
+  getDocId: () => string | null = () => null,
 ): PersistHandle {
   let disposed = false;
   // Writes are serialized through a promise tail so an explicit
@@ -70,6 +71,9 @@ export function attachSessionPersistence(
       // origin keeps it out of the undo stack; the write itself rides the
       // session's normal flush.
       const title = getDocTitle();
+      // Sticky: once a docId is known it stays on the record (the
+      // resolver can answer null transiently, e.g. before first save).
+      const docId = getDocId() ?? record?.docId ?? null;
       if (record && title && title !== record.docTitle) {
         try {
           session.loroDoc.getMap('meta').set('title', title);
@@ -89,7 +93,8 @@ export function attachSessionPersistence(
         if (
           record.lastSeq === meta.lastSeq &&
           bytesEqual(record.sentVersion, meta.sentVersion) &&
-          record.docTitle === getDocTitle()
+          record.docTitle === getDocTitle() &&
+          (record.docId ?? null) === docId
         ) {
           return;
         }
@@ -98,6 +103,7 @@ export function attachSessionPersistence(
           lastSeq: meta.lastSeq,
           sentVersion: meta.sentVersion,
           docTitle: getDocTitle(),
+          docId,
           updatedAt: Date.now(),
         };
         await saveSessionRecord(record);
@@ -112,6 +118,7 @@ export function attachSessionPersistence(
           lastSeq: meta.lastSeq,
           sentVersion: meta.sentVersion,
           docTitle: getDocTitle(),
+          docId,
           updatedAt: Date.now(),
         };
       } else {
@@ -126,6 +133,7 @@ export function attachSessionPersistence(
           increments: [],
           persistedVersion: session.encodedVersion(),
           docTitle: getDocTitle(),
+          docId,
           updatedAt: Date.now(),
         };
       }

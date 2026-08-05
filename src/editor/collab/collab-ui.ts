@@ -135,6 +135,20 @@ export function setCollabDocTitleResolver(fn: ((uid: string) => string | null) |
   docTitleResolver = fn;
 }
 
+/** Resolve a doc uid → its persistent docId (null before first save).
+ *  The persistence manager stamps it into the session record so the
+ *  open-from-disk path can match a file back to its session. */
+let docIdResolver: ((uid: string) => string | null) | null = null;
+export function setCollabDocIdResolver(fn: ((uid: string) => string | null) | null): void {
+  docIdResolver = fn;
+}
+
+/** Whether a session for `roomId` is live in THIS window. */
+export function roomLiveInWindow(roomId: string): boolean {
+  for (const s of sessions.values()) if (s.session.roomId === roomId) return true;
+  return false;
+}
+
 /** The session owned by `uid`, or null. */
 function sessionFor(uid: string | null | undefined): ActiveSession | null {
   return uid != null ? sessions.get(uid) ?? null : null;
@@ -334,8 +348,11 @@ function installSeams(
   const wakeCleanup = installWakeHooks(session);
   const commentsSync = installCommentsSync(session.loroDoc, ownerView);
   // M3: crash-surviving session record (home-screen Sessions list resumes it).
-  const persist = attachSessionPersistence(session, shareCode, () =>
-    sessionDocTitle(ownerUid) || sharedDocTitle(session),
+  const persist = attachSessionPersistence(
+    session,
+    shareCode,
+    () => sessionDocTitle(ownerUid) || sharedDocTitle(session),
+    () => docIdResolver?.(ownerUid) ?? null,
   );
   const cursors = installCursorPresence(session, ownerView);
   // One shared timer refreshes the focused session's chip dots AND every slot
