@@ -41,6 +41,21 @@ import {
 
 const READ_TIME_PRESETS = [8, 12, 20, 30];
 
+/** Which read-length chip the cut panel opens with, from the setting.
+ *  0 (the default) = Efficient / no cap → null. Any other value snaps
+ *  to the nearest preset — the setting predates this UI as a free
+ *  number field, so a legacy 15 must land on a real chip (12) rather
+ *  than leaving the panel pressed on nothing. Exported for tests. */
+export function defaultReadTimeSec(): number | null {
+  const raw = settings.get('cardCutterReadTimeSec');
+  if (!raw || raw <= 0) return null;
+  let best = READ_TIME_PRESETS[0]!;
+  for (const p of READ_TIME_PRESETS) {
+    if (Math.abs(p - raw) < Math.abs(best - raw)) best = p;
+  }
+  return best;
+}
+
 export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   if (!(await ensureEngine())) {
     showToast('Card-cutter engine not loaded.');
@@ -138,10 +153,10 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     appendFlagRow(flag);
   };
 
-  // ── Read length (optional cap; efficient by default) ──
+  // ── Read length (optional cap; the setting picks the opening chip) ──
   // null = no cap (cut as efficiently as possible). A time chip caps
   // the read via the secondary de-highlight; it never pads up to it.
-  let readTimeSec: number | null = null;
+  let readTimeSec: number | null = defaultReadTimeSec();
   const rtSection = document.createElement('div');
   rtSection.className = 'pmd-cardcutter-section';
   rtSection.appendChild(label('Read length'));
@@ -156,7 +171,7 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
   noCap.type = 'button';
   noCap.className = 'pmd-cardcutter-chip';
   noCap.textContent = 'Efficient (no limit)';
-  noCap.setAttribute('aria-pressed', 'true');
+  noCap.setAttribute('aria-pressed', String(readTimeSec === null));
   noCap.addEventListener('click', () => {
     readTimeSec = null;
     press(noCap);
@@ -167,6 +182,7 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     b.type = 'button';
     b.className = 'pmd-cardcutter-chip';
     b.textContent = `≤ ${sec}s · ~${Math.round((sec * wpm) / 60)}w`;
+    b.setAttribute('aria-pressed', String(readTimeSec === sec));
     b.addEventListener('click', () => {
       readTimeSec = sec;
       press(b);

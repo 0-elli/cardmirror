@@ -55,6 +55,8 @@ vi.mock('../../src/editor/learn-store-host.js', async () => {
   return { learnStore: new LearnStore(), localToday: () => '2026-08-04' };
 });
 
+import { settings } from '../../src/editor/settings.js';
+import { defaultReadTimeSec } from '../../src/editor/card-cutter-ui.js';
 import {
   focusedPlainCard,
   resolveCardById,
@@ -394,6 +396,24 @@ describe('card identity', () => {
     const from = cardPos(view.state.doc, 0);
     view.dispatch(view.state.tr.delete(from, from + view.state.doc.child(0).nodeSize));
     expect(cardReadStats(view, captured.cardId!)).toBeNull();
+  });
+
+  it('defaultReadTimeSec maps the setting to the opening chip, snapping legacy values', () => {
+    const prev = settings.get('cardCutterReadTimeSec');
+    try {
+      settings.set('cardCutterReadTimeSec', 0);
+      expect(defaultReadTimeSec()).toBeNull(); // 0 = Efficient (the default)
+      settings.set('cardCutterReadTimeSec', 20);
+      expect(defaultReadTimeSec()).toBe(20); // exact preset
+      // Legacy free-number values (the setting predates the chip UI)
+      // snap to the nearest chip rather than selecting nothing.
+      settings.set('cardCutterReadTimeSec', 15);
+      expect(defaultReadTimeSec()).toBe(12);
+      settings.set('cardCutterReadTimeSec', 45);
+      expect(defaultReadTimeSec()).toBe(30);
+    } finally {
+      settings.set('cardCutterReadTimeSec', prev);
+    }
   });
 
   it('truncates a very long label', () => {

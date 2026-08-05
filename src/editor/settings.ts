@@ -1395,8 +1395,10 @@ export interface Settings {
    *  tier inside highlights; `independent` = emphasis marks rhetorical
    *  hammers regardless of the spoken cut; `minimal` = sparse. */
   cardCutterEmphasisStyle: 'voice' | 'independent' | 'minimal';
-  /** Card-cutter: default highlighted-read length, in seconds at the
-   *  user's reader WPM. The budget knob; ~12s ≈ 64 words @ 350 wpm. */
+  /** Card-cutter: which read-length chip the cut panel opens with.
+   *  0 = Efficient (no limit) — today's behaviour; otherwise one of the
+   *  panel's presets (8/12/20/30s at the user's reader WPM). A legacy
+   *  free-number value snaps to the nearest preset at panel open. */
   cardCutterReadTimeSec: number;
   /** Card-cutter: acronym letter-splitting (off by default — real but
    *  inconsistent in human cuts and the highest garble risk). */
@@ -1760,7 +1762,7 @@ const DEFAULTS: Settings = {
   cardCutterEnabled: false,
   cardCutterEnginePath: '',
   cardCutterEmphasisStyle: 'voice',
-  cardCutterReadTimeSec: 12,
+  cardCutterReadTimeSec: 0,
   cardCutterAcronymSplitting: 'off',
   cardCutterMorphologyShaving: false,
   cardCutterClarifyingQuestions: 'when-ambiguous',
@@ -1914,6 +1916,7 @@ export interface SettingMeta {
     | 'translationConfig'
     | 'multiDocLayoutMode'
     | 'mobileLayout'
+    | 'cardCutterReadTime'
     | 'cardCutterEmphasisStyle'
     | 'cardCutterAcronymSplitting'
     | 'cardCutterClarifyingQuestions'
@@ -3390,10 +3393,10 @@ export const SETTING_METADATA: SettingMeta[] = [
   // ─── Card Cutter (experimental; console-gated, hidden until on) ──
   {
     key: 'cardCutterReadTimeSec',
-    label: 'Default read length (seconds)',
+    label: 'Default read length',
     description:
-      'How long the highlighted read should take by default, at your reader words-per-minute. Roughly 12 seconds is a typical card. Individual cuts can override this.',
-    kind: 'number',
+      'Which read-length option the cut panel opens with. Efficient cuts as tight as the content allows with no fixed cap; a seconds cap trims the read to fit at your reader words-per-minute. Every cut can still override this in the panel.',
+    kind: 'cardCutterReadTime',
     category: 'comments-ai',
     searchHidden: true,
     revealWhen: 'cardCutterEnabled',

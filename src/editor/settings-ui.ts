@@ -786,6 +786,10 @@ class SettingsModal {
       row.appendChild(text);
       row.appendChild(buildMobileLayoutEditor());
       return row;
+    } else if (meta.kind === 'cardCutterReadTime') {
+      row.appendChild(text);
+      row.appendChild(buildCardCutterReadTimeRadio());
+      return row;
     } else if (meta.kind === 'cardCutterEmphasisStyle') {
       row.appendChild(text);
       row.appendChild(
@@ -5710,6 +5714,44 @@ function buildFileSearchTiebreakEditor(): HTMLElement {
     labelText.className = 'pmd-multi-doc-layout-mode-row-label';
     labelText.textContent = o.label;
     row.appendChild(labelText);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+/** Radio for the default read length — the same five options as the
+ *  cut panel's chips (0 = Efficient / no limit), with the word counts
+ *  computed at the user's reader WPM so the labels match what the
+ *  panel will show. */
+function buildCardCutterReadTimeRadio(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pmd-heading-mode-editor';
+  const readers = settings.get('readers');
+  const wpm = readers[0]?.wpm && readers[0].wpm > 0 ? readers[0].wpm : 350;
+  const options: [number, string][] = [
+    [0, 'Efficient — no limit (default)'],
+    ...[8, 12, 20, 30].map(
+      (sec): [number, string] => [sec, `\u2264 ${sec}s \u00b7 ~${Math.round((sec * wpm) / 60)} words`],
+    ),
+  ];
+  const groupName = `pmd-cardCutterReadTimeSec-${Math.random().toString(36).slice(2, 8)}`;
+  const current = settings.get('cardCutterReadTimeSec');
+  for (const [value, label] of options) {
+    const row = document.createElement('label');
+    row.className = 'pmd-heading-mode-row';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = groupName;
+    input.value = String(value);
+    input.checked = current === value;
+    input.addEventListener('change', () => {
+      if (input.checked) settings.set('cardCutterReadTimeSec', value);
+    });
+    row.appendChild(input);
+    const span = document.createElement('span');
+    span.className = 'pmd-heading-mode-row-label';
+    span.textContent = label;
+    row.appendChild(span);
     wrap.appendChild(row);
   }
   return wrap;
