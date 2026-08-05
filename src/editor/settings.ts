@@ -1390,24 +1390,18 @@ export interface Settings {
    *  builds only). Empty = use CARDCUTTER_ENGINE env or the default
    *  userData/plugins/cardcutter.global.js location. */
   cardCutterEnginePath: string;
-  /** Card-cutter: emphasis style — a persistent AUTHOR fingerprint
-   *  (not inferred from the file). `voice` = emphasis is the content
-   *  tier inside highlights; `independent` = emphasis marks rhetorical
-   *  hammers regardless of the spoken cut; `minimal` = sparse. */
+  /** Card-cutter: emphasis style. FIXED at 'voice' — the setting has no
+   *  UI anymore (the other variants tested worse, and we only present
+   *  options with multiple valid choices). The key survives because the
+   *  port ships it to the engine and the engine keeps the variants; if
+   *  a better variant ever emerges, re-add the UI, not a new key. */
   cardCutterEmphasisStyle: 'voice' | 'independent' | 'minimal';
   /** Card-cutter: which read-length chip the cut panel opens with.
    *  0 = Efficient (no limit) — today's behaviour; otherwise one of the
    *  panel's presets (8/12/20/30s at the user's reader WPM). A legacy
    *  free-number value snaps to the nearest preset at panel open. */
   cardCutterReadTimeSec: number;
-  /** Card-cutter: acronym letter-splitting (off by default — real but
-   *  inconsistent in human cuts and the highest garble risk). */
-  cardCutterAcronymSplitting: 'off' | 'conservative' | 'aggressive';
-  /** Card-cutter: word-internal morphology shaving ("regs", "Dems";
-   *  off by default — useful but riskiest). */
-  cardCutterMorphologyShaving: boolean;
-  /** Card-cutter: when the model may pose a clarifying question. */
-  cardCutterClarifyingQuestions: 'when-ambiguous' | 'always' | 'never';
+
   /** Plugins: master switch for the plugin system (the registry, boot
    *  loading of enabled plugins, and the manage-plugins UI). Off by
    *  default. Desktop only for v1. */
@@ -1763,9 +1757,6 @@ const DEFAULTS: Settings = {
   cardCutterEnginePath: '',
   cardCutterEmphasisStyle: 'voice',
   cardCutterReadTimeSec: 0,
-  cardCutterAcronymSplitting: 'off',
-  cardCutterMorphologyShaving: false,
-  cardCutterClarifyingQuestions: 'when-ambiguous',
   pluginsEnabled: false,
   pluginCommunityInstalls: false,
   pairingEnabled: false,
@@ -1917,9 +1908,6 @@ export interface SettingMeta {
     | 'multiDocLayoutMode'
     | 'mobileLayout'
     | 'cardCutterReadTime'
-    | 'cardCutterEmphasisStyle'
-    | 'cardCutterAcronymSplitting'
-    | 'cardCutterClarifyingQuestions'
     | 'cardCutterEnginePath'
     | 'cardCutterDisable'
     | 'pairingOwnCode'
@@ -3402,36 +3390,6 @@ export const SETTING_METADATA: SettingMeta[] = [
     revealWhen: 'cardCutterEnabled',
   },
   {
-    key: 'cardCutterEmphasisStyle',
-    label: 'Emphasis style',
-    description:
-      "Voice: emphasis marks the spoken content words inside highlights. Independent: emphasis marks rhetorically powerful phrases whether or not they're in the read. Minimal: sparse emphasis. This is your own preference and sticks across files.",
-    kind: 'cardCutterEmphasisStyle',
-    category: 'comments-ai',
-    searchHidden: true,
-    revealWhen: 'cardCutterEnabled',
-  },
-  {
-    key: 'cardCutterAcronymSplitting',
-    label: 'Acronym letter-splitting',
-    description:
-      'Highlight just the initial letters of a spelled-out term so the read produces the acronym (e.g. "Department of Defense" read as "DoD"). Off by default — error-prone when machine-generated.',
-    kind: 'cardCutterAcronymSplitting',
-    category: 'comments-ai',
-    searchHidden: true,
-    revealWhen: 'cardCutterEnabled',
-  },
-  {
-    key: 'cardCutterMorphologyShaving',
-    label: 'Word-shaving for spoken shorthand',
-    description:
-      'Allow highlighting part of a word to produce spoken shorthand ("regulations" read as "regs", "Democrats" as "Dems"). Off by default — useful but the riskiest transform.',
-    kind: 'toggle',
-    category: 'comments-ai',
-    searchHidden: true,
-    revealWhen: 'cardCutterEnabled',
-  },
-  {
     key: 'cardCutterEnginePath',
     label: 'Engine file',
     description:
@@ -4429,23 +4387,14 @@ function sanitize(s: Settings): Settings {
     cardCutterEnabled: s.cardCutterEnabled === true,
     cardCutterEnginePath:
       typeof s.cardCutterEnginePath === 'string' ? s.cardCutterEnginePath : '',
-    cardCutterEmphasisStyle:
-      s.cardCutterEmphasisStyle === 'independent' || s.cardCutterEmphasisStyle === 'minimal'
-        ? s.cardCutterEmphasisStyle
-        : 'voice',
+    // Fixed at 'voice' regardless of any persisted legacy choice — the
+    // variant UI is gone; see the model comment.
+    cardCutterEmphasisStyle: 'voice',
     cardCutterReadTimeSec:
       typeof s.cardCutterReadTimeSec === 'number' && s.cardCutterReadTimeSec > 0
         ? Math.min(120, Math.max(3, Math.round(s.cardCutterReadTimeSec)))
         : DEFAULTS.cardCutterReadTimeSec,
-    cardCutterAcronymSplitting:
-      s.cardCutterAcronymSplitting === 'conservative' || s.cardCutterAcronymSplitting === 'aggressive'
-        ? s.cardCutterAcronymSplitting
-        : 'off',
-    cardCutterMorphologyShaving: s.cardCutterMorphologyShaving === true,
-    cardCutterClarifyingQuestions:
-      s.cardCutterClarifyingQuestions === 'always' || s.cardCutterClarifyingQuestions === 'never'
-        ? s.cardCutterClarifyingQuestions
-        : 'when-ambiguous',
+
     pluginsEnabled: s.pluginsEnabled === true,
     pluginCommunityInstalls: s.pluginCommunityInstalls === true,
     pairingEnabled: s.pairingEnabled === true,

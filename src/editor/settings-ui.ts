@@ -790,36 +790,6 @@ class SettingsModal {
       row.appendChild(text);
       row.appendChild(buildCardCutterReadTimeRadio());
       return row;
-    } else if (meta.kind === 'cardCutterEmphasisStyle') {
-      row.appendChild(text);
-      row.appendChild(
-        buildCardCutterRadio('cardCutterEmphasisStyle', [
-          ['voice', 'Voice — emphasis inside the spoken read'],
-          ['independent', 'Independent — emphasis marks power phrases'],
-          ['minimal', 'Minimal — sparse emphasis'],
-        ]),
-      );
-      return row;
-    } else if (meta.kind === 'cardCutterAcronymSplitting') {
-      row.appendChild(text);
-      row.appendChild(
-        buildCardCutterRadio('cardCutterAcronymSplitting', [
-          ['off', 'Off (recommended)'],
-          ['conservative', 'Conservative — established acronyms only'],
-          ['aggressive', 'Aggressive'],
-        ]),
-      );
-      return row;
-    } else if (meta.kind === 'cardCutterClarifyingQuestions') {
-      row.appendChild(text);
-      row.appendChild(
-        buildCardCutterRadio('cardCutterClarifyingQuestions', [
-          ['when-ambiguous', "When ambiguous — the model's discretion"],
-          ['always', 'Always ask'],
-          ['never', 'Never ask'],
-        ]),
-      );
-      return row;
     } else if (meta.kind === 'cardCutterDisable') {
       row.appendChild(text);
       const btn = document.createElement('button');
@@ -5746,36 +5716,6 @@ function buildCardCutterReadTimeRadio(): HTMLElement {
     input.checked = current === value;
     input.addEventListener('change', () => {
       if (input.checked) settings.set('cardCutterReadTimeSec', value);
-    });
-    row.appendChild(input);
-    const span = document.createElement('span');
-    span.className = 'pmd-heading-mode-row-label';
-    span.textContent = label;
-    row.appendChild(span);
-    wrap.appendChild(row);
-  }
-  return wrap;
-}
-
-/** Generic radio-group editor for the string-valued card-cutter
- *  settings. Mirrors the other radio editors' markup. */
-function buildCardCutterRadio(
-  key: 'cardCutterEmphasisStyle' | 'cardCutterAcronymSplitting' | 'cardCutterClarifyingQuestions',
-  options: [string, string][],
-): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'pmd-heading-mode-editor';
-  const groupName = `pmd-${key}-${Math.random().toString(36).slice(2, 8)}`;
-  for (const [value, label] of options) {
-    const row = document.createElement('label');
-    row.className = 'pmd-heading-mode-row';
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = groupName;
-    input.value = value;
-    input.checked = settings.get(key) === value;
-    input.addEventListener('change', () => {
-      if (input.checked) settings.set(key, value as never);
     });
     row.appendChild(input);
     const span = document.createElement('span');
