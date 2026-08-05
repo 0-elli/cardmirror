@@ -1749,7 +1749,8 @@ export function applyUnderline(
     let everyUnderlined = true;
     let anyText = false;
     for (const { from, to } of opRanges) {
-      state.doc.nodesBetween(from, to, (node) => {
+      const scan = toggleScanRange(state.doc, from, to);
+      state.doc.nodesBetween(scan.from, scan.to, (node) => {
         if (!node.isText) return true;
         anyText = true;
         const u = node.marks.some(
@@ -1944,10 +1945,11 @@ export function applyHighlight(activeColor: () => string | null): Command {
     let allInActiveColor = true;
     let anyText = false;
     for (const { from, to } of op.ranges) {
+      const scan = toggleScanRange(state.doc, from, to);
       const r = scanTextMarkPresence(
         state.doc,
-        from,
-        to,
+        scan.from,
+        scan.to,
         'highlight',
         color === null ? undefined : { color },
       );
@@ -2000,10 +2002,11 @@ export function applyShading(activeColor: () => string | null): Command {
     let allInActiveColor = true;
     let anyText = false;
     for (const { from, to } of op.ranges) {
+      const scan = toggleScanRange(state.doc, from, to);
       const r = scanTextMarkPresence(
         state.doc,
-        from,
-        to,
+        scan.from,
+        scan.to,
         'shading',
         color === null ? undefined : { color },
       );
@@ -3402,6 +3405,26 @@ function subtractRanges(
  * carries a mark of the given name, plus whether any text was found
  * at all. Used by toggle commands to decide on-vs-off.
  */
+/** The sub-range of [from,to) a TOGGLE decision should scan: the
+ *  operating range with leading/trailing whitespace shaved. The gap
+ *  fix polices selection-edge whitespace (bridged or stripped by the
+ *  bookends — gapModRange protects selected punctuation but
+ *  deliberately not whitespace), so counting those chars broke the
+ *  select + double-F11 quick-unhighlight: tap 1 highlighted the words
+ *  but the gap fix stripped the selected trailing space, tap 2 then
+ *  saw "not fully highlighted" and repainted forever instead of
+ *  toggling off. Falls back to the full range when trimming leaves
+ *  nothing, so a deliberate whitespace-only selection keeps its
+ *  meaning. Used by the toggles (highlight / shading / underline);
+ *  emphasis is not a toggle and stays untrimmed. */
+function toggleScanRange(doc: PMNode, from: number, to: number): { from: number; to: number } {
+  let f = from;
+  let t = to;
+  while (f < t && /^\s$/.test(doc.textBetween(f, f + 1))) f++;
+  while (t > f && /^\s$/.test(doc.textBetween(t - 1, t))) t--;
+  return f < t ? { from: f, to: t } : { from, to };
+}
+
 function scanTextMarkPresence(
   doc: PMNode,
   from: number,

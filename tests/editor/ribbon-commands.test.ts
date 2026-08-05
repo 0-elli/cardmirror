@@ -2879,6 +2879,98 @@ describe('applyHighlight (F11)', () => {
   });
 });
 
+// ---- double-tap toggle with the gap fix (quick unhighlight) ----
+
+describe('double-tap toggles with a selected trailing space (gap-fix interplay)', () => {
+  // The field workflow: select text, tap the toggle twice — once to
+  // paint the whole selection, once to strip it. Selections routinely
+  // grab a trailing space; the gap fix normalizes that selected edge
+  // space (strips the style when the outside bookend disagrees), so
+  // the toggle scan must not count edge whitespace or tap 2 sees "not
+  // fully styled" and repaints forever instead of stripping.
+  function selectFirstWordPlusSpace(text: string, word: string): EditorState {
+    const doc = makeDoc([cardWithChildren(tag('T'), cardBody(text))]);
+    let start = -1;
+    doc.descendants((n, p) => {
+      if (n.isText && n.text === text) start = p;
+      return true;
+    });
+    const base = EditorState.create({ doc });
+    return base.apply(
+      base.tr.setSelection(TextSelection.create(base.doc, start, start + word.length + 1)),
+    );
+  }
+  const markOn = (
+    doc: import('prosemirror-model').Node,
+    search: string,
+    names: string[],
+  ): boolean => {
+    let found = false;
+    doc.descendants((n) => {
+      if (n.isText && (n.text ?? '').includes(search)) {
+        if (n.marks.some((m) => names.includes(m.type.name))) found = true;
+      }
+      return true;
+    });
+    return found;
+  };
+
+  it('F11 twice: highlight lands, then strips — despite the gap-fixed edge space', () => {
+    const state = selectFirstWordPlusSpace('alpha beta', 'alpha');
+    const s1 = apply(state, applyHighlight(() => 'yellow'))!;
+    // Tap 1 painted the word; the gap fix stripped the SELECTED trailing
+    // space (right bookend "beta" is unhighlighted) — the trap's setup.
+    expect(markOn(s1.doc, 'alpha', ['highlight'])).toBe(true);
+    expect(markOn(s1.doc, ' ', ['highlight'])).toBe(false);
+    const s2 = apply(s1, applyHighlight(() => 'yellow'))!;
+    expect(markOn(s2.doc, 'alpha', ['highlight'])).toBe(false);
+  });
+
+  it('Mod-F11 twice: shading strips on the second tap', () => {
+    const state = selectFirstWordPlusSpace('alpha beta', 'alpha');
+    const s1 = apply(state, applyShading(() => 'D2D2D2'))!;
+    expect(markOn(s1.doc, 'alpha', ['shading'])).toBe(true);
+    const s2 = apply(s1, applyShading(() => 'D2D2D2'))!;
+    expect(markOn(s2.doc, 'alpha', ['shading'])).toBe(false);
+  });
+
+  it('F9 twice: underline strips on the second tap', () => {
+    const state = selectFirstWordPlusSpace('alpha beta', 'alpha');
+    const s1 = apply(state, applyUnderline())!;
+    expect(markOn(s1.doc, 'alpha', ['underline_mark', 'underline_direct'])).toBe(true);
+    const s2 = apply(s1, applyUnderline())!;
+    expect(markOn(s2.doc, 'alpha', ['underline_mark', 'underline_direct'])).toBe(false);
+  });
+
+  it('a whitespace-only selection still toggles deliberately', () => {
+    // Trimming must not break formatting whitespace on purpose: with
+    // nothing but the space selected, the fallback scans it untrimmed.
+    const doc = makeDoc([
+      cardWithChildren(
+        tag('T'),
+        schema.nodes['card_body']!.create(null, [
+          schema.text('alpha', [schema.marks['highlight']!.create({ color: 'yellow' })]),
+          schema.text(' '),
+          schema.text('beta', [schema.marks['highlight']!.create({ color: 'yellow' })]),
+        ]),
+      ),
+    ]);
+    let start = -1;
+    doc.descendants((n, p) => {
+      if (n.isText && n.text === ' ') start = p;
+      return true;
+    });
+    const base = EditorState.create({ doc });
+    const state = base.apply(
+      base.tr.setSelection(TextSelection.create(base.doc, start, start + 1)),
+    );
+    // Both bookends highlighted → the gap fix BRIDGES; the deliberate
+    // gap-only selection stays actionable either way.
+    const s1 = apply(state, applyHighlight(() => 'yellow'));
+    expect(s1).not.toBeNull();
+  });
+});
+
 // ---- applyShading (Mod-F11) ----
 
 describe('applyShading (Mod-F11)', () => {
