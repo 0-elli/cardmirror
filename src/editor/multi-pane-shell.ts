@@ -2665,7 +2665,7 @@ class MultiPaneShell {
     // Open-from-disk rejoin gate (same as the single-doc open path):
     // a file with a resumable session offers rejoin-or-leave instead
     // of silently diverging.
-    void checkSessionRejoinForOpenedDoc(docId ?? null);
+    void checkSessionRejoinForOpenedDoc(docId ?? null, record.uid);
     // Multi-pane opens are recents too — this is the one funnel every
     // slot open passes through (Open dialog, palette, drag-drop, OS
     // association, spawn payloads, show-in-context). String-handle only:

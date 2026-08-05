@@ -1360,8 +1360,14 @@ const collabDeps = {
  *  ("Join cancelled" after streaming the whole doc — replaceWithSessionDoc
  *  bails under multiDocActive) or spawned a second window that dead-ended in
  *  the empty-file open error (2026-07-10). */
-function makeMultiPaneSessionDeps() {
-  let uid: string | null = null;
+/** `existingUid` pins the deps to an ALREADY-open doc — the
+ *  open-from-disk rejoin gate resumes in place (existingDoc mode), so
+ *  newSessionDoc never runs and the slot picker never appears; without
+ *  the pin, getOwnerUid() would stay null and the session would bind
+ *  to nothing. Ordinary flows omit it: uid is set when the slot picker
+ *  creates the session doc. */
+function makeMultiPaneSessionDeps(existingUid?: string) {
+  let uid: string | null = existingUid ?? null;
   const viewFor = (u: string | null): EditorView | null =>
     u ? getSpeechDocResolver().viewForUid(u) : null;
   return {
@@ -5774,7 +5780,10 @@ const rejoinPromptsInFlight = new Set<string>();
  *  session record and continue with the file, divergence accepted
  *  explicitly). Esc/cancel counts as Rejoin — the non-destructive
  *  door; there is deliberately no "just edit locally" option. */
-export async function checkSessionRejoinForOpenedDoc(docId: string | null): Promise<void> {
+export async function checkSessionRejoinForOpenedDoc(
+  docId: string | null,
+  openedUid?: string,
+): Promise<void> {
   if (!docId) return;
   let records: Awaited<ReturnType<typeof listSessionRecords>>;
   try {
@@ -5819,7 +5828,10 @@ export async function checkSessionRejoinForOpenedDoc(docId: string | null): Prom
     }
     // 'rejoin' or Esc/cancel: bind the session into the doc just opened.
     const m = await loadCollabUi();
-    const deps = multiDocActive ? makeMultiPaneSessionDeps() : collabDeps;
+    // Multi-pane: pin the deps to the pane the file was opened into —
+    // existingDoc resume never runs the slot picker, so the uid must
+    // come from the open, not from a doc-creation that won't happen.
+    const deps = multiDocActive ? makeMultiPaneSessionDeps(openedUid) : collabDeps;
     await m.resumeSessionFlow(deps, record.roomId, { existingDoc: true });
   } finally {
     rejoinPromptsInFlight.delete(record.roomId);
