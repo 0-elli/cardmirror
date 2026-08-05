@@ -367,17 +367,17 @@ async function runBulkCut(view: EditorView, multi: BulkTargets): Promise<void> {
   // Floating progress chip: count + Stop. Detail lives in the per-card
   // pill (stage · card i of n · Esc to stop), which tracks each card.
   const chip = document.createElement('div');
-  chip.className = 'pmd-cardcutter-panel';
+  chip.className = 'pmd-cardcutter-panel pmd-cardcutter-bulkchip';
+  const textCol = document.createElement('div');
   const header = document.createElement('div');
   header.className = 'pmd-route-header';
   header.textContent = `Cutting ${n} cards`;
-  chip.appendChild(header);
+  textCol.appendChild(header);
   const statusLine = document.createElement('div');
   statusLine.className = 'pmd-cardcutter-stats';
   statusLine.textContent = `Card 1 of ${n}`;
-  chip.appendChild(statusLine);
-  const buttons = document.createElement('div');
-  buttons.className = 'pmd-text-prompt-buttons';
+  textCol.appendChild(statusLine);
+  chip.appendChild(textCol);
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'pmd-route-cancel';
@@ -389,8 +389,7 @@ async function runBulkCut(view: EditorView, multi: BulkTargets): Promise<void> {
     statusLine.textContent = 'Stopping after this card…';
   };
   stopBtn.addEventListener('click', requestStop);
-  buttons.appendChild(stopBtn);
-  chip.appendChild(buttons);
+  chip.appendChild(stopBtn);
 
   // Escape = Stop, but only when this pane's business: not while a
   // modal is up, not while typing in an input, and only when the

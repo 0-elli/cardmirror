@@ -13608,6 +13608,25 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
 }
+/* Bulk-cut progress chip — a status strip, not a form panel: one row
+   (title + counter left, Stop right), sized to its content instead of
+   the panel's 24rem, and without the stats line's negative pull-up
+   (that offset assumes an identity row above it). */
+.pmd-cardcutter-bulkchip {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  width: fit-content;
+  min-width: 15rem;
+  padding: 0.55rem 0.8rem;
+}
+.pmd-cardcutter-bulkchip .pmd-cardcutter-stats {
+  margin: 0.15rem 0 0;
+}
+.pmd-cardcutter-bulkchip .pmd-route-cancel {
+  margin-left: auto;
+  flex-shrink: 0;
+}
 /* Which card is this panel about? Shown by every cutter panel that can
    outlive its opening moment or stack with another, so a set of controls
    is never ambiguous. */
