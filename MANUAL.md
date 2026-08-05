@@ -273,7 +273,15 @@ mirrors Word's Navigation Pane, but does more:
   section to the clipboard and removes it in one step, ready to paste
   elsewhere (Ctrl-Z restores; the removal only happens once the copy
   has safely landed on the clipboard). Delete and Cut are both
-  undoable like any edit.
+  undoable like any edit. Right-clicking an entry that's part of a
+  **multi-selection** runs the action on *every* selected heading —
+  Cut and Copy stitch a scattered selection together in document
+  order, so it pastes as if the sections had been dragged next to
+  each other first, and a multi-Delete is a single undo step. The
+  menu also offers **Create live view of heading** and **Create
+  linked copy of heading**, which drop a [live view or linked
+  copy](#10-live-views-and-linked-copies) of that section at your
+  cursor — no picker needed, since the clicked heading *is* the pick.
 
 ### Card numbering
 
@@ -1223,13 +1231,26 @@ person runs **Join Collaboration Session** and pastes it. The shared
 document opens in a new window — in three-pane, you pick which pane.
 
 **Interruptions:** joiners past the 10-person cap get a "session is full"
-message until someone leaves. Offline edits queue and sync on reconnect.
-You can close the app entirely — the session is saved under **Sessions** on
-the home screen, and rejoining syncs your offline changes. Switching
+message until someone leaves. Offline edits queue and sync on reconnect
+(a notice appears only after a real offline stretch whose sync actually
+changed the document). You can close the app entirely — the session is
+saved under **Sessions** on the home screen, and rejoining syncs your
+offline changes. If you saved your session copy to disk and later open
+that **file** while the session still exists, CardMirror asks whether to
+**rejoin** (the document reconnects in place) or **leave** (the file
+becomes an independent copy) — editing the file outside a live session
+would otherwise split it into two diverging copies with the same name. Switching
 between single-pane and three-pane closes co-edited documents (the dialog
 warns you); reopen them from the Sessions list. Each open document runs its
 own independent session, so several can be live at once; in three-pane,
 each pane's footer shows its own session's collaborators.
+
+**Highlighting under simultaneous edits:** highlight, underline,
+emphasis, and background color follow the *typist's view*: text you
+type inside a highlight you can see continues it, but text someone
+typed while a highlight was being made elsewhere — offline, or in the
+same moment — no longer converges highlighted. Nobody meant to
+highlight words they never saw.
 
 **Ending or leaving:** run **End or Leave Collaboration Session** — the
 host ends it for everyone, a guest just leaves; either way each person
@@ -1367,6 +1388,15 @@ sluggish, hiding it may help.
   comments (a root message plus replies) but stay on your machine.
 - **Edit in place** — every comment, reply, and note has a pencil button;
   Enter saves, Esc cancels.
+- **Resolve** — the round check on a comment's header marks the thread
+  handled: the card dims, and the state travels with the file (it's
+  Word's own resolve, so threads you resolve here show resolved in
+  Word and vice versa). Click again to reopen. It works on collapsed
+  cards too, so acknowledging feedback never takes more than one
+  click.
+- **👍** — the thumbs-up beside the reply box posts a one-click 👍
+  reply: a fast "seen it" that needs no typing and travels everywhere
+  a normal reply does.
 - Click a note's or comment's colored text to jump to its card.
 - **Annotate a picture, too.** Comments, notes, and Ask AI all work on a
   selected image — or on a span of text that includes images, not just

@@ -5,7 +5,7 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## 0.1.0-beta.28 — Unreleased
+## 0.1.0-beta.28 — 2026-08-05
 
 ### Added
 
@@ -23,6 +23,101 @@ see `DETAILED_CHANGELOG.md`.
   fail in a row — a dead key, an exhausted quota — it stops rather than
   working through the rest of the document to fail on each one. Thanks to
   Shreeram Modi for building it.
+
+- **Resolve a comment with one click.** Comment threads grew a round
+  check in their header: click it and the thread is marked handled —
+  the card dims, collapsed or expanded, and the state is Word's own
+  *resolve*, so it round-trips both ways with `.docx`. Click again to
+  reopen. Next to the reply box there's also a one-click **👍** reply
+  for a no-typing "seen it" — an ordinary reply under the hood, so it
+  travels everywhere replies do.
+
+- **The nav pane's right-click menu understands multi-selections.**
+  Right-click any entry that's part of a Mod-click / Shift-click
+  selection and **Select / Cut / Copy / Delete** act on *every*
+  selected heading. Cut and Copy stitch a scattered selection together
+  in document order — it pastes as if you'd dragged the sections next
+  to each other first — a multi-Delete or multi-Cut is one undo step,
+  and Select gives you a real discontinuous selection (the same one
+  Select Similar uses), ready for any formatting command.
+
+- **Create live views and linked copies straight from the nav pane.**
+  Right-click a heading → **Create live view of heading** or **Create
+  linked copy of heading**: the section you clicked is the source, and
+  the view or copy lands at your cursor — no picker. (The command bar
+  also now finds Insert Live View under "create live view".)
+
+- **Reopening a session file offers to rejoin.** If you save your copy
+  of a co-edited document and later open that file from disk while the
+  session still exists, CardMirror asks: **Rejoin** reconnects the
+  session into the document you just opened, in place; **Leave**
+  forgets the session and keeps the file as an independent copy. No
+  silent third path — editing the file outside a live session would
+  split it into two diverging copies with the same name.
+
+### Changed
+
+- **Highlighting under simultaneous edits follows the typist's view.**
+  Highlight, underline, emphasis, and background color no longer
+  "spread" onto text someone typed while never having seen the mark —
+  the convergence quirk where a concurrently retyped paragraph came
+  back fully highlighted for everyone. Typing inside a highlight you
+  can see still continues it, and deliberately marking text you can
+  see still sticks; only the nobody-meant-this case is stripped, and
+  it converges identically for every participant.
+
+- **Co-editing feels faster with several people typing.** A bundle of
+  performance work on the sync path: incoming edits and cursor updates
+  now batch into short windows instead of each forcing its own full
+  editor update (with five people typing, roughly a quarter of the
+  update churn), and the per-edit repair pass does a fraction of its
+  former scanning. Remote edits and cursors appear a fraction of a
+  second later than before; local typing is untouched.
+
+- **The "synced offline edits" notice earned its interruptions.** It
+  now appears only after a genuine offline stretch (a minute or more)
+  whose catch-up actually changed the document — not on the routine
+  reconnects and periodic re-checks that fire constantly in a healthy
+  session. The message says what happened ("Caught up on edits made
+  while you were offline") instead of quoting a frame count.
+
+- **Untitled session documents pick up their name.** Start a session
+  on a never-saved document and joiners used to see a nameless window
+  forever. Now, when the host saves the document, its new name reaches
+  every participant's window and Sessions list live — and a partner's
+  rename never overwrites a name you chose by saving your own copy.
+
+- **Painting "no color" on macOS moved to ⌃ Control.** Recent macOS
+  moves the window when you drag with ⌥ Option held, which broke the
+  hold-to-strip paintbrush stroke; ⌘ is spoken for, so the strip
+  override is now **⌃**. Windows and Linux keep **Alt**.
+
+### Fixed
+
+- **Highlighting over a different color repaints instead of erasing.**
+  Painting green over yellow used to strip the highlight entirely (the
+  toggle only asked *whether* text was highlighted, never in what
+  color). Now a different color repaints in one stroke; repeating the
+  exact color still toggles off. Background color got the same fix.
+
+- **Select-F11-F11 quick-unhighlight works with auto-bridged gaps.**
+  When a selection grabbed a trailing space, the gap normalizer would
+  strip the space's highlight after the first tap, and the second tap
+  then saw "not fully highlighted" and repainted forever. The toggles
+  (highlight, background, underline) now judge the selection without
+  its edge whitespace, so the double-tap always lands.
+
+- **Typing a comment during a live session no longer loses focus.**
+  Every incoming co-editor keystroke re-rendered the comments column
+  in a way that silently moved the focused reply box's DOM node,
+  blurring it mid-word. The column now leaves settled cards alone, so
+  you can type feedback while others edit.
+
+- **The "source updated" rail reaches the multi-doc workspace.** The
+  red rail marking a linked copy whose source moved on could fail to
+  appear in pane outlines if read mode had ever been used in
+  single-doc mode — the divergence check consulted a stale global
+  flag. It now asks each pane for its own state.
 
 ## 0.1.0-beta.27 — 2026-07-30
 

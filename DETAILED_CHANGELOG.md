@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.28 — Unreleased
+## 0.1.0-beta.28 — 2026-08-05
 
 - **Reformat Every Cite in Document (AI)** (new
   `src/editor/ai/reformat-all-cites.ts`; ribbon `reformatAllCites`,
@@ -52,6 +52,115 @@ in each release, see `CHANGELOG.md`.
   stopped." Docs: MANUAL.md §13 AI table + the Verbatim-users note (the
   "ReformatAllCites isn't in CardMirror" claim was stale),
   ARCHITECTURE.md §13/§14, PROJECT.md status.
+
+- **Causal mark heal** (`src/editor/collab/causal-mark-heal.ts`, wired
+  in `collab-ui.ts` installSeams). Peritext range marks cover text
+  concurrently inserted inside their range, so a paragraph one peer
+  retyped while another was highlighting it converged fully
+  highlighted with no op recording anyone's intent. The heal enforces
+  *inserter intent* causally exactly: a governed mark (highlight /
+  underline / emphasis / shading; `comment_range` deliberately
+  ungoverned — region growth is its job) may cover a character iff the
+  char's insert op and the covering mark op are causally related in
+  the CRDT's dependency graph — the typist had seen the mark, or the
+  marker had seen the text. Concurrent pairs strip, on every replica
+  identically (verdicts are pure functions of op history; pinned by
+  running the 15-seed loro fuzz with the heal active per import).
+  Mechanics: binding transactions only, changed-range-scoped, cheap
+  governed-mark pre-check, incremental op-log index
+  (`exportJsonUpdates` with peer compression OFF — compressed ids
+  index a peers[] table and match nothing), char origins via the Loro
+  cursor API through the binding's container mapping, strips ride a
+  normalizer-guarded history-excluded PM transaction, and every
+  ambiguous case fails toward keep. Not compatibility-breaking:
+  strips are ordinary unmark edits; one healed peer heals a mixed
+  room.
+
+- **Co-editing performance batch** (perf study 2026-08-06; the
+  keystroke-latency reports from five-person sessions). Three fixes:
+  (1) cursor presence frames now buffer on a 150ms receive-side drain
+  (`CoalescingCursorStore` in `collab-cursors.ts`; the vendored
+  adapter subscribes via `subscribeBy`, whose implementation bypasses
+  `subscribe` — the override targets it, and the batch resolves to ONE
+  listener notification, so 20 frames/sec became 5 dispatches/sec
+  measured); (2) inbound doc frames micro-batch on a 120ms window
+  (`collab-session.ts` — per-row audit-ledger folds and the echo
+  watchdog stay per-frame; one `importBatch` → one binding transaction
+  → one plugin-pipeline pass per window; the `lastSeq` cursor-lag
+  invariant untouched, and buffered frames are droppable at teardown
+  precisely because the cursor never passed them); (3) the leader's
+  per-frame repair now hands `fixTables` its `oldState`
+  (prosemirror-tables' changed-regions fast path; import/open keep the
+  full scan as backstop) and the heal-toast sentinel scan is gated
+  behind its own 60s cooldown (provably behavior-identical — a
+  sentinel found during cooldown was both toast-suppressed and
+  canonicalized in the same pass). Related: the "synced offline
+  edits" toast now requires a ≥60s stream-blind window whose catch-up
+  actually advanced the doc version — the fetch cursor deliberately
+  lags the stream, so the old frame-count trigger fired on routine
+  re-fetches of already-applied frames.
+
+- **Open-from-disk session rejoin** (`checkSessionRejoinForOpenedDoc`
+  in `index.ts`, both open funnels; records stamp the doc's persistent
+  id via a uid→docId resolver in `collab-persist.ts`). Opening a file
+  whose docId matches a resumable session record offers exactly two
+  doors: Rejoin — `resumeSessionFlow`'s previously-uncalled
+  `existingDoc` mode binds the session into the just-opened doc in
+  place (multi-pane deps pinned to the opened pane's uid; no slot
+  picker, the open already chose placement) — or Leave, which deletes
+  the record. Esc counts as Rejoin; there is deliberately no
+  edit-locally door. Companion: session titles republish on save
+  (host-only) and joiners adopt live via a meta-map subscription, with
+  saved-doc guards so adoption never renames a copy the user saved.
+
+- **Comments: resolve + 👍, and focus retention under co-editing.**
+  Resolve is modeled as `resolved` on the thread's root comment,
+  flipped via a plugin meta (undo, collab mirror, and both docx
+  directions see it like any mutation); export writes real `w15:done`
+  per comment of a resolved thread and import reads it back — the one
+  comment primitive beyond replies the format durably supports. The 👍
+  button posts an ordinary emoji reply (Word has no portable reaction
+  primitive; a reply is the round-trippable equivalent). The comments
+  column's render loop also switched to minimal-move reconciliation —
+  its unconditional `appendChild` re-parented every card each render,
+  which detached (and blurred) the focused reply textarea on every
+  remote edit.
+
+- **Nav pane: multi-selection context ops + creators.** The four
+  context-menu operations act on the whole multi-selection when the
+  clicked row belongs to it (file-manager semantics); cut/copy
+  concatenate doc-ordered subtree ranges (overlap-merged, so
+  parent+child never double-copies), deletes apply back-to-front in
+  one transaction, and multi-Select routes through
+  `setManualShadowSelection` — the discontinuous shadow selection the
+  format commands already consume. New creator items build a live view
+  or in-doc linked copy of the clicked heading at the cursor via the
+  same functions the pickers call, with the picker's self-containment
+  guard.
+
+- **Color toggles: same-color-only toggle + gap-fix interplay.**
+  `applyHighlight`/`applyShading` only strip when the whole range
+  already wears the *active* color (scanTextMarkPresence grew attr
+  matching); a different color repaints via the existing
+  removeMark+addMark path. And the toggle *decision* now scans the
+  operating range with edge whitespace shaved (`toggleScanRange`):
+  the auto-bridge gap-fix polices selected edge whitespace (protects
+  punctuation, deliberately not spaces), so counting those characters
+  locked select-F11-F11 into a repaint fixpoint. Applied to
+  highlight/shading/underline; emphasis is not a toggle.
+
+- **Smaller fixes.** The transclusion-divergence check gates on the
+  VIEW's own read mode (host-element class) instead of the global
+  setting multi-doc mode deliberately ignores — restoring the
+  "source updated" nav rail in panes. The paint strip-pen override
+  moved to ⌃ Control on macOS (⌥-drag is the OS window-move gesture;
+  ⌘ is spoken for; Alt elsewhere), with the platform read per call.
+  In-flight AI narration is composed by one persona-aware function
+  (`inFlightLine`), so a configured persona name shows everywhere and
+  stage strings like the cite pass's counter read as sentences in
+  both modes; the progress pill also wraps long narration at its cap
+  instead of shearing mid-word (its container tracks the measured
+  line box, which previously locked wrap width to a stale value).
 
 ## 0.1.0-beta.27 — 2026-07-30
 
