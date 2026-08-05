@@ -784,6 +784,14 @@ export class CommentsColumn {
         this.cardSigs.delete(id);
       }
     }
+    // Minimal-move ordering cursor: walk the wanted order against the
+    // column's current children and only touch a card whose position
+    // actually differs. The old unconditional appendChild MOVED every
+    // already-attached card each render — detaching the focused reply
+    // textarea's ancestor, which blurred it and wiped the draft state
+    // on every remote collab edit (field report 2026-08-05: comment
+    // typing lost focus whenever a partner's edits landed).
+    let orderCursor = this.content.firstElementChild;
     for (const it of items) {
       const isActive = this.activeThreadId === it.id;
       const el = this.ensureCardEl(it.id);
@@ -818,7 +826,12 @@ export class CommentsColumn {
           this.cardSigs.set(it.id, sig);
         }
       }
-      this.content.appendChild(el); // flow order
+      // Flow order, minimal-move (see orderCursor above).
+      if (el === orderCursor) {
+        orderCursor = orderCursor.nextElementSibling;
+      } else {
+        this.content.insertBefore(el, orderCursor);
+      }
     }
     // Unanchored flashcards + AI threads + notes → collapsible footer.
     this.renderUnanchoredSection(unanchoredFc, unanchoredAi, unanchoredNotes);
