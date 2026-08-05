@@ -80,7 +80,9 @@ function pasteHtml(view: EditorView, html: string): void {
   });
   const dom = new DOMParser().parseFromString(transformed, 'text/html');
   const slice = PMDOMParser.fromSchema(schema).parseSlice(dom.body);
-  view.dispatch(view.state.tr.replaceSelection(slice));
+  // Real pastes carry the uiEvent meta — the duplicate-vs-restore logic
+  // gates on it so ordinary typing can never re-id a comment.
+  view.dispatch(view.state.tr.replaceSelection(slice).setMeta('uiEvent', 'paste'));
 }
 
 describe('comments travel with copied text', () => {
@@ -134,7 +136,7 @@ describe('comments travel with copied text', () => {
     target.destroy();
   });
 
-  it('same-doc paste shares the existing thread — no duplicate, no clobber', () => {
+  it('same-doc paste DUPLICATES the comment under a fresh id (Word behavior)', () => {
     const view = mkView(
       schema.nodes['doc']!.createChecked(null, [commentedCard('Alpha', 'commented body', 'T2')]),
     );
@@ -156,8 +158,43 @@ describe('comments travel with copied text', () => {
     pasteHtml(view, html);
 
     const state = getCommentsState(view.state);
-    expect(state.threads.size).toBe(1); // still ONE thread, shared anchor
+    expect(state.threads.size).toBe(2); // original + duplicate
     expect(state.threads.get('T2')!.comments[0]!.text).toBe('original text');
+    const dupe = [...state.threads.values()].find((t) => t.id !== 'T2')!;
+    expect(dupe.comments[0]!.text).toBe('original text');
+    expect(dupe.comments[0]!.id).toBe(dupe.id); // root id re-minted with the thread
+    // The PASTED span carries the duplicate's id; the original keeps T2.
+    const idsInDoc = new Set<string>();
+    view.state.doc.descendants((n) => {
+      for (const m of n.marks) {
+        if (m.type.name === 'comment_range') idsInDoc.add(String(m.attrs['threadId']));
+      }
+      return true;
+    });
+    expect(idsInDoc).toEqual(new Set(['T2', dupe.id]));
+    view.destroy();
+  });
+
+  it('typing inside a commented range never re-ids it, even with the payload stashed', () => {
+    const view = mkView(
+      schema.nodes['doc']!.createChecked(null, [commentedCard('Alpha', 'commented body', 'T5')]),
+    );
+    view.dispatch(loadThreads(view.state, [thread('T5', 'stay put')]));
+    let from = -1;
+    view.state.doc.descendants((n, p) => {
+      if (n.isText && n.text === 'commented body') from = p;
+      return from < 0;
+    });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + 14)));
+    // Copy (stash gets the payload via a paste elsewhere-in-spirit: run
+    // the HTML through the paste hook without dispatching, as a
+    // clipboard would); then TYPE inside the original range.
+    const html = copySelectionHtml(view);
+    view.someProp('transformPastedHTML', (f) => f(html, view));
+    view.dispatch(view.state.tr.insertText('X', from + 3)); // ordinary typing, no uiEvent
+    const state = getCommentsState(view.state);
+    expect(state.threads.size).toBe(1);
+    expect(state.threads.has('T5')).toBe(true);
     view.destroy();
   });
 

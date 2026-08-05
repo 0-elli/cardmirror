@@ -21,10 +21,15 @@
  *    ordinary add-thread meta — undo, the collab mirror, and every
  *    serialization path see it like any user-created thread.
  *
- * Same-document pastes where the thread still exists share the thread
- * (two anchored ranges, one card) rather than minting a duplicate —
- * and same-doc CUT + paste already resurrects the parked thread via
- * the comments GC's tombstone path, which this plugin leaves alone.
+ * A paste whose thread ALREADY EXISTS in the target doc (pasting a
+ * commented span within one document, or pasting the same copy twice)
+ * DUPLICATES the comment under a fresh id — Word's behavior — with
+ * every comment id in the clone re-minted so exporter id maps stay
+ * globally unique. Only genuine paste/drop transactions get this
+ * treatment (gated on the transaction's uiEvent meta AND a clipboard
+ * payload for that id), so ordinary typing inside a commented range
+ * can never re-id the original. Same-doc CUT + paste still resurrects
+ * the parked thread via the comments GC's tombstone path, untouched.
  */
 
 import { Plugin } from 'prosemirror-state';
@@ -36,6 +41,7 @@ import {
   commentsKey,
   getCommentsState,
   addThreadsMeta,
+  newCommentId,
   type Thread,
 } from './comments-plugin.js';
 
@@ -117,27 +123,82 @@ export function commentClipboardPlugin(): Plugin {
     },
     appendTransaction(trs, _oldState, newState) {
       if (pastedThreads.size === 0) return null;
-      if (!trs.some((tr) => tr.docChanged)) return null;
-      // Which stashed threads did this paste actually anchor? Scan the
-      // changed ranges for comment_range marks whose thread is missing
-      // from THIS doc's state and present in the stash.
+      // Paste/drop transactions only: the uiEvent gate means ordinary
+      // typing inside a commented range — even seconds after copying
+      // it, with its payload still in the stash — can never trigger a
+      // re-id of the original.
+      const pasteTrs = trs.filter(
+        (tr) =>
+          tr.docChanged &&
+          (tr.getMeta('uiEvent') === 'paste' || tr.getMeta('uiEvent') === 'drop'),
+      );
+      if (pasteTrs.length === 0) return null;
+
       const state = getCommentsState(newState);
+      const markType = schema.marks['comment_range']!;
+      // threadId → fresh id, decided once per pass so a paste split
+      // across several text nodes still yields ONE duplicated comment
+      // spanning all of them (Word's shape).
+      const rename = new Map<string, string>();
       const toAdd: Thread[] = [];
-      for (const tr of trs) {
-        if (!tr.docChanged) continue;
-        tr.steps.forEach((step, i) => {
-          const rest = tr.mapping.slice(i + 1);
+      const tr = newState.tr;
+
+      const cloneUnder = (thread: Thread, newId: string): Thread => {
+        // Re-mint EVERY comment id in the clone (exporter id maps are
+        // keyed by comment id globally); remap reply parent links.
+        const idMap = new Map<string, string>([[thread.id, newId]]);
+        for (const c of thread.comments) {
+          if (!idMap.has(c.id)) idMap.set(c.id, newCommentId());
+        }
+        return {
+          id: newId,
+          comments: thread.comments.map((c) => ({
+            ...c,
+            id: idMap.get(c.id)!,
+            parentId: c.parentId == null ? null : (idMap.get(c.parentId) ?? null),
+          })),
+        };
+      };
+
+      for (const ptr of pasteTrs) {
+        ptr.steps.forEach((step, i) => {
+          const rest = ptr.mapping.slice(i + 1);
           step.getMap().forEach((_os, _oe, newStart, newEnd) => {
-            const from = Math.max(0, Math.min(rest.map(newStart, -1), newState.doc.content.size));
-            const to = Math.max(from, Math.min(rest.map(newEnd, 1), newState.doc.content.size));
-            newState.doc.nodesBetween(from, to, (node) => {
+            let from = Math.max(0, Math.min(rest.map(newStart, -1), newState.doc.content.size));
+            let to = Math.max(from, Math.min(rest.map(newEnd, 1), newState.doc.content.size));
+            // Later paste trs in the batch shift earlier ranges — map
+            // through them so positions address newState.doc.
+            for (const later of trs.slice(trs.indexOf(ptr) + 1)) {
+              from = later.mapping.map(from, -1);
+              to = later.mapping.map(to, 1);
+            }
+            newState.doc.nodesBetween(from, to, (node, pos) => {
               if (!node.isText) return true;
               for (const m of node.marks) {
                 if (m.type.name !== 'comment_range') continue;
                 const id = String(m.attrs['threadId'] ?? '');
-                if (!id || state.threads.has(id) || state.tombstone.has(id)) continue;
-                const stashed = pastedThreads.get(id);
-                if (stashed && !toAdd.some((t) => t.id === id)) toAdd.push(stashed.thread);
+                const stashed = id ? pastedThreads.get(id) : undefined;
+                if (!stashed) continue; // not clipboard-borne — leave alone
+                const exists = state.threads.has(id) || state.tombstone.has(id);
+                if (!exists) {
+                  // First landing in this doc: restore under its own id.
+                  if (!toAdd.some((t) => t.id === id)) {
+                    toAdd.push(JSON.parse(JSON.stringify(stashed.thread)) as Thread);
+                  }
+                  continue;
+                }
+                // Thread already lives here → DUPLICATE under a fresh
+                // id and re-point just the pasted span's mark.
+                let newId = rename.get(id);
+                if (!newId) {
+                  newId = newCommentId();
+                  rename.set(id, newId);
+                  toAdd.push(cloneUnder(stashed.thread, newId));
+                }
+                const segFrom = Math.max(pos, from);
+                const segTo = Math.min(pos + node.nodeSize, to);
+                tr.removeMark(segFrom, segTo, markType);
+                tr.addMark(segFrom, segTo, markType.create({ threadId: newId }));
               }
               return true;
             });
@@ -145,12 +206,16 @@ export function commentClipboardPlugin(): Plugin {
         });
       }
       if (toAdd.length === 0) return null;
-      for (const thread of toAdd) pastedThreads.delete(thread.id);
-      // One batch meta carries every restored thread (a copied section
-      // can hold several comments). Structured-clone so later mutations
-      // never alias the stash.
-      const clones = toAdd.map((t) => JSON.parse(JSON.stringify(t)) as Thread);
-      return newState.tr.setMeta(commentsKey, addThreadsMeta(clones));
+      // Restored-under-own-id entries are consumed; renamed sources
+      // stay stashed so the NEXT paste of the same copy duplicates
+      // again (each paste = its own comment, Word-style).
+      for (const t of toAdd) {
+        if (!rename.has(t.id)) {
+          const orig = [...rename.entries()].find(([, v]) => v === t.id)?.[0];
+          if (!orig) pastedThreads.delete(t.id);
+        }
+      }
+      return tr.setMeta(commentsKey, addThreadsMeta(toAdd));
     },
   });
 }
