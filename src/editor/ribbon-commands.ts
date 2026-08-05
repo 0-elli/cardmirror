@@ -4860,6 +4860,10 @@ export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly st
     'link section',
   ],
   insertSelfLiveZone: [
+    // create ⇄ insert: genuine equivalence for live views (nothing exists
+    // until the command runs either way) — both phrasings must find it.
+    'create live view',
+    'new live view',
     'live view',
     'live window',
     'embed section',
