@@ -6174,12 +6174,39 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
    Diverge by pulling a selector out, not by re-copying. */
 .pmd-typography-flag-desc,
 .pmd-line-height-unit,
-/* Thread resolve check + resolved look. The check button reuses the
-   head-delete sizing; aria-pressed drives the filled state. A resolved
-   thread dims — still readable, visibly "handled". */
-.pmd-comment-resolve[aria-pressed='true'] {
+/* Thread resolve check — unmistakably two-state: open = muted outline
+   check ("Resolve"), resolved = white check in a filled accent circle
+   ("Reopen"). A resolved thread dims — still readable, visibly
+   "handled". */
+.pmd-comment-resolve {
+  background: transparent;
+  border: 1.5px solid var(--pmd-c-text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--pmd-c-text-muted);
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pmd-comment-resolve:hover {
   color: var(--pmd-c-accent);
-  opacity: 1;
+  border-color: var(--pmd-c-accent);
+}
+.pmd-comment-resolve[aria-pressed='true'] {
+  color: var(--pmd-c-text-on-accent);
+  background: var(--pmd-c-accent);
+  border-color: var(--pmd-c-accent);
+}
+.pmd-comment-resolve[aria-pressed='true']:hover {
+  opacity: 0.8;
+}
+.pmd-comment-resolve svg {
+  width: 100%;
+  height: 100%;
 }
 .pmd-comment-thread-resolved {
   opacity: 0.62;

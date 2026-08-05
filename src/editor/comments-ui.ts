@@ -908,7 +908,7 @@ export class CommentsColumn {
       // Word as the thread's resolved state (w15:done).
       const res = document.createElement('button');
       res.type = 'button';
-      res.className = 'pmd-comment-resolve pmd-card-head-delete';
+      res.className = 'pmd-comment-resolve';
       res.title = resolve.resolved ? 'Reopen' : 'Resolve';
       res.setAttribute('aria-pressed', String(resolve.resolved));
       setIcon(res, 'check');
@@ -994,6 +994,9 @@ export class CommentsColumn {
     return JSON.stringify({
       a: isEmptyRoot ? 'empty' : isActive,
       ai: this.aiInFlight.has(thread.id),
+      // Resolved is part of the signature: without it, a resolve toggle
+      // didn't repopulate the card until the next expand/collapse.
+      r: thread.comments[0]?.resolved === true,
       c: thread.comments.map((c) => [c.id, c.text, c.author, c.initials]),
     });
   }
