@@ -21,10 +21,10 @@ import type { EditorView } from 'prosemirror-view';
 import { TextSelection } from 'prosemirror-state';
 import type { Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
-import { schema } from '../schema/index.js';
+import { schema, newHeadingId } from '../schema/index.js';
 import { settings } from './settings.js';
 import { compileShrinkProtections, findProtectedRanges } from './ribbon-commands.js';
-import { callLlm, activeApiKey } from './ai/llm.js';
+import { callLlm, activeApiKey, LlmError } from './ai/llm.js';
 import { getAiPersona } from './comments-ui.js';
 import { resolveAiModel } from './ai/llm.js';
 import { showToast } from './toast.js';
@@ -446,6 +446,167 @@ export function cardReadStats(
 export function cardLabel(focused: FocusedCard): string {
   const raw = focused.card.tag.trim() || focused.card.paras.find((p) => p.trim())?.trim() || 'this card';
   return raw.length > 70 ? `${raw.slice(0, 67)}…` : raw;
+}
+
+/** Mark state of an already-extracted card — the launch panel's
+ *  routing when its target came from the bulk classifier rather than
+ *  the cursor (focusedCardStatus is the cursor-derived twin). */
+export function cardStatusOf(f: FocusedCard): {
+  hasUnderline: boolean;
+  hasEmphasis: boolean;
+  hasHighlight: boolean;
+} {
+  return cardState(f);
+}
+
+// ─── Bulk cutting ─────────────────────────────────────────────────
+
+export interface BulkTargets {
+  /** Cards needing work, in doc order: 'cut' = plain, 'finish' =
+   *  underlined but not yet highlighted. */
+  actionable: { cardId: string; kind: 'cut' | 'finish' }[];
+  /** Cards in the span already highlighted — left alone. */
+  alreadyCut: number;
+  /** Every card node the selection touches (including bodyless ones). */
+  spanned: number;
+}
+
+/** Classify every card the selection touches, for the bulk flow. Null
+ *  unless the selection intersects at least TWO card nodes — a
+ *  within-card selection keeps its existing single-card meanings
+ *  (sub-selection add, U/D annotation scope). Actionable cards missing
+ *  a tag id are stamped here, in one attrs-only transaction: no
+ *  positions move, one undo step, and every queued card is
+ *  identity-addressable before the queue starts. */
+export function selectionBulkTargets(view: EditorView): BulkTargets | null {
+  const sel = view.state.selection;
+  if (sel.empty) return null;
+  const hits: { pos: number }[] = [];
+  view.state.doc.nodesBetween(sel.from, sel.to, (node, pos) => {
+    const t = node.type.name;
+    if (t !== 'card' && t !== 'analytic_unit') return true;
+    hits.push({ pos });
+    return false; // never descend into a card
+  });
+  if (hits.length < 2) return null;
+
+  // Stamp missing heading ids (rare: ids are stamped at load; only an
+  // in-session-created card can lack one).
+  let tr: Transaction | null = null;
+  for (const h of hits) {
+    const cardNode = view.state.doc.nodeAt(h.pos);
+    if (!cardNode || cardIdOf(cardNode) !== null) continue;
+    cardNode.forEach((child, offset) => {
+      if (child.type.name !== 'tag' && child.type.name !== 'analytic') return;
+      tr ??= view.state.tr;
+      tr.setNodeMarkup(h.pos + 1 + offset, null, { ...child.attrs, id: newHeadingId() });
+    });
+  }
+  if (tr) view.dispatch(tr);
+
+  const actionable: BulkTargets['actionable'] = [];
+  let alreadyCut = 0;
+  for (const h of hits) {
+    const cardNode = view.state.doc.nodeAt(h.pos); // fresh post-stamp
+    if (!cardNode) continue;
+    const f = extractCard(view, cardNode, h.pos);
+    if (!f) continue; // no body text — nothing to cut
+    const { hasUnderline, hasHighlight } = cardState(f);
+    if (hasHighlight) {
+      alreadyCut++;
+    } else if (f.cardId) {
+      actionable.push({ cardId: f.cardId, kind: hasUnderline ? 'finish' : 'cut' });
+    }
+  }
+  return { actionable, alreadyCut, spanned: hits.length };
+}
+
+export interface BulkCutSummary {
+  cut: number;
+  finished: number;
+  /** Deleted, or highlighted by someone/something else mid-run. */
+  skipped: number;
+  failed: number;
+  /** Cards whose read ended over the default length cap. */
+  shortfalls: number;
+  /** User pressed Stop / Escape. */
+  stopped: boolean;
+  /** Auth failure or repeated-failure breaker ended the run early. */
+  halted: boolean;
+}
+
+/** Run the bulk queue: default settings only, no flags, no per-card
+ *  panels. Sequential — each card is re-resolved by id at its turn (a
+ *  card deleted or cut meanwhile is skipped, not mis-targeted), and
+ *  each cut still takes its own lease and undo step. Ends early on
+ *  `shouldStop()` (checked between cards), immediately on an auth /
+ *  model error (a dead key fails every remaining card too), or after
+ *  three consecutive failures of any kind. */
+export async function bulkCutCards(
+  view: EditorView,
+  targets: BulkTargets['actionable'],
+  opts: {
+    readTimeSec?: number | null;
+    shouldStop?: () => boolean;
+    onProgress?: (done: number, total: number) => void;
+  } = {},
+): Promise<BulkCutSummary> {
+  const s: BulkCutSummary = {
+    cut: 0,
+    finished: 0,
+    skipped: 0,
+    failed: 0,
+    shortfalls: 0,
+    stopped: false,
+    halted: false,
+  };
+  const total = targets.length;
+  let streak = 0;
+  for (let i = 0; i < total; i++) {
+    if (opts.shouldStop?.()) {
+      s.stopped = true;
+      break;
+    }
+    const t = targets[i]!;
+    const live = resolveCardById(view, t.cardId);
+    if (!live || cardState(live).hasHighlight) {
+      s.skipped++;
+      continue;
+    }
+    try {
+      const session = await cutFocusedCard(view, {
+        cardId: t.cardId,
+        quiet: true,
+        useFlags: false,
+        stageSuffix: ` · card ${i + 1} of ${total} · Esc to stop`,
+        ...(opts.readTimeSec ? { readTimeSec: opts.readTimeSec } : {}),
+      });
+      if (!session) {
+        // Lease denied or the card moved mid-cut — failure, not silence.
+        s.failed++;
+        streak++;
+      } else {
+        streak = 0;
+        if (t.kind === 'finish') s.finished++;
+        else s.cut++;
+        if (session.shortfall) s.shortfalls++;
+      }
+    } catch (err) {
+      s.failed++;
+      streak++;
+      console.error(`[cardcutter] bulk cut ${i + 1}/${total} failed:`, err);
+      if (err instanceof LlmError && (err.kind === 'auth' || err.kind === 'model')) {
+        s.halted = true;
+        break;
+      }
+    }
+    if (streak >= 3) {
+      s.halted = true;
+      break;
+    }
+    opts.onProgress?.(i + 1, total);
+  }
+  return s;
 }
 
 function extractCard(view: EditorView, cardNode: PMNode, cardPos: number): FocusedCard | null {
@@ -908,6 +1069,22 @@ export interface CutInvocation {
    *  efficiently first; when set, a secondary de-highlight trims it
    *  toward this length (never pads up to it). Omit = no cap. */
   readTimeSec?: number;
+  /** Cut THIS card rather than the cursor's — the same identity
+   *  contract as RefineInvocation.cardId. Used by the launch panel
+   *  (whose target is captured at open, not at Go) and the bulk queue. */
+  cardId?: string;
+  /** Bulk mode: no per-card toasts, and errors RETHROW instead of
+   *  becoming toast+null — the orchestrator needs the LlmError kind
+   *  for auth fail-fast and its failure-streak breaker. */
+  quiet?: boolean;
+  /** Appended to every stage label ("skeletonizing · card 3 of 7 ·
+   *  Esc to stop"). A suffix, never a prefix: the clod-mode pill wraps
+   *  the label as "<persona> is <label>…", so the gerund must lead. */
+  stageSuffix?: string;
+  /** false = ignore (and do not consume) pending panel flags — a
+   *  stray U/D from an abandoned panel must not bias, or be eaten by,
+   *  a bulk run. Default true (panel behaviour). */
+  useFlags?: boolean;
 }
 
 /** What a completed cut leaves the UI to work with: the card handle
@@ -937,19 +1114,19 @@ export async function cutFocusedCard(
     showToast('Set an API key in Settings to use the card cutter.');
     return null;
   }
-  const focused = focusedPlainCard(view);
+  const focused = inv.cardId ? resolveCardById(view, inv.cardId) : focusedPlainCard(view);
   if (!focused) {
-    showToast('Put the cursor in a card with body text first.');
+    if (!inv.quiet) showToast('Put the cursor in a card with body text first.');
     return null;
   }
   const { hasUnderline, hasEmphasis, hasHighlight } = cardState(focused);
   // Already highlighted → done; don't clobber a finished cut. (Highlight
   // Down shrinks it.)
   if (hasHighlight) {
-    showToast('This card is already highlighted.');
+    if (!inv.quiet) showToast('This card is already highlighted.');
     return null;
   }
-  const flags = pendingCutterFlags();
+  const flags = inv.useFlags === false ? [] : pendingCutterFlags();
   const genre = withGenreHint(api, focused, buildCutterContext(view, focused.cardFrom));
   const opts: CutOptions = {
     // Efficient by default; a read-time cap becomes the secondary
@@ -979,7 +1156,7 @@ export async function cutFocusedCard(
   // Pill + purple tint over the whole card while the model works.
   const activity = new AiActivity(view, { from: focused.cardFrom, to: focused.cardTo });
   activity.start();
-  opts.onStage = (s) => activity.setStage(stageLabel(s, genre.family));
+  opts.onStage = (s) => activity.setStage(stageLabel(s, genre.family) + (inv.stageSuffix ?? ''));
   const llm = makeLlm();
   try {
     // Underlined-but-not-highlighted → Highlight Card (trust the
@@ -991,7 +1168,7 @@ export async function cutFocusedCard(
     // shifted it). Null delta → the card was removed mid-cut.
     const delta = lease.delta();
     if (delta === null) {
-      showToast('The card moved while cutting — cut not applied.');
+      if (!inv.quiet) showToast('The card moved while cutting — cut not applied.');
       return null;
     }
     const placed = shiftFocused(focused, delta);
@@ -1008,7 +1185,7 @@ export async function cutFocusedCard(
     for (const w of result.warnings) console.log(`[cardcutter] ${w}`);
     // Flags are per-cut: consumed by the cut that used them.
     for (const f of flags) removeCutterFlag(view, f);
-    showToast(hasUnderline ? 'Card highlighted — ↶ to undo' : 'Card cut — ↶ to undo');
+    if (!inv.quiet) showToast(hasUnderline ? 'Card highlighted — ↶ to undo' : 'Card cut — ↶ to undo');
     return {
       focused: placed,
       map: cardMapAfter(placed, result.spans),
@@ -1017,6 +1194,9 @@ export async function cutFocusedCard(
     };
   } catch (err) {
     console.error('[cardcutter] cut failed:', err);
+    // Bulk callers get the real error — its LlmError kind drives auth
+    // fail-fast and the failure-streak breaker.
+    if (inv.quiet) throw err;
     showToast(`Card cut failed: ${(err as Error).message}`);
     return null;
   } finally {

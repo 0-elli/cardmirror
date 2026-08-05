@@ -17,7 +17,6 @@ import { aiInFlightText } from './comments-ui.js';
 import { showToast } from './toast.js';
 import {
   cutFocusedCard,
-  focusedCardStatus,
   proposeFocusedOmissions,
   setSectionOmitted,
   previewOmissionSection,
@@ -34,11 +33,18 @@ import {
   jumpToCard,
   cardLabel,
   cardReadStats,
+  cardStatusOf,
+  selectionBulkTargets,
+  bulkCutCards,
+  type BulkTargets,
+  type BulkCutSummary,
   type CutFlag,
   type CutSession,
   type FocusedCard,
   type OmissionSection,
 } from './card-cutter-port.js';
+import { showConfirm } from './confirm-dialog.js';
+import { isAnyOverlayOpen } from './overlay-stack.js';
 
 const READ_TIME_PRESETS = [8, 12, 20, 30];
 
@@ -57,41 +63,60 @@ export function defaultReadTimeSec(): number | null {
   return best;
 }
 
-export async function openCutLaunchSheet(view: EditorView): Promise<void> {
+export async function openCutLaunchSheet(view: EditorView, targetCardId?: string): Promise<void> {
   if (!(await ensureEngine())) {
     showToast('Card-cutter engine not loaded.');
     return;
   }
-  const status = focusedCardStatus(view);
-  if (!status.cuttable) {
-    showToast('Put the cursor in a card with body text first.');
+  // A selection spanning several cards → the bulk flow. (Skipped when a
+  // narrowed target came in — that IS the bulk single-card route.)
+  if (!targetCardId) {
+    const multi = selectionBulkTargets(view);
+    if (multi) {
+      if (multi.actionable.length === 0) {
+        showToast(
+          multi.alreadyCut > 0
+            ? `All ${multi.alreadyCut} cuttable card${multi.alreadyCut === 1 ? '' : 's'} in this selection ${multi.alreadyCut === 1 ? 'is' : 'are'} already cut.`
+            : 'No cuttable cards in this selection.',
+        );
+        return;
+      }
+      if (multi.actionable.length >= 2) {
+        await runBulkCut(view, multi);
+        return;
+      }
+      // Exactly one card actually needs cutting — the ordinary panel,
+      // aimed at THAT card (not whichever card holds the cursor).
+      await openCutLaunchSheet(view, multi.actionable[0]!.cardId);
+      return;
+    }
+  }
+  // The card this panel is FOR — captured now (by id when the bulk
+  // classifier chose it, from the cursor otherwise), so the cut targets
+  // it even if the cursor wanders meanwhile.
+  const target = targetCardId ? resolveCardById(view, targetCardId) : focusedPlainCard(view);
+  if (!target) {
+    showToast(
+      targetCardId
+        ? 'That card is no longer in the document.'
+        : 'Put the cursor in a card with body text first.',
+    );
     return;
   }
+  const status = cardStatusOf(target);
   if (status.hasHighlight) {
     // Already cut. A sub-selection means "add highlight here"; otherwise
     // offer the shorten / tighten / add sheet.
     if (hasCardSubSelection(view)) {
       void addHighlightFocusedCard(view);
     } else {
-      // Capture the card NOW — the sheet outlives this moment and the
-      // cursor can move before the user clicks Refine.
-      const target = focusedPlainCard(view);
-      if (!target) {
-        showToast('Put the cursor in a card with body text first.');
-        return;
-      }
       openHighlightDownSheet(view, target);
     }
     return;
   }
   const highlightOnly = status.hasUnderline; // underlined → highlight only
-  // The card this panel is FOR — captured now, so the cut targets it even
-  // if the cursor wanders (or a stacked panel steals focus) meanwhile.
-  const target = focusedPlainCard(view);
-  if (!target) {
-    showToast('Put the cursor in a card with body text first.');
-    return;
-  }
+  // Hoisted onGo can't see the null-guard narrowing; capture the id.
+  const targetId = target.cardId;
 
   // NON-MODAL panel: the doc stays interactive so the user can select
   // chunks of the card and annotate them (U = play up / green, D =
@@ -267,6 +292,9 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     const intent = intentInput.value.trim();
     close(false);
     const session = await cutFocusedCard(view, {
+      // By identity: the panel outlives its opening moment, and the cut
+      // must land on the boxed card, not wherever the cursor ended up.
+      ...(targetId ? { cardId: targetId } : {}),
       ...(intent ? { intent } : {}),
       ...(readTimeSec ? { readTimeSec } : {}),
     });
@@ -284,6 +312,115 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
       showToast(`Couldn't reach ≤${readTimeSec}s without dropping a warrant.`);
     }
     if (session.focused.cardId) openPostCutReview(view, session.focused.cardId);
+  }
+}
+
+/** One bulk pass may run per pane at a time (panes hold different
+ *  docs; two runs over one doc would fight over leases and Escape). */
+const bulkRunning = new Set<EditorView>();
+
+function bulkSummaryMessage(s: BulkCutSummary): string {
+  const parts: string[] = [];
+  if (s.cut) parts.push(`cut ${s.cut} card${s.cut === 1 ? '' : 's'}`);
+  if (s.finished) parts.push(`finished ${s.finished}`);
+  if (s.skipped) parts.push(`${s.skipped} skipped`);
+  if (s.failed) parts.push(`${s.failed} failed`);
+  if (s.shortfalls) parts.push(`${s.shortfalls} over the length cap`);
+  if (s.halted) parts.push('stopped after repeated failures');
+  if (s.stopped) parts.push('stopped');
+  if (parts.length === 0) return 'Bulk cut: nothing to do.';
+  const line = parts.join(' · ');
+  return `${line.charAt(0).toUpperCase()}${line.slice(1)} — each card is its own undo step.`;
+}
+
+/** Confirm, then run the bulk queue with a floating progress chip.
+ *  Bulk asks nothing per card: default read length from settings, no
+ *  intent, no flags, no per-card review panels — skipped cards and
+ *  missed caps are counted into the summary toast instead. */
+async function runBulkCut(view: EditorView, multi: BulkTargets): Promise<void> {
+  if (bulkRunning.has(view)) {
+    showToast('A bulk cut is already running in this pane.');
+    return;
+  }
+  const n = multi.actionable.length;
+  const toCut = multi.actionable.filter((a) => a.kind === 'cut').length;
+  const toFinish = n - toCut;
+  const breakdown: string[] = [];
+  if (toCut) breakdown.push(`${toCut} to cut`);
+  if (toFinish) breakdown.push(`${toFinish} partially cut to finish`);
+  if (multi.alreadyCut) breakdown.push(`${multi.alreadyCut} already cut (left alone)`);
+  const ok = await showConfirm({
+    title: `Cut ${n} cards with AI?`,
+    message:
+      `Your selection spans ${breakdown.join(', ')}.\n\n` +
+      `Each card is a full AI cut (several model calls) against your API key, run one ` +
+      `at a time with your default settings — no per-card questions. Each card is its ` +
+      `own undo step, and Escape or Stop ends the run after the current card.`,
+    confirmLabel: `Cut ${n} cards`,
+    cancelLabel: 'Cancel',
+  });
+  if (!ok) return;
+
+  bulkRunning.add(view);
+  let stopRequested = false;
+
+  // Floating progress chip: count + Stop. Detail lives in the per-card
+  // pill (stage · card i of n · Esc to stop), which tracks each card.
+  const chip = document.createElement('div');
+  chip.className = 'pmd-cardcutter-panel';
+  const header = document.createElement('div');
+  header.className = 'pmd-route-header';
+  header.textContent = `Cutting ${n} cards`;
+  chip.appendChild(header);
+  const statusLine = document.createElement('div');
+  statusLine.className = 'pmd-cardcutter-stats';
+  statusLine.textContent = `Card 1 of ${n}`;
+  chip.appendChild(statusLine);
+  const buttons = document.createElement('div');
+  buttons.className = 'pmd-text-prompt-buttons';
+  const stopBtn = document.createElement('button');
+  stopBtn.type = 'button';
+  stopBtn.className = 'pmd-route-cancel';
+  stopBtn.textContent = 'Stop';
+  stopBtn.title = 'Esc';
+  const requestStop = (): void => {
+    stopRequested = true;
+    stopBtn.disabled = true;
+    statusLine.textContent = 'Stopping after this card…';
+  };
+  stopBtn.addEventListener('click', requestStop);
+  buttons.appendChild(stopBtn);
+  chip.appendChild(buttons);
+
+  // Escape = Stop, but only when this pane's business: not while a
+  // modal is up, not while typing in an input, and only when the
+  // keystroke lands in this pane or on the chip itself.
+  const inInput = (t: EventTarget | null): boolean =>
+    t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT');
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape' || isAnyOverlayOpen() || inInput(e.target)) return;
+    const t = e.target instanceof Node ? e.target : null;
+    if (t && !view.dom.contains(t) && !chip.contains(t) && t !== document.body) return;
+    e.preventDefault();
+    e.stopPropagation();
+    requestStop();
+  };
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(chip);
+
+  try {
+    const summary = await bulkCutCards(view, multi.actionable, {
+      readTimeSec: defaultReadTimeSec(),
+      shouldStop: () => stopRequested,
+      onProgress: (done, total) => {
+        if (!stopRequested) statusLine.textContent = `Card ${Math.min(done + 1, total)} of ${total}`;
+      },
+    });
+    showToast(bulkSummaryMessage(summary), { durationMs: 6000 });
+  } finally {
+    document.removeEventListener('keydown', onKey, true);
+    chip.remove();
+    bulkRunning.delete(view);
   }
 }
 
