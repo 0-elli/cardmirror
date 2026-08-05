@@ -57,8 +57,8 @@ function mount(doc: PMNode): void {
 }
 
 /** Select the doc range containing `needle`, then release a paint
- *  stroke (mouseup inside the editor) with or without Alt. */
-function stroke(needle: string, alt: boolean): void {
+ *  stroke (mouseup inside the editor), with optional modifiers. */
+function stroke(needle: string, alt: boolean, meta = false): void {
   let from = -1;
   let to = -1;
   view.state.doc.descendants((node, pos) => {
@@ -72,7 +72,7 @@ function stroke(needle: string, alt: boolean): void {
   });
   if (from < 0) throw new Error(`"${needle}" not found`);
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-  view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, altKey: alt }));
+  view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, altKey: alt, metaKey: meta }));
 }
 
 /** Does any text node containing `needle` carry the highlight mark? */
@@ -98,6 +98,16 @@ afterEach(() => {
   settings.set('lastHighlightColor', 'yellow');
 });
 
+/** Pretend to be a Mac (or not) for one test; restore after. */
+function withPlatform(platform: string, run: () => void): void {
+  Object.defineProperty(window.navigator, 'platform', { value: platform, configurable: true });
+  try {
+    run();
+  } finally {
+    delete (window.navigator as { platform?: string }).platform;
+  }
+}
+
 describe('paintbrush Alt strip-pen', () => {
   const hl = schema.marks['highlight']!.create({ color: 'yellow' });
 
@@ -117,6 +127,31 @@ describe('paintbrush Alt strip-pen', () => {
     handle.togglePaintbrush('highlight');
     stroke('untouched', true);
     expect(highlighted('untouched')).toBe(false);
+  });
+
+  it('on macOS the override is ⌘ — ⌥ is ignored, since ⌥-drag moves the window there', () => {
+    withPlatform('MacIntel', () => {
+      mount(cardWith([schema.text('plain words '), schema.text('marked words', [hl])]));
+      handle.togglePaintbrush('highlight');
+
+      // ⌥ must NOT strip on a Mac: the OS claims ⌥-drag, so a stroke
+      // that somehow lands with altKey still paints the armed color.
+      stroke('plain', true);
+      expect(highlighted('plain')).toBe(true);
+
+      // ⌘ is the strip override.
+      stroke('marked', false, true);
+      expect(highlighted('marked')).toBe(false);
+    });
+  });
+
+  it('off macOS, ⌘ does not strip — Alt remains the override', () => {
+    mount(cardWith([schema.text('untouched words')]));
+    handle.togglePaintbrush('highlight');
+    stroke('untouched', false, true); // meta on a non-mac platform
+    // A strip-pen stroke over unmarked text adds nothing (see above),
+    // so paint landing here proves ⌘ was NOT treated as the override.
+    expect(highlighted('untouched')).toBe(true);
   });
 
   it('a "none" pen strips with or without Alt', () => {

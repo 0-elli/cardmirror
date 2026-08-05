@@ -542,7 +542,8 @@ paint, until you pick a color again.
 color button with *nothing* selected to arm it. The cursor changes, and
 every drag-select you make applies that color until you press **Esc** or
 click the button again. While a colored brush is armed, hold **Alt**
-(**Option** on macOS) to temporarily flip it to the **no-color** pen —
+(**⌘ Cmd** on macOS, where an ⌥ drag moves the window) to temporarily
+flip it to the **no-color** pen —
 the cursor's swatch shows the red-slash glyph, and each drag *strips*
 the mark instead of painting. Release the key and your color is back;
 the saved pen color never changes.

@@ -72,7 +72,7 @@ interface ColorControlSetup {
   onMainClick: () => Command;
   /** Command applied per drag-select while paintbrush mode is active. */
   paintbrushApply: () => Command;
-  /** Same, for an Alt/Option stroke — the strip-pen ("no color"). */
+  /** Same, for a strip-key stroke — the strip-pen ("no color"). */
   stripApply: () => Command;
   /** Builds the swatch grid; calls `pick(value)` when a swatch is clicked. */
   buildPicker: (pick: (value: string | null) => void) => HTMLElement;
@@ -80,13 +80,29 @@ interface ColorControlSetup {
   updateIndicator: () => void;
 }
 
+/** Which modifier flips an armed colored pen to the strip-pen for one
+ *  stroke. ⌥-drag moves the whole window on current macOS, so an
+ *  Option-held paint stroke turns into a window drag before the stroke
+ *  can land — the override lives on ⌘ there instead. Alt everywhere
+ *  else. Read per call so tests can stub the platform. */
+function onMac(): boolean {
+  return typeof navigator !== 'undefined' && /mac/i.test(navigator.platform ?? '');
+}
+function stripKeyHeld(e: MouseEvent): boolean {
+  return onMac() ? e.metaKey : e.altKey;
+}
+function isStripKey(e: KeyboardEvent): boolean {
+  return e.key === (onMac() ? 'Meta' : 'Alt');
+}
+
 export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   let activePaintbrush: PaintbrushMode | null = null;
-  // Alt/Option held = temporary strip-pen ("paint no color") while a
-  // colored pen is armed. This flag only keeps the CURSOR truthful —
-  // the actual apply decision reads e.altKey off the mouseup itself,
-  // so a missed keyup can never make the wrong pen fire.
-  let altStripOverride = false;
+  // Strip key (⌘ on macOS, Alt elsewhere) held = temporary strip-pen
+  // ("paint no color") while a colored pen is armed. This flag only
+  // keeps the CURSOR truthful — the actual apply decision reads the
+  // modifier off the mouseup itself, so a missed keyup can never make
+  // the wrong pen fire.
+  let stripKeyOverride = false;
 
   const controls: ColorControlSetup[] = [
     buildHighlightControl(),
@@ -140,11 +156,11 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
       // start a paint drag on, plus a small swatch hanging off the
       // lower-right showing the active color. Refreshed on every
       // settings change (subscriber below) so swapping the color
-      // in mid-session updates the cursor live. While Alt holds the
+      // in mid-session updates the cursor live. While the strip key holds the
       // strip-pen override, the swatch shows the app's "no color"
       // glyph (white with a red slash) instead of the pen color.
       if (editorEl) {
-        const strip = altStripOverride && !penIsNone(activePaintbrush);
+        const strip = stripKeyOverride && !penIsNone(activePaintbrush);
         const color = strip ? null : resolvePaintbrushColor(activePaintbrush);
         editorEl.style.cursor = `url("${paintbrushCursorDataUri(color)}") 6 10, text`;
       }
@@ -192,10 +208,10 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   // the editor so click-mouseup on ribbon buttons doesn't accidentally
   // re-apply the last selection. After applying, collapse the
   // selection to the end of the painted range so the user can see
-  // what they just painted (Word's "lift the brush" UX). Alt/Option
-  // held at release turns a colored pen into the strip-pen for this
-  // stroke ("paint no color"); a pen already set to "none" ignores
-  // Alt — it strips either way.
+  // what they just painted (Word's "lift the brush" UX). The strip
+  // key (⌘ on macOS, Alt elsewhere) held at release turns a colored
+  // pen into the strip-pen for this stroke ("paint no color"); a pen
+  // already set to "none" ignores it — it strips either way.
   document.addEventListener('mouseup', (e) => {
     if (!activePaintbrush) return;
     const view = viewRef.view;
@@ -205,7 +221,7 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
     if (sel.empty) return;
     const setup = controls.find((c) => c.paintbrushMode === activePaintbrush);
     if (!setup) return;
-    const strip = e.altKey && !penIsNone(activePaintbrush);
+    const strip = stripKeyHeld(e) && !penIsNone(activePaintbrush);
     const cmd = strip ? setup.stripApply() : setup.paintbrushApply();
     applyAndCollapseSelection(view, cmd);
   });
@@ -218,26 +234,26 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
     }
   });
 
-  // Track Alt/Option for the strip-pen override cursor. `keydown`
-  // repeats while held — the flag guard keeps the cursor rebuild to
-  // one per press. A window blur clears the override: Cmd-Tabbing
-  // away with Alt down eats the keyup, and returning stuck in strip
-  // mode would paint "no color" with a colored cursor showing.
+  // Track the strip key for the override cursor. `keydown` repeats
+  // while held — the flag guard keeps the cursor rebuild to one per
+  // press. A window blur clears the override: app-switching with the
+  // key down eats the keyup, and returning stuck in strip mode would
+  // paint "no color" with a colored cursor showing.
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Alt' && activePaintbrush && !altStripOverride) {
-      altStripOverride = true;
+    if (isStripKey(e) && activePaintbrush && !stripKeyOverride) {
+      stripKeyOverride = true;
       syncPaintbrushUI();
     }
   });
   document.addEventListener('keyup', (e) => {
-    if (e.key === 'Alt' && altStripOverride) {
-      altStripOverride = false;
+    if (isStripKey(e) && stripKeyOverride) {
+      stripKeyOverride = false;
       if (activePaintbrush) syncPaintbrushUI();
     }
   });
   window.addEventListener('blur', () => {
-    if (altStripOverride) {
-      altStripOverride = false;
+    if (stripKeyOverride) {
+      stripKeyOverride = false;
       if (activePaintbrush) syncPaintbrushUI();
     }
   });
