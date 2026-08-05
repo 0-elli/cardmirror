@@ -19,7 +19,7 @@
  * resolves to null rather than to some other card.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
@@ -66,7 +66,11 @@ import {
   addCutterFlag,
   clearCutterFlags,
   cardReadStats,
+  maybeRecordGuidanceRefinement,
+  setCutterDocIdProvider,
 } from '../../src/editor/card-cutter-port.js';
+import { callLlm } from '../../src/editor/ai/llm.js';
+import { learnStore } from '../../src/editor/learn-store-host.js';
 import { claimRegion } from '../../src/editor/ai/edit-coordinator.js';
 
 const n = schema.nodes;
@@ -414,6 +418,79 @@ describe('card identity', () => {
     } finally {
       settings.set('cardCutterReadTimeSec', prev);
     }
+  });
+
+  describe('guidance auto-update', () => {
+    const DOC = 'doc-guidance-test';
+    const distillReply = (text: string): void => {
+      vi.mocked(callLlm).mockResolvedValue({ text, stopReason: 'end' } as never);
+    };
+    const guidanceTexts = (): string[] =>
+      (learnStore.cutterGuidanceNote(DOC)?.comments ?? []).map((c) => c.text);
+
+    beforeEach(() => {
+      setCutterDocIdProvider(() => DOC);
+      vi.mocked(callLlm).mockReset();
+      for (const note of learnStore.notesForDoc(DOC)) learnStore.removeNote(note.noteId);
+    });
+
+    it('a generalising rule lands as an ai-authored reply, creating the note', async () => {
+      distillReply('RULE: Never highlight author credentials');
+      await maybeRecordGuidanceRefinement('stop highlighting the author quals stuff');
+      const note = learnStore.cutterGuidanceNote(DOC)!;
+      expect(note).toBeTruthy();
+      expect(note.comments).toHaveLength(1);
+      expect(note.comments[0]!.text).toBe('Never highlight author credentials');
+      expect(note.comments[0]!.ai).toBe(true);
+      // The distiller saw the feedback and the (empty) existing guidance.
+      const req = vi.mocked(callLlm).mock.calls[0]![0] as { messages: { content: string }[] };
+      expect(req.messages[0]!.content).toContain('stop highlighting the author quals');
+      expect(req.messages[0]!.content).toContain('(none)');
+    });
+
+    it('NONE writes nothing', async () => {
+      distillReply('NONE');
+      await maybeRecordGuidanceRefinement('bring back the delay warrant in this card');
+      expect(learnStore.cutterGuidanceNote(DOC)).toBeUndefined();
+    });
+
+    it('existing guidance is shown to the distiller and exact twins are never stored', async () => {
+      const noteId = 'note-g1';
+      learnStore.addNote({
+        noteId,
+        docId: DOC,
+        comments: [
+          { author: 'me', text: 'Prefer short punchy reads', at: '2026-08-01T00:00:00Z' },
+        ],
+        anchor: null,
+        createdAt: '2026-08-01T00:00:00Z',
+        kind: 'cutter-guidance',
+      });
+      // Model misjudges and returns a rule identical to an existing line —
+      // the exact-twin belt still blocks it.
+      distillReply('RULE: Prefer short punchy reads');
+      await maybeRecordGuidanceRefinement('reads feel long');
+      expect(guidanceTexts()).toEqual(['Prefer short punchy reads']);
+      const req = vi.mocked(callLlm).mock.calls[0]![0] as { messages: { content: string }[] };
+      expect(req.messages[0]!.content).toContain('- Prefer short punchy reads');
+    });
+
+    it('no doc identity → skips without calling the model', async () => {
+      setCutterDocIdProvider(() => null);
+      distillReply('RULE: should never be used');
+      await maybeRecordGuidanceRefinement('some feedback');
+      expect(vi.mocked(callLlm)).not.toHaveBeenCalled();
+    });
+
+    it('ai-authored first line renders as a bullet, never as the prose root', async () => {
+      distillReply('RULE: Keep statistics out of the read');
+      await maybeRecordGuidanceRefinement('too many numbers');
+      const { buildCutterContext } = await import('../../src/editor/card-cutter-port.js');
+      const doc = n['doc']!.createChecked(null, [card('T', 'body text here')]);
+      const ctx = buildCutterContext(fakeView(doc), cardPos(doc, 0));
+      expect(ctx).toContain('FILE GUIDANCE');
+      expect(ctx).toContain('- Keep statistics out of the read'); // bullet, not root prose
+    });
   });
 
   it('truncates a very long label', () => {

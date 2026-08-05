@@ -607,6 +607,69 @@ export function setCutterDocIdProvider(fn: () => string | null): void {
   cutterDocIdProvider = fn;
 }
 
+const GUIDANCE_DISTILL_SYSTEM = `You maintain a debate file's standing card-cutting guidance. A user just adjusted ONE AI-cut card in the file and typed the feedback below.
+
+Decide whether the feedback expresses a DURABLE, CARD-NEUTRAL preference about how cards in THIS FILE should be cut (selection priorities, emphasis, length, style) — or a one-off correction about that specific card's content.
+
+Reply with exactly one line:
+RULE: <the preference restated as one concise, imperative, card-neutral instruction (max ~140 characters)>
+or
+NONE
+
+Reply NONE when the feedback names specific content of one card (a particular warrant, author, statistic, or sentence), when it is ambiguous, or when the existing guidance below already covers it — restating an existing rule is worse than silence. Most feedback is card-specific; NONE should be your common answer.`;
+
+/** The auto-update half of the guidance note's design: its replies are
+ *  "the cutter's accumulated card-neutral refinements", and this is
+ *  what writes them. Fire-and-forget after a successful refine that
+ *  carried TYPED feedback (U/D flags are inherently card-specific and
+ *  never distilled): a small model call judges whether the feedback
+ *  generalises to the file; if so it lands as an ai-authored reply —
+ *  rendered as a FILE GUIDANCE bullet in every later cut's context,
+ *  individually deletable in the guidance note UI. Skips quietly when
+ *  the doc has no annotation identity yet. Exported for tests. */
+export async function maybeRecordGuidanceRefinement(feedback: string): Promise<void> {
+  try {
+    const fb = feedback.trim();
+    if (!fb) return;
+    const docId = cutterDocIdProvider?.();
+    if (!docId) return;
+    const existing = learnStore.cutterGuidanceNote(docId);
+    const have = (existing?.comments ?? []).map((c) => c.text.trim()).filter(Boolean);
+    const user = `FEEDBACK:\n${fb}\n\nEXISTING GUIDANCE:\n${
+      have.length ? have.map((h) => `- ${h}`).join('\n') : '(none)'
+    }`;
+    const raw = (await makeLlm()(GUIDANCE_DISTILL_SYSTEM, user, resolveAiModel())).trim();
+    const m = raw.match(/^RULE:\s*(.+)$/m);
+    if (!m) return; // NONE, or anything malformed — silence is the default
+    const rule = m[1]!.trim().slice(0, 200);
+    if (!rule) return;
+    // Belt over the model's own dedupe judgment: never store an exact twin.
+    if (have.some((h) => h.toLowerCase() === rule.toLowerCase())) return;
+    let noteId = existing?.noteId;
+    if (!noteId) {
+      noteId = crypto.randomUUID();
+      learnStore.addNote({
+        noteId,
+        docId,
+        comments: [],
+        anchor: null,
+        createdAt: new Date().toISOString(),
+        kind: 'cutter-guidance',
+      });
+    }
+    learnStore.appendNoteComment(noteId, {
+      author: 'Card cutter',
+      text: rule,
+      at: new Date().toISOString(),
+      ai: true,
+    });
+    showToast(`File guidance updated: \u201c${rule}\u201d`);
+  } catch (err) {
+    // Learning is a bonus — never let it surface as a refine failure.
+    console.warn('[cardcutter] guidance distill failed:', err);
+  }
+}
+
 /** Cap per designated-section excerpt so a huge selection can't blow
  *  up the prompt (the engine sees the card body separately anyway). */
 const SECTION_EXCERPT_CHARS = 4000;
@@ -651,15 +714,19 @@ export function buildCutterContext(view: EditorView, cardFrom: number): string {
   if (docId) {
     const guidance = learnStore.cutterGuidanceNote(docId);
     if (guidance && guidance.comments.length > 0) {
-      const [root, ...rest] = guidance.comments;
-      const lines = [root!.text.trim()];
-      for (const r of rest) {
-        const t = r.text.trim();
-        if (t) lines.push(`- ${t}`);
+      // First USER comment is the prose root; every other turn — later
+      // replies, and any ai-authored line even if it happens to be
+      // first (the auto-refinement writer can precede a root the user
+      // never wrote) — is a bullet.
+      const lines: string[] = [];
+      guidance.comments.forEach((c, i) => {
+        const t = c.text.trim();
+        if (!t) return;
+        lines.push(i === 0 && !c.ai ? t : `- ${t}`);
+      });
+      if (lines.length > 0) {
+        parts.push(`FILE GUIDANCE (how this file works):\n${lines.join('\n')}`);
       }
-      parts.push(
-        `FILE GUIDANCE (how this file works):\n${lines.filter(Boolean).join('\n')}`,
-      );
     }
     const sections = learnStore.cutterSectionNotes(docId);
     if (sections.length > 0) {
@@ -1253,6 +1320,11 @@ export async function refineHighlightFocusedCard(
     } else {
       showToast(`Refined to ${result.words}w · ~${sec}s — ↶ to undo`);
     }
+    // The file learns: typed feedback (never the folded U/D directives —
+    // those are card-specific by nature) is distilled in the background
+    // into the guidance note when it generalises. Fire-and-forget so the
+    // review loop's reopen never waits on it.
+    if (feedback) void maybeRecordGuidanceRefinement(feedback);
     return true;
   } catch (err) {
     console.error('[cardcutter] refine failed:', err);
