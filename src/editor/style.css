@@ -13600,6 +13600,38 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
 }
+/* Which card is this panel about? Shown by every cutter panel that can
+   outlive its opening moment or stack with another, so a set of controls
+   is never ambiguous. */
+.pmd-cardcutter-card-id {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: -0.15rem 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--pmd-c-text-secondary);
+}
+.pmd-cardcutter-card-id-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+.pmd-cardcutter-card-id-jump {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--pmd-c-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+.pmd-cardcutter-card-id-jump:hover {
+  filter: brightness(1.15);
+}
 .pmd-cardcutter-flag-hint {
   font-size: 0.8rem;
   color: var(--pmd-c-text-secondary);

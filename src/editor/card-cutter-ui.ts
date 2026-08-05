@@ -28,8 +28,12 @@ import {
   pendingCutterFlags,
   removeCutterFlag,
   clearCutterFlags,
+  focusedPlainCard,
+  jumpToCard,
+  cardLabel,
   type CutFlag,
   type CutSession,
+  type FocusedCard,
   type OmissionSection,
 } from './card-cutter-port.js';
 
@@ -51,7 +55,14 @@ export async function openCutLaunchSheet(view: EditorView): Promise<void> {
     if (hasCardSubSelection(view)) {
       void addHighlightFocusedCard(view);
     } else {
-      openHighlightDownSheet(view);
+      // Capture the card NOW — the sheet outlives this moment and the
+      // cursor can move before the user clicks Refine.
+      const target = focusedPlainCard(view);
+      if (!target) {
+        showToast('Put the cursor in a card with body text first.');
+        return;
+      }
+      openHighlightDownSheet(view, target);
     }
     return;
   }
@@ -271,6 +282,8 @@ function openTrimChecklist(
   title.className = 'pmd-cardcutter-trim-title';
   title.textContent = capSec ? `Couldn't hit ≤${capSec}s — trim more?` : 'Trim the read (optional)';
   head.appendChild(title);
+  // Cutting several cards in a row stacks these panels; name the card.
+  head.appendChild(cardIdentityRow(view, session.focused));
   const total = document.createElement('div');
   total.className = 'pmd-cardcutter-trim-total';
   head.appendChild(total);
@@ -344,7 +357,7 @@ function openTrimChecklist(
 /** Refine the read — a compose-then-run dialog. Drop redundancy,
  *  skeletonize, and a target length are all OPTIONAL, composable
  *  settings; free-text guidance steers them, and can run on its own. */
-function openHighlightDownSheet(view: EditorView): void {
+function openHighlightDownSheet(view: EditorView, target: FocusedCard): void {
   const overlay = document.createElement('div');
   overlay.className = 'pmd-route-overlay';
   const dialog = document.createElement('div');
@@ -354,6 +367,7 @@ function openHighlightDownSheet(view: EditorView): void {
   header.className = 'pmd-route-header';
   header.textContent = 'Refine highlighting';
   dialog.appendChild(header);
+  dialog.appendChild(cardIdentityRow(view, target));
 
   const overlayToken = pushOverlay();
   const close = (): void => {
@@ -474,6 +488,10 @@ function openHighlightDownSheet(view: EditorView): void {
       ...(chosenSec !== null ? { readTimeSec: chosenSec } : {}),
       ...(feedback ? { feedback } : {}),
       ...(allowAdd ? { allowAdd: true } : {}),
+      // Act on the card this sheet was opened for, not wherever the
+      // cursor drifted while it was open (or while a sheet stacked
+      // above it was being answered).
+      ...(target.cardId ? { cardId: target.cardId } : {}),
     });
   });
   buttons.appendChild(go);
@@ -488,6 +506,33 @@ function openHighlightDownSheet(view: EditorView): void {
   // Pull focus off the editor so the doc stops receiving keystrokes.
   dialog.tabIndex = -1;
   dialog.focus();
+}
+
+/** "Card: <tag> — Jump to card". Every panel that can outlive the
+ *  moment it was opened (or stack with another) shows one, so which
+ *  card a set of controls belongs to is never a guess. The jump button
+ *  moves the cursor and scrolls, leaving the panel open. */
+function cardIdentityRow(view: EditorView, target: FocusedCard): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'pmd-cardcutter-card-id';
+  const name = document.createElement('span');
+  name.className = 'pmd-cardcutter-card-id-text';
+  name.textContent = cardLabel(target);
+  name.title = target.card.tag || '';
+  row.appendChild(name);
+  if (target.cardId) {
+    const jump = document.createElement('button');
+    jump.type = 'button';
+    jump.className = 'pmd-cardcutter-card-id-jump';
+    jump.textContent = 'Jump to card';
+    jump.addEventListener('click', () => {
+      if (!jumpToCard(view, target.cardId!)) {
+        showToast('That card is no longer in the document.');
+      }
+    });
+    row.appendChild(jump);
+  }
+  return row;
 }
 
 function label(text: string): HTMLElement {

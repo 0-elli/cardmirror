@@ -280,6 +280,13 @@ function makeLlm(): LlmCaller {
 
 export interface FocusedCard {
   card: PlainCard;
+  /** The card's tag/analytic heading id — a stable UUID stamped on load
+   *  (see schema/ids.ts). Doc POSITIONS shift whenever text above the
+   *  card changes, so any flow that outlives its own invocation (a panel
+   *  the user leaves open, a stacked prompt answered later) must re-find
+   *  its card by THIS, never by the live cursor. Null only for a card
+   *  whose tag somehow carries no id. */
+  cardId: string | null;
   cardFrom: number;
   /** End of the card node (cardFrom + nodeSize) — the AI-working tint
    *  spans [cardFrom, cardTo] so the whole card shows as worked-on. */
@@ -365,6 +372,60 @@ export function focusedPlainCard(view: EditorView): FocusedCard | null {
     }
   }
   if (!cardNode || cardPos < 0) return null;
+  return extractCard(view, cardNode, cardPos);
+}
+
+/** The heading id of a card node's tag / analytic child, or null. */
+function cardIdOf(cardNode: PMNode): string | null {
+  let id: string | null = null;
+  cardNode.forEach((child) => {
+    if (id !== null) return;
+    if (child.type.name === 'tag' || child.type.name === 'analytic') {
+      const v = child.attrs['id'];
+      id = typeof v === 'string' && v ? v : null;
+    }
+  });
+  return id;
+}
+
+/** Re-find a card by its heading id and re-extract it at its CURRENT
+ *  position. The identity-stable counterpart to `focusedPlainCard`:
+ *  used by every flow whose target was chosen earlier (a refine panel
+ *  opened over card A must still act on card A after the user clicks
+ *  into card B). Null if the card is gone from the doc. */
+export function resolveCardById(view: EditorView, cardId: string): FocusedCard | null {
+  let found: FocusedCard | null = null;
+  view.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    const t = node.type.name;
+    if (t !== 'card' && t !== 'analytic_unit') return true;
+    if (cardIdOf(node) === cardId) found = extractCard(view, node, pos);
+    return false; // never descend into a card
+  });
+  return found;
+}
+
+/** Put the cursor in `cardId` and scroll it into view. Returns false if
+ *  the card is no longer in the doc. */
+export function jumpToCard(view: EditorView, cardId: string): boolean {
+  const target = resolveCardById(view, cardId);
+  if (!target) return false;
+  const tr = view.state.tr.setSelection(
+    TextSelection.create(view.state.doc, target.cardFrom + 1),
+  );
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+  return true;
+}
+
+/** A short human label for a card — its tag, else the opening of its
+ *  body. For telling stacked panels apart. */
+export function cardLabel(focused: FocusedCard): string {
+  const raw = focused.card.tag.trim() || focused.card.paras.find((p) => p.trim())?.trim() || 'this card';
+  return raw.length > 70 ? `${raw.slice(0, 67)}…` : raw;
+}
+
+function extractCard(view: EditorView, cardNode: PMNode, cardPos: number): FocusedCard | null {
 
   // Blank delimiter-protected spans from everything sent to the engine so
   // protected spans can't be read aloud. Scan PER child paragraph: scanning
@@ -428,6 +489,7 @@ export function focusedPlainCard(view: EditorView): FocusedCard | null {
       cite: cite.trim(),
       paras,
     },
+    cardId: cardIdOf(cardNode),
     cardFrom: cardPos,
     cardTo: cardPos + cardNode.nodeSize,
     paraStarts,
@@ -1034,6 +1096,12 @@ export interface RefineInvocation {
   feedback?: string;
   /** Permit refine to ADD highlight (within underline), not just remove. */
   allowAdd?: boolean;
+  /** The card this refine is FOR, captured when its panel opened. The
+   *  panel is non-blocking and its prompts can stack, so by the time the
+   *  user answers, the cursor may sit in a different card entirely —
+   *  targeting the cursor would silently refine the wrong one. Omitted
+   *  (older callers) falls back to the focused card. */
+  cardId?: string;
 }
 
 /** Refine (dehighlight) the focused card per the chosen combination of
@@ -1056,9 +1124,14 @@ export async function refineHighlightFocusedCard(
     showToast('Pick a target or a setting, or type some guidance.');
     return;
   }
-  const focused = focusedPlainCard(view);
+  // Identity first, cursor only as fallback — see RefineInvocation.cardId.
+  const focused = inv.cardId ? resolveCardById(view, inv.cardId) : focusedPlainCard(view);
   if (!focused) {
-    showToast('Put the cursor in a card first.');
+    showToast(
+      inv.cardId
+        ? 'That card is no longer in the document — refine cancelled.'
+        : 'Put the cursor in a card first.',
+    );
     return;
   }
   if (!cardState(focused).hasHighlight) {
