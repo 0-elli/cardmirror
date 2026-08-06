@@ -5,6 +5,99 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.29 — 2026-08-05
+
+- **Comments travel with the clipboard** (new
+  `src/editor/comment-clipboard.ts`, wired beside `commentsPlugin` in
+  `index.ts`). The `comment_range` mark always survived copy/paste
+  (its toDOM carries the threadId — hence the orphaned yellow span),
+  but thread content lives in plugin state, not the document. The
+  plugin closes that gap end to end:
+  - **Copy:** a custom `clipboardSerializer` inlines each thread as
+    JSON in a `data-pmd-thread` attribute on the comment span, read
+    live from the copying view's comments state. The OS clipboard is
+    the carrier, so cross-window and cross-machine pastes work; older
+    builds pasting the same HTML simply ignore the attribute.
+  - **Paste:** `transformPastedHTML` lifts the payloads into a
+    short-TTL stash and strips the attribute (it must never become
+    document content); an `appendTransaction` restores any referenced
+    thread the target document lacks through the ordinary add-thread
+    meta, so undo, the collab mirror, and every serialization path see
+    it like a user-created thread.
+  - **Duplicate over share:** pasting where the thread already exists
+    clones it under a fresh id — every comment id in the clone
+    re-minted, reply parent links remapped — matching Word. The pass
+    is gated on the transaction's paste/drop `uiEvent` *and* a
+    stashed payload for that id, so ordinary typing inside a commented
+    range can never re-id the original. Same-document cut + paste
+    still resurrects the parked thread via the comments GC's tombstone
+    path, untouched.
+
+- **Send pill actions row** (`send-pill-ui.ts`, `settings-ui.ts`,
+  `pairing-ids.ts`). A second bottom row in the expanded pill: **Add
+  contact** and **Start session** buttons in click mode; the same
+  geometry becomes two drag zones in drag mode (send to a pasted code
+  as a one-off; recent senders). Details:
+  - Add contact prompts for the code (validated with the new
+    `looksLikePairingCode` — `cmk1.` prefix — since a blind paste has
+    no other sanity check), then for a display name, pre-filled from
+    the recent-senders ledger when the sender self-declared one;
+    cancelling the name prompt aborts the add. New contacts append to
+    the *bottom* of the recipients list. Duplicates and junk codes are
+    refused with a toast.
+  - Start session reuses the Start Collaboration Session flow through
+    a new `collab-hooks.ts` seam and hides when collaboration is
+    unavailable.
+  - The recent-senders list opens as a flyout to the *right* of the
+    pill (the pill panel scroll-clips absolute children, so the flyout
+    is a sibling positioned off the panel's live rect) with sticky
+    reveal — it stays open while the drag crosses the gap and only
+    hides on a genuine other target or pill collapse. Blocked codes
+    are excluded; your own nickname for a known partner wins over
+    their self-declared name.
+  - Settings: **Recent senders** is promoted to a titled row in
+    Settings → Collaboration (blocked-senders styling) with per-row
+    Add… (name prompt) / Block and an "In recipients" badge.
+    Recipients gained a snooze toggle (`PairingPartner.snoozed`,
+    preserved by the settings sanitizer); snoozed partners are
+    filtered from pill rows only — group fan-out and Send to Starred
+    still include them.
+
+- **Atomic multi-selection bundles** (`send-pill-ui.ts`
+  `bundleSendItems`, `inbox-store.ts`, `receive-pill-ui.ts`). A
+  multi-item drag concatenates the captured slices into ONE SendItem
+  (label "First + N more"), falling back to per-item sends when any
+  slice has open ends. The receive row shows a **×N** badge computed
+  from the slice itself — no wire change, so mixed versions agree:
+  `inboxItemCardCount` counts top-level nodes at the *highest outline
+  rank present* (pocket > hat > block > card), so one dragged block
+  with its cards is ×1, two blocks are ×2 regardless of card count,
+  and a slice with no headings counts its nodes. Grabs are atomic by
+  construction: click, drag, and ✕ all act on the single bundled item.
+
+- **Nav depth on arrival** (`inbox-insert.ts` nav hook; `index.ts` /
+  `multi-pane-shell.ts`). Inserting from the Receive pill and
+  sync-arrived headings (session join, catch-up) now run the nav
+  pane's `applyMaxLevelToNewHeadings` — new headings fold to the
+  pane's active depth instead of arriving fully expanded. Sync
+  transactions are detected via `isSyncOrigin` in both the single-pane
+  and multi-pane dispatchers.
+
+- **Cursor overlay: per-peer error containment**
+  (`patches/loro-prosemirror+0.4.3.patch`, both dist builds;
+  regression test `tests/collab/cursor-missing-container.test.ts`).
+  Field storm: "The container does not exist in the doc" on every
+  presence frame. A peer's cursor can reference a Loro container this
+  replica doesn't have — deleted here concurrently, or the presence
+  frame outran the doc frame (presence and doc updates are separate
+  channels with no cross-ordering). The vendored cursor plugin rebuilt
+  all decorations with no per-peer containment, so one unresolvable
+  cursor killed the whole redraw, repeatedly, until the presence store
+  expired the entry (45s). Each peer now resolves inside its own
+  try/catch: the unresolvable peer's cursor is skipped (their next
+  frame or the arriving doc update heals it) and every other peer
+  still renders; the peer stays in the roster.
+
 ## 0.1.0-beta.28 — 2026-08-05
 
 - **Reformat Every Cite in Document (AI)** (new

@@ -1178,9 +1178,29 @@ unlinks it.
 
 **Send:** drag a card — from the document, the dropzone, or the Receive
 pill — onto the **Send** pill. It expands into your recipients and groups;
-drop on a row to send. **Send to Starred** sends the card under the cursor
-(or the current selection) to your starred target without opening the pill —
-it has no default key; assign one in Settings → Keyboard shortcuts.
+drop on a row to send. Dragging a **multi-selection** (from the nav pane)
+sends everything as **one bundle**: the recipient sees a single item and
+takes the whole set at once. **Send to Starred** sends the card under the
+cursor (or the current selection) to your starred target without opening
+the pill — it has no default key; assign one in Settings → Keyboard
+shortcuts.
+
+The pill's bottom row does more than send. **Clicking** the pill opens it
+with two buttons there: **Add contact** (paste a pairing code, name them,
+and they join the bottom of your recipients) and **Start session** (the
+same flow as the Start Collaboration Session command, for the current
+document). While **dragging**, the same two spots become drop zones:
+the left sends the card to a pasted pairing code as a one-off (no contact
+saved), and hovering the right opens a list of people who **recently sent
+you** things — drop on one to send back, no pairing setup needed.
+
+Recipients you rarely send to can be **snoozed** (the crescent button in
+Settings → Collaboration → Recipients): a snoozed contact disappears from
+the pill without being deleted — groups still reach them, and a snoozed
+starred partner still gets Send to Starred. **Recent senders** in the same
+settings tab lists everyone who recently sent you cards or a session
+invite; add them to your recipients (and name them) or block them from
+there.
 
 **Receive:** incoming cards land in the **Receive** pill, which flashes
 and shows a "total · N new" badge. Click it to open the inbox; each
@@ -1188,7 +1208,11 @@ row shows the card's label, who sent it, and when. From a row:
 
 - **Click** inserts the card at the cursor; **Alt-click** appends it at the
   end of the document; or **drag** it in like any dropzone item. Inserting
-  copies — the card stays in the pill until you ✕ it.
+  copies — the card stays in the pill until you ✕ it. A bundled
+  multi-selection send shows a **×N** count and is taken as one piece —
+  click, drag, and ✕ all act on the whole bundle.
+- Inserted cards fold in the nav pane to your current outline depth
+  instead of arriving fully expanded.
 - **Mod-P** inserts the most recently received card at the cursor, and
   **Mod-Alt-P** appends it, without opening the pill (both rebindable).
 
@@ -1397,6 +1421,11 @@ sluggish, hiding it may help.
 - **👍** — the thumbs-up beside the reply box posts a one-click 👍
   reply: a fast "seen it" that needs no typing and travels everywhere
   a normal reply does.
+- **Copied text brings its comments along.** Copy a commented span and
+  paste it — in another document, another window, or the same one —
+  and the comment comes with it. Pasting where the comment already
+  exists duplicates it (Word's behavior), so each pasted copy has its
+  own thread.
 - Click a note's or comment's colored text to jump to its card.
 - **Annotate a picture, too.** Comments, notes, and Ask AI all work on a
   selected image — or on a span of text that includes images, not just

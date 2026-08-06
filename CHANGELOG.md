@@ -5,6 +5,61 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.29 — 2026-08-05
+
+### Added
+
+- **Copied text brings its comments along.** Copying a commented span
+  used to carry only the faint yellow background — the comment itself
+  stayed behind, so pasting into another document left an anchored
+  highlight with nothing in it. Now the comment travels with the text:
+  paste into another document, another window, or another machine's
+  document and the full thread — replies, authors, resolved state —
+  arrives with it. Pasting a copy where the comment already lives
+  duplicates it under its own thread (the same thing Word does), so
+  each pasted copy can be discussed separately.
+
+- **Add contacts and start sessions right from the Send pill.** The
+  Send pill grew an actions row. Click the pill open and you can **Add
+  contact** (paste their pairing code, give them a name, done — no
+  trip to Settings) or **Start session** for the current document.
+  While dragging a card, the same two spots become drop zones: drop on
+  the left to send to a pasted pairing code as a one-off, or hover the
+  right to open your **recent senders** — people who recently sent you
+  cards or invites — and send back to one without any pairing setup.
+
+- **Recent senders is now a full setting.** Settings → Collaboration
+  lists everyone who recently sent you something; from there you can
+  add them to your recipients (with a name of your choosing) or block
+  them, and rows already in your recipients say so.
+
+- **Snooze a recipient.** The crescent button next to a recipient
+  hides them from the Send pill without deleting them — groups they
+  belong to still reach them, and snoozing is independent of starring.
+  Un-snooze any time from the same spot.
+
+- **Multi-selections send as one bundle.** Dragging a nav-pane
+  multi-selection onto the Send pill now ships everything as a single
+  item. The recipient sees one row with a **×N** count — the N counts
+  what you selected (three blocks is ×3 no matter how many cards they
+  contain) — and takes the whole bundle in one click, drag, or
+  dismissal; no grabbing half a set.
+
+- **Received cards respect your outline depth.** Cards taken from the
+  Receive pill — and documents arriving when you join a session — now
+  fold in the nav pane to your current outline depth instead of
+  landing fully expanded.
+
+### Fixed
+
+- **A collaborator's cursor could crash everyone else's cursor
+  overlay.** If a presence update pointed at a spot this machine
+  hadn't received yet (or had deleted), redrawing collaborator cursors
+  failed for *everyone*, and kept failing on every update for the next
+  while. Now only the one unresolvable cursor is skipped — it heals on
+  its owner's next keystroke — and everyone else's cursors keep
+  rendering.
+
 ## 0.1.0-beta.28 — 2026-08-05
 
 ### Added
