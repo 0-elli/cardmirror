@@ -1425,7 +1425,12 @@ sluggish, hiding it may help.
   paste it — in another document, another window, or the same one —
   and the comment comes with it. Pasting where the comment already
   exists duplicates it (Word's behavior), so each pasted copy has its
-  own thread.
+  own thread. The same holds for every other way of copying content
+  (Alt-drag, nav-pane copies, the dropzone): each copy gets its own
+  comment, and a comment's range only ever grows by typing inside it.
+  If commented content arrives where its comment can't follow — a card
+  sent from another machine — the stray highlight is dropped rather
+  than shown empty.
 - Click a note's or comment's colored text to jump to its card.
 - **Annotate a picture, too.** Comments, notes, and Ask AI all work on a
   selected image — or on a span of text that includes images, not just

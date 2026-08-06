@@ -15,6 +15,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { DOMParser as PMDOMParser } from 'prosemirror-model';
 import { schema, newHeadingId } from '../../src/schema/index.js';
 import { commentClipboardPlugin, THREAD_PAYLOAD_ATTR } from '../../src/editor/comment-clipboard.js';
+import { commentGuardPlugin } from '../../src/editor/comment-guard.js';
 import {
   commentsPlugin,
   loadThreads,
@@ -54,7 +55,7 @@ function mkView(doc: PMNode): EditorView {
   const el = document.createElement('div');
   document.body.appendChild(el);
   return new EditorView(el, {
-    state: EditorState.create({ doc, plugins: [commentsPlugin, commentClipboardPlugin()] }),
+    state: EditorState.create({ doc, plugins: [commentsPlugin, commentClipboardPlugin(), commentGuardPlugin()] }),
   });
 }
 
@@ -277,7 +278,7 @@ describe('comments duplicate through the custom paste ladder', () => {
             schema.nodes['card_body']!.create(null, schema.text('dest body')),
           ]),
         ]),
-        plugins: [buildPastePlugin(ctx), commentsPlugin, commentClipboardPlugin()],
+        plugins: [buildPastePlugin(ctx), commentsPlugin, commentClipboardPlugin(), commentGuardPlugin()],
       }),
     });
     view.dispatch(loadThreads(view.state, [thread('R1', 'the note')]));
@@ -353,7 +354,7 @@ describe('comments duplicate through the custom paste ladder', () => {
         doc: schema.nodes['doc']!.createChecked(null, [
           commentedCard('Alpha', 'commented body', 'S1'),
         ]),
-        plugins: [buildPastePlugin(ctx), commentsPlugin, commentClipboardPlugin()],
+        plugins: [buildPastePlugin(ctx), commentsPlugin, commentClipboardPlugin(), commentGuardPlugin()],
       }),
     });
     view.dispatch(loadThreads(view.state, [thread('S1', 'the note')]));

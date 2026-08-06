@@ -33,6 +33,33 @@ in each release, see `CHANGELOG.md`.
     still resurrects the parked thread via the comments GC's tombstone
     path, untouched.
 
+- **Comment integrity guard** (new `src/editor/comment-guard.ts`,
+  wired after the clipboard plugin in `buildEditorPlugins`, so both
+  shells get it). The clipboard plugin can only fix the paths it sits
+  on; every OTHER duplication mechanism (Alt-drag copies, nav-pane
+  option-drag, dropzone re-inserts, self-sends, future paths) copies
+  `comment_range` marks too, and two spans with one threadId render
+  as a single comment bridged across everything between them. The
+  guard enforces the invariant at the one chokepoint all mechanisms
+  share — the transaction:
+  - Triggers only when a step INSERTS comment-marked slice content
+    (mark-only steps — comment creation — never trigger; the O(doc)
+    span scan never runs on ordinary typing).
+  - Diffs each thread's spans against the old state's spans mapped
+    through the transaction (tight bias at insertion boundaries):
+    surviving content is the original and untouchable; disjoint new
+    content with a known thread (live or tombstoned) is re-ided to a
+    fresh duplicate thread, trimmed at the mapped boundary so even an
+    exactly-adjacent copy can't fuse; content whose thread nobody has
+    is stripped (no phantom highlights — this is what makes
+    cross-machine sends safe, since the send pipeline doesn't carry
+    thread content).
+  - Moves (all old spans deleted in the same transaction) keep their
+    id; deletion splits keep their id on both halves; sync-origin and
+    history transactions are skipped entirely (remote content is
+    already-merged fact — each replica guards its own edits before
+    they ship; undo restoring a span is not duplication).
+
 - **Send pill actions row** (`send-pill-ui.ts`, `settings-ui.ts`,
   `pairing-ids.ts`). A second bottom row in the expanded pill: **Add
   contact** and **Start session** buttons in click mode; the same

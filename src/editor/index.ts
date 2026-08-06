@@ -146,6 +146,7 @@ import { highlightColorLabel, shadingColorLabel } from './color-palette.js';
 import { viewportSpellcheckPlugin } from './viewport-spellcheck.js';
 import { commentsPlugin, commentsKey, loadThreads, getCommentsState, gcOrphanThreads, newCommentId, setCommentIdSessionResolver } from './comments-plugin.js';
 import { commentClipboardPlugin } from './comment-clipboard.js';
+import { commentGuardPlugin } from './comment-guard.js';
 import { scheduleIdle, cancelIdle, type IdleHandle } from './idle-scheduler.js';
 import { CommentsColumn, addCommentToSelection, FC_PREFIX, AI_PREFIX, NOTE_PREFIX } from './comments-ui.js';
 import { runAiCreateCite } from './ai/cite-creator.js';
@@ -5168,6 +5169,11 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
     // Copied comments carry their threads through the clipboard
     // (comment-clipboard.ts) — restore on paste, both shells.
     commentClipboardPlugin(),
+    // A comment's range can only grow by typing inside it: any OTHER
+    // mechanism that lands a copy of a commented span (drag copies,
+    // dropzone, sends, future paths) gets a duplicate thread or — if
+    // the thread is unknown here — the mark stripped (comment-guard.ts).
+    commentGuardPlugin(),
     learnHighlightPlugin,
     repairHighlightPlugin,
     aiWorkingPlugin,

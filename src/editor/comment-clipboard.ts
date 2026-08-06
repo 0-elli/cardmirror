@@ -113,9 +113,18 @@ function pruneQueue(): void {
   for (const [id, v] of queuedAdds) if (v.at < cutoff) queuedAdds.delete(id);
 }
 
+/** Is a thread-add staged for this id? The comment guard consults
+ *  this so it never strips or re-ids a span whose thread is arriving
+ *  from the clipboard restore in the same batch. */
+export function hasQueuedThreadAdd(id: string): boolean {
+  pruneQueue();
+  return queuedAdds.has(id);
+}
+
 /** Re-mint EVERY comment id in the clone (exporter id maps are keyed
- *  by comment id globally); remap reply parent links. */
-function cloneUnder(thread: Thread, newId: string): Thread {
+ *  by comment id globally); remap reply parent links. Shared with the
+ *  comment guard, which duplicates threads for non-clipboard copies. */
+export function cloneThreadUnder(thread: Thread, newId: string): Thread {
   const idMap = new Map<string, string>([[thread.id, newId]]);
   for (const c of thread.comments) {
     if (!idMap.has(c.id)) idMap.set(c.id, newCommentId());
@@ -220,7 +229,7 @@ export function commentClipboardPlugin(): Plugin {
             // becomes a DUPLICATE under a fresh id.
             const newId = newCommentId();
             rename.set(id, newId);
-            queueThreadAdd(cloneUnder(stashed.thread, newId));
+            queueThreadAdd(cloneThreadUnder(stashed.thread, newId));
           } else {
             // First landing in this doc: restore under its own id.
             queueThreadAdd(JSON.parse(JSON.stringify(stashed.thread)) as Thread);

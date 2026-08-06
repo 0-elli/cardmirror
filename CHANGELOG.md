@@ -17,7 +17,14 @@ see `DETAILED_CHANGELOG.md`.
   document and the full thread — replies, authors, resolved state —
   arrives with it. Pasting a copy where the comment already lives
   duplicates it under its own thread (the same thing Word does), so
-  each pasted copy can be discussed separately.
+  each pasted copy can be discussed separately. The same rule holds
+  however a copy is made — Alt-drag, nav-pane section copies, cards
+  dragged back out of the dropzone, cards sent to yourself: a comment's
+  range can only ever grow by typing inside it, never by landing a copy
+  next to it. And if commented content arrives somewhere its comment
+  can't follow (a card sent from another machine), the leftover
+  highlight is dropped instead of showing a comment with nothing in
+  it.
 
 - **Add contacts and start sessions right from the Send pill.** The
   Send pill grew an actions row. Click the pill open and you can **Add
