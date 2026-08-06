@@ -66,6 +66,7 @@ import {
   installModalKeys,
   armDialogFocus,
   captureFocusForDialog,
+  promptForText,
 } from './text-prompt.js';
 import { getInstallInfo } from './install-info.js';
 import { launchBenchmarkOverlay } from './benchmark-ui.js';
@@ -2814,6 +2815,32 @@ function buildPairingPartnersEditor(): HTMLElement {
         row.appendChild(b);
       }
 
+      // Snooze: hide from the Send pill without deleting the contact.
+      // Deliberately orthogonal to the star — a snoozed starred partner
+      // stays one keystroke away via the starred quick-send commands
+      // while no longer taking a row in the pill.
+      const snooze = document.createElement('button');
+      snooze.type = 'button';
+      snooze.className = 'pmd-pairing-snooze';
+      snooze.disabled = !partner.code;
+      snooze.setAttribute('aria-pressed', String(partner.snoozed === true));
+      snooze.title = partner.snoozed
+        ? 'Snoozed — hidden from the Send pill. Click to show again.'
+        : 'Snooze: hide from the Send pill (keeps the contact)';
+      snooze.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+      snooze.addEventListener('click', () => {
+        commit(
+          settings
+            .get('pairingPartners')
+            .map((p, i) =>
+              i === idx ? { ...p, ...(p.snoozed ? { snoozed: false } : { snoozed: true }) } : p,
+            ),
+        );
+      });
+      row.appendChild(snooze);
+      if (partner.snoozed) row.classList.add('pmd-pairing-row-snoozed');
+
       row.appendChild(
         makeStarButton(isStarredTarget('partner', partner.code), !partner.code, () =>
           toggleStarredTarget('partner', partner.code),
@@ -3139,9 +3166,13 @@ function buildPairingBlockedEditor(): HTMLElement {
   addRow.appendChild(blockBtn);
   wrap.appendChild(addRow);
 
-  // --- Block a recent sender ---
+  // --- Recent senders: promoted to a full setting-style block (its own
+  //     title + description, same typography as the row labels) — it
+  //     stopped being "the list you block from" the day it grew Add:
+  //     anyone who recently sent you cards OR a session invite can be
+  //     saved as a recipient (and named) right here. ---
   const recentWrap = document.createElement('div');
-  recentWrap.className = 'pmd-pairing-recent';
+  recentWrap.className = 'pmd-pairing-recent pmd-pairing-recent-promoted';
   wrap.appendChild(recentWrap);
 
   function render(): void {
@@ -3197,27 +3228,73 @@ function buildPairingBlockedEditor(): HTMLElement {
       const label = nicknameFor(code) || (r.name || '').trim() || `…${code.slice(-6)}`;
       recents.push({ code: r.code, label });
     }
-    if (recents.length > 0) {
-      const heading = document.createElement('div');
-      heading.className = 'pmd-pairing-recent-heading';
-      heading.textContent = 'Recent senders';
-      recentWrap.appendChild(heading);
-      recents.forEach(({ code, label }) => {
-        const row = document.createElement('div');
-        row.className = 'pmd-pairing-row';
-        const name = document.createElement('span');
-        name.className = 'pmd-pairing-blocked-name';
-        name.textContent = label;
-        row.appendChild(name);
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'pmd-readers-add';
-        btn.textContent = 'Block';
-        btn.addEventListener('click', () => block(code));
-        row.appendChild(btn);
-        recentWrap.appendChild(row);
-      });
+    // Full-styled section header (same classes as a settings-row label,
+    // per the promotion) — shown even when the list is empty so the
+    // feature is discoverable.
+    const heading = document.createElement('span');
+    heading.className = 'pmd-settings-row-head';
+    heading.textContent = 'Recent senders';
+    recentWrap.appendChild(heading);
+    const desc = document.createElement('span');
+    desc.className = 'pmd-settings-row-desc';
+    desc.textContent =
+      'People who recently sent you cards or a session invite. Add one to your ' +
+      'recipients (and name them), or block them. Senders you block never appear here.';
+    recentWrap.appendChild(desc);
+    if (recents.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'pmd-pairing-empty';
+      empty.textContent = 'No recent senders yet.';
+      recentWrap.appendChild(empty);
     }
+    recents.forEach(({ code, label }) => {
+      const row = document.createElement('div');
+      row.className = 'pmd-pairing-row';
+      const name = document.createElement('span');
+      name.className = 'pmd-pairing-blocked-name';
+      name.textContent = label;
+      row.appendChild(name);
+      const norm = normalizePairingCode(code);
+      const already = settings
+        .get('pairingPartners')
+        .some((p) => p.code && normalizePairingCode(p.code) === norm);
+      if (already) {
+        const badge = document.createElement('span');
+        badge.className = 'pmd-pairing-recent-added';
+        badge.textContent = 'In recipients';
+        row.appendChild(badge);
+      } else {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'pmd-readers-add';
+        add.textContent = 'Add…';
+        add.title = 'Add to recipients and name them';
+        add.addEventListener('click', () => {
+          void (async () => {
+            const suggested = /^…/.test(label) ? '' : label;
+            const nameFor = await promptForText({
+              message: 'Name this recipient',
+              detail: 'Shown in the Send pill and on cards you receive from them.',
+              initial: suggested,
+              placeholder: 'Name',
+              okLabel: 'Add',
+            });
+            if (nameFor == null) return;
+            const cur = settings.get('pairingPartners');
+            if (cur.some((p) => p.code && normalizePairingCode(p.code) === norm)) return;
+            settings.set('pairingPartners', [...cur, { code: norm, name: nameFor.trim() }]);
+          })();
+        });
+        row.appendChild(add);
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pmd-readers-add';
+      btn.textContent = 'Block';
+      btn.addEventListener('click', () => block(code));
+      row.appendChild(btn);
+      recentWrap.appendChild(row);
+    });
   }
 
   render();

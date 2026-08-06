@@ -176,6 +176,7 @@ import {
 import { rememberLinkedCopy, clearLinkedCopy } from './clipboard-link-cache.js';
 import { makeTransclusionDivergencePlugin, transclusionDivergenceKey } from './transclusion-divergence-plugin.js';
 import {
+  setCollabSessionStarter,
   tagCollabTransaction,
   collabPluginSourceFor,
   collabPluginsFor,
@@ -1270,6 +1271,13 @@ setCollabInviteJoiner((code) =>
 );
 setCollabInviter((target) => {
   void loadCollabUi().then((m) => m.inviteTargetFlow(collabDeps, target));
+});
+// The Send pill's Start-session button — identical to running the Start
+// Collaboration Session command (same confirm, same share-code copy).
+setCollabSessionStarter(() => {
+  void loadCollabUi().then((m) =>
+    m.startSessionFlow(multiDocActive ? makeMultiPaneSessionDeps() : collabDeps),
+  );
 });
 // Per-doc comment-id allocation: a comment gets a random (collision-safe) id
 // only when the doc it's created in is itself co-edited. Comment creation always

@@ -119,6 +119,19 @@ export function collabInviter(): ((target: CollabInviteTarget) => void) | null {
   return inviter;
 }
 
+/** Start-session seam: the Send pill's click mode triggers the same
+ *  flow as the Start Collaboration Session command on the current doc.
+ *  Null while the collab gate is closed. */
+let sessionStarter: (() => void) | null = null;
+
+export function setCollabSessionStarter(fn: (() => void) | null): void {
+  sessionStarter = fn;
+}
+
+export function collabSessionStarter(): (() => void) | null {
+  return sessionStarter;
+}
+
 /** Live copresence for one open doc's session — connection status + who's here —
  *  read by the multi-pane shell to paint each slot's footer with ITS visible
  *  doc's session state. Provided by the lazily-loaded collab-ui once it's up;

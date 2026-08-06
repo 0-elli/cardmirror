@@ -25,7 +25,10 @@ import { settings, type PairingGroup } from '../settings.js';
 import { showToast } from '../toast.js';
 import { relayClient, sendOutcomeToast, type SendItem } from './relay-client.js';
 import { collabEnabled } from '../collab/collab-gate.js';
-import { collabInviter } from '../collab/collab-hooks.js';
+import { collabInviter, collabSessionStarter } from '../collab/collab-hooks.js';
+import { promptForText } from '../text-prompt.js';
+import { normalizePairingCode, looksLikePairingCode } from './pairing-ids.js';
+import { recentSenders } from './inbox-store.js';
 
 interface SendPillMountOptions {
   parent: HTMLElement;
@@ -58,6 +61,14 @@ function unionRect(
   };
 }
 
+/** Person-plus glyph for the "add contact" action. */
+const ADD_CONTACT_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>';
+
+/** Clock-back glyph for the drag-mode "recent senders" zone. */
+const RECENT_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>';
+
 /** Two-people glyph for the per-contact "invite to collaborate" button. */
 const COLLAB_INVITE_ICON =
   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
@@ -78,6 +89,12 @@ export class SendPillController {
   private onDocPointerDown: ((e: PointerEvent) => void) | null = null;
   /** Row element → resolved target, rebuilt with the partner/group list. */
   private targets = new Map<HTMLElement, SendTarget>();
+  /** The always-rendered bottom actions row (click buttons / drag zones). */
+  private addContactEl: HTMLButtonElement | null = null;
+  private startSessionEl: HTMLButtonElement | null = null;
+  /** Drag-only recent-senders sub-list + its rows (subset of targets). */
+  private recentSection: HTMLDivElement | null = null;
+  private recentRows = new Set<HTMLElement>();
 
   mount(opts: SendPillMountOptions): void {
     this.root = document.createElement('div');
@@ -109,7 +126,7 @@ export class SendPillController {
     // the current doc first when none is active. Only offered while the
     // collab gate is open; otherwise the pill stays drag-only.
     this.bar.addEventListener('click', () => {
-      if (!collabEnabled() || !collabInviter()) return;
+      if (!settings.get('pairingEnabled')) return;
       if (this.inviteMode) this.collapse();
       else this.openInviteMode();
     });
@@ -144,6 +161,34 @@ export class SendPillController {
               };
             }
           }
+          // The actions row doubles as the drag zones (same footprints
+          // as the click buttons). Send-by-code captures the slices at
+          // drop time, THEN prompts — the doc can change while the
+          // prompt is open.
+          if (
+            this.addContactEl &&
+            pointInRect(this.addContactEl.getBoundingClientRect(), clientX, clientY)
+          ) {
+            return {
+              el: this.addContactEl,
+              insertPos: 0,
+              dy: 0,
+              absorb: (items) => {
+                const captured = this.captureSendItems(items);
+                if (captured.length > 0) void this.sendItemsByCode(captured);
+              },
+            };
+          }
+          if (
+            this.startSessionEl &&
+            !this.startSessionEl.classList.contains('pmd-send-action-collab-hidden') &&
+            pointInRect(this.startSessionEl.getBoundingClientRect(), clientX, clientY)
+          ) {
+            // Hovering reveals the recent-senders list (handled in
+            // highlight); dropping ON the zone itself is a no-op — the
+            // drop belongs on one of the revealed rows.
+            return { el: this.startSessionEl, insertPos: 0, dy: 0, absorb: () => {} };
+          }
         }
         // Over the pill but not on a partner/group row (bar, gap, padding):
         // a no-op absorb so releasing here just closes the pill instead of
@@ -157,8 +202,17 @@ export class SendPillController {
         }
         this.expand();
         this.clearRowHighlight();
+        // The recent-senders list shows while the drag hovers its zone
+        // or any of its own rows (so the pointer can travel up into it),
+        // and hides the moment the drag moves elsewhere in the pill.
+        const overRecent =
+          el === this.startSessionEl || (el instanceof HTMLElement && this.recentRows.has(el));
+        this.setRecentVisible(overRecent);
         if (el.classList.contains('pmd-send-target')) {
           el.classList.add('pmd-send-target-hot');
+          this.bar.classList.remove('pmd-send-bar-hot');
+        } else if (el === this.addContactEl || el === this.startSessionEl) {
+          el.classList.add('pmd-send-action-hot');
           this.bar.classList.remove('pmd-send-bar-hot');
         } else {
           this.bar.classList.add('pmd-send-bar-hot');
@@ -185,16 +239,20 @@ export class SendPillController {
 
   /** Cursor + tooltip reflect whether clicking does anything. */
   private applyClickAffordance(): void {
-    const clickable = collabEnabled() && collabInviter() !== null && settings.get('pairingEnabled');
+    const clickable = settings.get('pairingEnabled');
     this.bar.classList.toggle('pmd-send-bar-clickable', clickable);
+    const canInvite = collabEnabled() && collabInviter() !== null;
     this.bar.title = clickable
-      ? 'Drag a card here to send it · Click to invite to a collaboration session'
+      ? canInvite
+        ? 'Drag a card here to send it · Click for contacts and collaboration'
+        : 'Drag a card here to send it · Click to add a contact'
       : 'Drag a card here to send it';
   }
 
   private openInviteMode(): void {
     this.inviteMode = true;
     this.expand();
+    this.applyDragZoneLabels(false);
     // Reveals the per-row collaboration-invite buttons (CSS-gated on this
     // class), so they appear only on a click-open, never mid-drag.
     this.root.classList.add('pmd-send-invite-mode');
@@ -221,24 +279,29 @@ export class SendPillController {
   private renderTargets(): void {
     this.panel.innerHTML = '';
     this.targets.clear();
+    this.recentRows.clear();
 
-    const partners = settings.get('pairingPartners').filter((p) => p.code);
+    // Snoozed recipients stay OUT of the pill (that is what snooze is)
+    // but remain reachable elsewhere: group sends still fan out to
+    // them, and a snoozed starred partner keeps its quick-send
+    // shortcut — snooze is about pill clutter, not reachability.
+    const allPartners = settings.get('pairingPartners').filter((p) => p.code);
+    const partners = allPartners.filter((p) => !p.snoozed);
     const groups = settings
       .get('pairingGroups')
-      .filter((g) => g.memberCodes.some((c) => partners.some((p) => p.code === c)));
+      .filter((g) => g.memberCodes.some((c) => allPartners.some((p) => p.code === c)));
 
     if (partners.length === 0 && groups.length === 0) {
       const hint = document.createElement('div');
       hint.className = 'pmd-send-empty';
       hint.textContent = 'Add a recipient in Settings → Collaboration.';
       this.panel.appendChild(hint);
-      return;
     }
 
     if (groups.length > 0) {
       this.panel.appendChild(this.sectionLabel('Groups'));
       for (const g of groups) {
-        const row = this.groupRow(g, partners);
+        const row = this.groupRow(g, allPartners);
         this.addInviteButton(row);
         this.panel.appendChild(row);
       }
@@ -251,6 +314,139 @@ export class SendPillController {
         this.panel.appendChild(row);
       }
     }
+
+    // Recent-senders sub-list for the drag flow: hidden until the drag
+    // hovers its zone below. Rows are ordinary drop targets, so the
+    // pointer can travel up from the zone into the list and drop.
+    this.recentSection = document.createElement('div');
+    this.recentSection.className = 'pmd-send-recent-section';
+    this.recentSection.hidden = true;
+    const blocked = new Set(
+      settings.get('pairingBlockedCodes').map((c) => normalizePairingCode(c)),
+    );
+    for (const r of recentSenders()) {
+      const code = normalizePairingCode(r.code);
+      if (!code || blocked.has(code)) continue;
+      const known = allPartners.find((p) => normalizePairingCode(p.code) === code);
+      const label = known?.name?.trim() || (r.name || '').trim() || `…${code.slice(-6)}`;
+      const row = this.targetRow(label, [r.code], label);
+      row.classList.add('pmd-send-recent-row');
+      this.recentRows.add(row);
+      this.recentSection.appendChild(row);
+    }
+    this.panel.appendChild(this.recentSection);
+
+    // The actions row — the pill's own bottom row, in BOTH modes: on a
+    // click-open these are buttons (add a contact / start a session);
+    // during a drag the same two footprints are drop zones (send by
+    // code / send to a recent sender), so the two modalities stay
+    // spatially consistent.
+    const actions = document.createElement('div');
+    actions.className = 'pmd-send-actions';
+    this.addContactEl = this.actionButton(
+      ADD_CONTACT_ICON,
+      'Add contact',
+      'Add a contact by pairing code',
+      () => {
+        this.collapse();
+        void this.addContactFlow();
+      },
+    );
+    actions.appendChild(this.addContactEl);
+    const canInvite = collabEnabled() && collabSessionStarter() !== null;
+    this.startSessionEl = this.actionButton(
+      COLLAB_INVITE_ICON,
+      'Start session',
+      'Start a collaboration session on this document',
+      () => {
+        this.collapse();
+        collabSessionStarter()?.();
+      },
+    );
+    this.startSessionEl.classList.toggle('pmd-send-action-collab-hidden', !canInvite);
+    actions.appendChild(this.startSessionEl);
+    this.panel.appendChild(actions);
+  }
+
+  /** One action-row entry: icon + label. Click behavior is live only in
+   *  invite mode (the drag flow reuses the same element as a zone). */
+  private actionButton(
+    iconSvg: string,
+    label: string,
+    title: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pmd-send-action';
+    btn.title = title;
+    const icon = document.createElement('span');
+    icon.className = 'pmd-send-action-icon';
+    icon.innerHTML = iconSvg;
+    btn.appendChild(icon);
+    const text = document.createElement('span');
+    text.textContent = label;
+    btn.appendChild(text);
+    btn.addEventListener('click', (e) => {
+      if (!this.inviteMode) return; // drag mode: the element is a drop zone
+      e.stopPropagation();
+      onClick();
+    });
+    return btn;
+  }
+
+  /** Click-mode Add contact: ask for a pairing code, append to the
+   *  BOTTOM of the saved recipients. The name auto-fills from the
+   *  recent-senders ledger when the code has shared with us before;
+   *  otherwise it can be named in Settings → Collaboration. */
+  private async addContactFlow(): Promise<void> {
+    const raw = await promptForText({
+      message: 'Add a contact',
+      detail: 'Paste the pairing code they shared with you (cmk1.…).',
+      placeholder: 'cmk1.…',
+    });
+    if (raw == null) return;
+    const code = normalizePairingCode(raw);
+    if (!looksLikePairingCode(code)) {
+      showToast('That does not look like a pairing code');
+      return;
+    }
+    const cur = settings.get('pairingPartners');
+    if (cur.some((p) => normalizePairingCode(p.code) === code)) {
+      showToast('Already in your recipients');
+      return;
+    }
+    const known = recentSenders().find((r) => normalizePairingCode(r.code) === code);
+    const name = (known?.name || '').trim();
+    settings.set('pairingPartners', [...cur, { code, name }]);
+    showToast(`Added ${name || `…${code.slice(-6)}`} to recipients`);
+  }
+
+  /** Drag-drop on "send by code": capture the slices FIRST (the doc can
+   *  change while the prompt is open), then ask for the code and send —
+   *  a one-off send, no contact saved. */
+  private async sendItemsByCode(items: SendItem[]): Promise<void> {
+    const raw = await promptForText({
+      message: 'Send by pairing code',
+      detail: 'Paste the pairing code to send this to (cmk1.…). One-off — this does not save a contact.',
+      placeholder: 'cmk1.…',
+    });
+    if (raw == null) return;
+    const code = normalizePairingCode(raw);
+    if (!looksLikePairingCode(code)) {
+      showToast('That does not look like a pairing code');
+      return;
+    }
+    let ok = 0;
+    let fail = 0;
+    let authFail = 0;
+    for (const si of items) {
+      const res = await relayClient.send([code], si);
+      ok += res.ok;
+      fail += res.fail;
+      authFail += res.authFail;
+    }
+    showToast(sendOutcomeToast(`…${code.slice(-6)}`, { ok, fail, authFail }));
   }
 
   /** Append the per-contact "invite to collaborate" button. Hidden by CSS
@@ -317,12 +513,43 @@ export class SendPillController {
   private clearRowHighlight(): void {
     this.bar.classList.remove('pmd-send-bar-hot');
     for (const el of this.targets.keys()) el.classList.remove('pmd-send-target-hot');
+    this.addContactEl?.classList.remove('pmd-send-action-hot');
+    this.startSessionEl?.classList.remove('pmd-send-action-hot');
+  }
+
+  private setRecentVisible(visible: boolean): void {
+    if (this.recentSection) this.recentSection.hidden = !visible;
+  }
+
+  /** In drag mode the two action footprints change meaning: the left
+   *  zone sends by code, the right reveals recent senders. Swap their
+   *  labels/tooltips while a drag is live so the zone says what a drop
+   *  does. */
+  private applyDragZoneLabels(drag: boolean): void {
+    if (this.addContactEl) {
+      (this.addContactEl.lastChild as HTMLElement).textContent = drag ? 'Send by code' : 'Add contact';
+      this.addContactEl.title = drag
+        ? 'Drop here to send by pairing code (one-off)'
+        : 'Add a contact by pairing code';
+    }
+    if (this.startSessionEl) {
+      (this.startSessionEl.lastChild as HTMLElement).textContent = drag
+        ? 'Recent senders'
+        : 'Start session';
+      this.startSessionEl.title = drag
+        ? 'Hover to pick someone who recently sent to you'
+        : 'Start a collaboration session on this document';
+      const icon = this.startSessionEl.firstChild as HTMLElement;
+      icon.innerHTML = drag ? RECENT_ICON : COLLAB_INVITE_ICON;
+    }
   }
 
   private expand(): void {
     if (this.expanded) return;
     this.expanded = true;
     this.root.dataset['open'] = 'true';
+    // Expanded by a drag (not a click): the actions row is in zone mode.
+    if (!this.inviteMode) this.applyDragZoneLabels(true);
   }
 
   private collapse(): void {
@@ -341,18 +568,16 @@ export class SendPillController {
     this.expanded = false;
     this.root.dataset['open'] = 'false';
     this.clearRowHighlight();
+    this.setRecentVisible(false);
+    this.applyDragZoneLabels(false);
   }
 
-  /** Resolve each dragged item to a SendItem and push to the target. */
-  private async sendItems(items: DragItem[], target: SendTarget): Promise<void> {
+  /** Resolve dragged items to wire-ready SendItems NOW (positions go
+   *  stale the moment the drag session ends or the doc changes). */
+  private captureSendItems(items: DragItem[]): SendItem[] {
     const session = dragController.getSession();
-    if (!session) return;
+    if (!session) return [];
     const srcView: EditorView = session.view;
-    if (target.codes.length === 0) {
-      showToast('That group has no recipients yet');
-      return;
-    }
-
     const sendItems: SendItem[] = [];
     for (const item of items) {
       let slice: Slice;
@@ -365,6 +590,16 @@ export class SendPillController {
       const label = item.label || deriveDropzoneLabel(slice, type);
       sendItems.push({ label, type, sliceJson: slice.toJSON() });
     }
+    return sendItems;
+  }
+
+  /** Resolve each dragged item to a SendItem and push to the target. */
+  private async sendItems(items: DragItem[], target: SendTarget): Promise<void> {
+    if (target.codes.length === 0) {
+      showToast('That group has no recipients yet');
+      return;
+    }
+    const sendItems = this.captureSendItems(items);
     if (sendItems.length === 0) return;
 
     let ok = 0;

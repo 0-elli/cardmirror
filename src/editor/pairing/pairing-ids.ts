@@ -31,6 +31,14 @@ export function normalizePairingCode(raw: string): string {
   return raw.trim().replace(/\s+/g, '');
 }
 
+/** Light shape check for blind-entry surfaces (the Send pill's code
+ *  prompts): every real code starts with the `cmk1.` version prefix.
+ *  The settings editors stay permissive (a visible input the user can
+ *  fix); this exists to stop a typo becoming a contact from a modal. */
+export function looksLikePairingCode(normalized: string): boolean {
+  return normalized.startsWith('cmk1.') && normalized.length > 'cmk1.'.length;
+}
+
 /** A purely local id for a group (never leaves this machine). */
 export function generateGroupId(): string {
   return `grp-${randomChars(8).toLowerCase()}`;
