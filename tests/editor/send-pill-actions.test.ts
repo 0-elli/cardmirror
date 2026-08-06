@@ -87,10 +87,11 @@ describe('send pill actions row + snooze', () => {
     expect(back[1]!.snoozed).toBeUndefined();
   });
 
-  it('Add contact appends to the BOTTOM of recipients, auto-named from recent senders', async () => {
+  it('Add contact: code prompt, then a name prompt pre-filled from recent senders', async () => {
     settings.set('pairingPartners', [{ code: 'cmk1.first', name: 'First' }]);
     recentSendersMock.mockReturnValue([{ code: 'cmk1.newperson', name: 'Priya', at: 1 }]);
-    promptForText.mockResolvedValueOnce('cmk1.newperson');
+    promptForText.mockResolvedValueOnce('cmk1.newperson'); // code
+    promptForText.mockResolvedValueOnce('Priya K'); // name (user edited)
     const { root } = mountPill();
     // Open click mode and press the button.
     (root.querySelector('.pmd-send-bar') as HTMLElement).click();
@@ -99,7 +100,20 @@ describe('send pill actions row + snooze', () => {
 
     const partners = settings.get('pairingPartners');
     expect(partners.map((p) => p.code)).toEqual(['cmk1.first', 'cmk1.newperson']);
-    expect(partners[1]!.name).toBe('Priya'); // ledger-known name auto-filled
+    expect(partners[1]!.name).toBe('Priya K');
+    // The name prompt was pre-filled with the ledger's name.
+    const nameCall = promptForText.mock.calls[1]![0] as { initial?: string };
+    expect(nameCall.initial).toBe('Priya');
+  });
+
+  it('Add contact: cancelling the name prompt aborts the whole add', async () => {
+    const { root } = mountPill();
+    (root.querySelector('.pmd-send-bar') as HTMLElement).click();
+    promptForText.mockResolvedValueOnce('cmk1.someone'); // code accepted
+    promptForText.mockResolvedValueOnce(null); // name cancelled
+    (root.querySelector('.pmd-send-action') as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(settings.get('pairingPartners')).toHaveLength(0);
   });
 
   it('Add contact refuses duplicates and junk codes', async () => {

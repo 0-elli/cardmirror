@@ -395,10 +395,10 @@ export class SendPillController {
     return btn;
   }
 
-  /** Click-mode Add contact: ask for a pairing code, append to the
-   *  BOTTOM of the saved recipients. The name auto-fills from the
-   *  recent-senders ledger when the code has shared with us before;
-   *  otherwise it can be named in Settings → Collaboration. */
+  /** Click-mode Add contact: ask for a pairing code, then a name
+   *  (pre-filled from the recent-senders ledger when the code has
+   *  shared with us before), and append to the BOTTOM of the saved
+   *  recipients. */
   private async addContactFlow(): Promise<void> {
     const raw = await promptForText({
       message: 'Add a contact',
@@ -416,8 +416,19 @@ export class SendPillController {
       showToast('Already in your recipients');
       return;
     }
+    // Name them now (same flow as the settings Recent-senders Add…):
+    // pre-filled from the ledger when they've shared with us before.
+    // Cancel aborts the whole add; an emptied field adds them unnamed.
     const known = recentSenders().find((r) => normalizePairingCode(r.code) === code);
-    const name = (known?.name || '').trim();
+    const nameFor = await promptForText({
+      message: 'Name this contact',
+      detail: 'Shown in the Send pill and on cards you receive from them.',
+      initial: (known?.name || '').trim(),
+      placeholder: 'Name',
+      okLabel: 'Add',
+    });
+    if (nameFor == null) return;
+    const name = nameFor.trim();
     settings.set('pairingPartners', [...cur, { code, name }]);
     showToast(`Added ${name || `…${code.slice(-6)}`} to recipients`);
   }
