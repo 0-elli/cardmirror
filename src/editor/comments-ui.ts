@@ -977,10 +977,12 @@ export class CommentsColumn {
       card.appendChild(this.renderThreadPreview(thread));
       return;
     }
+    // No date in the expanded head: the root comment's stacked
+    // timestamp is the same value two lines down.
     card.appendChild(
       this.buildThreadHeader(
         makeCardTypeChip('comment'),
-        root?.date ?? null,
+        null,
         () => this.deleteThread(thread.id),
         resolveCtl,
       ),
@@ -1364,16 +1366,20 @@ export class CommentsColumn {
     badge.className = 'pmd-comment-initials';
     fillBadge(badge, c.author, c.ai ? aiPersonaInitials(c.author) : '');
     header.appendChild(badge);
+    // Stacked identity — see renderComment.
+    const idcol = document.createElement('span');
+    idcol.className = 'pmd-comment-idcol';
     const name = document.createElement('span');
     name.className = 'pmd-comment-author';
     name.textContent = c.author || 'Unknown';
-    header.appendChild(name);
+    idcol.appendChild(name);
     if (c.at) {
       const date = document.createElement('span');
       date.className = 'pmd-comment-date';
       date.textContent = formatDate(c.at);
-      header.appendChild(date);
+      idcol.appendChild(date);
     }
+    header.appendChild(idcol);
     const body = document.createElement('div');
     body.className = 'pmd-comment-body';
     for (const line of c.text.split('\n')) {
@@ -2224,16 +2230,22 @@ export class CommentsColumn {
     badge.className = 'pmd-comment-initials';
     fillBadge(badge, comment.author, comment.initials);
     header.appendChild(badge);
+    // Stacked identity: name over a small muted timestamp, so neither
+    // can wrap raggedly at any panel width (the pre-redesign layout
+    // put them side by side and both wrapped).
+    const idcol = document.createElement('span');
+    idcol.className = 'pmd-comment-idcol';
     const name = document.createElement('span');
     name.className = 'pmd-comment-author';
     name.textContent = isAiComment(comment) ? displayAuthor(comment) : comment.author || 'Unknown';
-    header.appendChild(name);
+    idcol.appendChild(name);
     if (comment.date) {
       const date = document.createElement('span');
       date.className = 'pmd-comment-date';
       date.textContent = formatDate(comment.date);
-      header.appendChild(date);
+      idcol.appendChild(date);
     }
+    header.appendChild(idcol);
 
     const body = document.createElement('div');
     body.className = 'pmd-comment-body';

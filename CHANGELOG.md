@@ -57,6 +57,18 @@ see `DETAILED_CHANGELOG.md`.
   fold in the nav pane to your current outline depth instead of
   landing fully expanded.
 
+### Changed
+
+- **The comments panel got a visual tune-up** (private notes and AI
+  Q&A too — they share the design). Author names and timestamps now
+  stack — name over a small muted time — so nothing wraps raggedly at
+  narrow panel widths, and comment text aligns to one clean left
+  edge. The resolve control is a quiet check like the other icons
+  (blue when resolved) instead of a filled blue circle, edit and
+  delete buttons appear when you hover a comment instead of
+  cluttering every row, and the reply box's send and 👍 are compact
+  matched buttons instead of a full-height blue slab.
+
 ### Fixed
 
 - **A collaborator's cursor could crash everyone else's cursor

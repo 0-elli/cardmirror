@@ -60,6 +60,22 @@ in each release, see `CHANGELOG.md`.
     already-merged fact — each replica guards its own edits before
     they ship; undo restoring a span is not duplication).
 
+- **Comments panel redesign** (`comments-ui.ts`, `style.css`; notes
+  and AI Q&A inherit — same classes). Field complaint: every identity
+  row wrapped differently at panel width, so nothing aligned. Changes:
+  identity rows are now avatar + a stacked `pmd-comment-idcol` (name
+  over nowrap muted timestamp — nothing can wrap raggedly); comment
+  bodies indent 1.8rem to align with the name column; the expanded
+  card head drops its date (it duplicated the root comment's,
+  two lines down — collapsed cards keep theirs, it's their only one);
+  the resolve control is a quiet borderless check (accent glyph when
+  resolved, card still dims) matching the pencil/✕ language instead
+  of a filled accent circle; per-comment edit/delete reveal on
+  hover/focus-within (thread-level controls stay visible); the
+  composer's send key is a compact 1.9rem square pinned to the
+  textarea's bottom edge (was stretched to its full height) and the
+  👍 is a matching ghost square.
+
 - **Send pill actions row** (`send-pill-ui.ts`, `settings-ui.ts`,
   `pairing-ids.ts`). A second bottom row in the expanded pill: **Add
   contact** and **Start session** buttons in click mode; the same

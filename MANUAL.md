@@ -1412,7 +1412,7 @@ sluggish, hiding it may help.
   comments (a root message plus replies) but stay on your machine.
 - **Edit in place** — every comment, reply, and note has a pencil button;
   Enter saves, Esc cancels.
-- **Resolve** — the round check on a comment's header marks the thread
+- **Resolve** — the check on a comment's header marks the thread
   handled: the card dims, and the state travels with the file (it's
   Word's own resolve, so threads you resolve here show resolved in
   Word and vice versa). Click again to reopen. It works on collapsed

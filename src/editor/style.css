@@ -6178,35 +6178,33 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
    check ("Resolve"), resolved = white check in a filled accent circle
    ("Reopen"). A resolved thread dims — still readable, visibly
    "handled". */
+/* Quiet icon button, same language as the pencil and ✕ beside it —
+   no circle, no fill. Resolved state = the glyph holds the accent
+   color (plus the whole card dims via -thread-resolved below). */
 .pmd-comment-resolve {
   background: transparent;
-  border: 1.5px solid var(--pmd-c-text-muted);
-  border-radius: 50%;
+  border: none;
   cursor: pointer;
   color: var(--pmd-c-text-muted);
-  width: 1.15rem;
-  height: 1.15rem;
-  padding: 0.1rem;
+  padding: 0 0.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  line-height: 1;
 }
 .pmd-comment-resolve:hover {
   color: var(--pmd-c-accent);
-  border-color: var(--pmd-c-accent);
 }
 .pmd-comment-resolve[aria-pressed='true'] {
-  color: var(--pmd-c-text-on-accent);
-  background: var(--pmd-c-accent);
-  border-color: var(--pmd-c-accent);
+  color: var(--pmd-c-accent);
 }
 .pmd-comment-resolve[aria-pressed='true']:hover {
-  opacity: 0.8;
+  opacity: 0.75;
 }
 .pmd-comment-resolve svg {
-  width: 100%;
-  height: 100%;
+  width: 0.95rem;
+  height: 0.95rem;
 }
 .pmd-comment-thread-resolved {
   opacity: 0.62;
@@ -6214,17 +6212,26 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 .pmd-comment-thread-resolved.pmd-comment-thread-active {
   opacity: 0.85;
 }
-/* One-click 👍 reply — sits after the reply box's send button. */
+/* One-click 👍 reply — a ghost square matching the send key's box so
+   the composer row reads as one aligned control group. */
 .pmd-comment-thumb {
-  border: none;
-  background: none;
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pmd-c-border);
+  border-radius: 4px;
+  background: transparent;
   cursor: pointer;
-  font-size: 0.95rem;
-  padding: 0 0.3rem;
-  opacity: 0.7;
+  font-size: 0.9rem;
+  padding: 0;
+  opacity: 0.8;
 }
 .pmd-comment-thumb:hover {
   opacity: 1;
+  border-color: var(--pmd-c-accent);
 }
 
 .pmd-comment-date,
@@ -8369,9 +8376,21 @@ body.pmd-comments-resize-active {
 
 .pmd-comment-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.4rem;
   font-size: 0.8rem;
+}
+/* Name stacked over a small muted timestamp: nothing in the identity
+   row can wrap raggedly at any panel width. */
+.pmd-comment-idcol {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.25;
+}
+.pmd-comment-idcol .pmd-comment-date {
+  white-space: nowrap;
 }
 .pmd-comment-initials {
   display: inline-flex;
@@ -8395,7 +8414,7 @@ body.pmd-comments-resize-active {
 }
 .pmd-comment-author {
   font-weight: 600;
-  flex: 1 1 auto;
+  overflow-wrap: anywhere;
 }
 
 .pmd-comment-delete {
@@ -8457,18 +8476,41 @@ body.pmd-comments-resize-active {
   color: var(--pmd-c-text-on-accent);
 }
 
+.pmd-comment-body {
+  /* Align with the name column (avatar 1.4rem + 0.4rem gap). */
+  margin-left: 1.8rem;
+}
 .pmd-comment-body p {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
-/* Input row: the textarea grows; the send key sits at its right edge and
-   matches the textarea's height (align-items: stretch). */
+/* Per-comment actions reveal on hover (or keyboard focus) of that
+   comment — the resting panel reads as text. The THREAD-level ✕ and
+   resolve in the card head stay always-visible. */
+.pmd-comment-root .pmd-comment-edit,
+.pmd-comment-reply .pmd-comment-edit,
+.pmd-comment-reply .pmd-comment-delete {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pmd-comment-root:hover .pmd-comment-edit,
+.pmd-comment-reply:hover .pmd-comment-edit,
+.pmd-comment-reply:hover .pmd-comment-delete,
+.pmd-comment-root:focus-within .pmd-comment-edit,
+.pmd-comment-reply:focus-within .pmd-comment-edit,
+.pmd-comment-reply:focus-within .pmd-comment-delete {
+  opacity: 1;
+}
+
+/* Input row: the textarea grows; the send key and 👍 are compact
+   matched squares pinned to its bottom edge (a stretched accent slab
+   dominated the card at textarea height). */
 .pmd-comment-reply-form {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 0.3rem;
 }
 .pmd-comment-reply-input {
@@ -8486,10 +8528,12 @@ body.pmd-comments-resize-active {
 
 .pmd-comment-reply-submit {
   flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 0.55rem;
+  padding: 0;
   border-radius: 4px;
   border: 1px solid var(--pmd-c-accent);
   background: var(--pmd-c-accent);
@@ -8499,6 +8543,10 @@ body.pmd-comments-resize-active {
 }
 .pmd-comment-reply-submit:hover {
   background: var(--pmd-c-accent-hover);
+}
+.pmd-comment-reply-submit .pmd-icon {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 /* Annotation markers (comment + flashcard/AI/note) = a translucent
