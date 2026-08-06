@@ -144,6 +144,16 @@ export class SendPillController {
         let inside = pointInRect(barRect, clientX, clientY);
         if (!inside && this.expanded) {
           inside = pointInRect(unionRect(barRect, this.panel.getBoundingClientRect()), clientX, clientY);
+          // The recent-senders flyout hangs OFF the panel's right edge —
+          // count it (and the gap to it) while it's shown, or crossing
+          // into it would leave the surface and collapse the pill.
+          if (!inside && this.recentSection && !this.recentSection.hidden) {
+            inside = pointInRect(
+              unionRect(this.panel.getBoundingClientRect(), this.recentSection.getBoundingClientRect()),
+              clientX,
+              clientY,
+            );
+          }
         }
         if (!inside) return null;
         // Hovering the pill: it becomes the winning surface (dy 0). Once
@@ -202,12 +212,21 @@ export class SendPillController {
         }
         this.expand();
         this.clearRowHighlight();
-        // The recent-senders list shows while the drag hovers its zone
-        // or any of its own rows (so the pointer can travel up into it),
-        // and hides the moment the drag moves elsewhere in the pill.
+        // Sticky reveal: hovering the zone (or any flyout row) shows the
+        // flyout; crossing bar/gap space on the way over KEEPS it shown
+        // (the old hide-on-anything-else made it vanish the moment the
+        // pointer left the button). It hides only when the drag settles
+        // on a real other target — a partner/group row or the other
+        // action zone — or when the pill collapses.
         const overRecent =
           el === this.startSessionEl || (el instanceof HTMLElement && this.recentRows.has(el));
-        this.setRecentVisible(overRecent);
+        if (overRecent) this.setRecentVisible(true);
+        else if (
+          (el.classList.contains('pmd-send-target') && !this.recentRows.has(el)) ||
+          el === this.addContactEl
+        ) {
+          this.setRecentVisible(false);
+        }
         if (el.classList.contains('pmd-send-target')) {
           el.classList.add('pmd-send-target-hot');
           this.bar.classList.remove('pmd-send-bar-hot');
@@ -315,11 +334,14 @@ export class SendPillController {
       }
     }
 
-    // Recent-senders sub-list for the drag flow: hidden until the drag
-    // hovers its zone below. Rows are ordinary drop targets, so the
-    // pointer can travel up from the zone into the list and drop.
+    // Recent-senders FLYOUT for the drag flow: a separate area to the
+    // RIGHT of the panel, revealed while the drag hovers its zone.
+    // Lives on the root, not in the panel — the panel is a scroll
+    // container and would clip an absolutely-positioned child. Rows
+    // are ordinary drop targets.
+    this.recentSection?.remove();
     this.recentSection = document.createElement('div');
-    this.recentSection.className = 'pmd-send-recent-section';
+    this.recentSection.className = 'pmd-send-recent-flyout';
     this.recentSection.hidden = true;
     const blocked = new Set(
       settings.get('pairingBlockedCodes').map((c) => normalizePairingCode(c)),
@@ -334,7 +356,7 @@ export class SendPillController {
       this.recentRows.add(row);
       this.recentSection.appendChild(row);
     }
-    this.panel.appendChild(this.recentSection);
+    this.root.appendChild(this.recentSection);
 
     // The actions row — the pill's own bottom row, in BOTH modes: on a
     // click-open these are buttons (add a contact / start a session);
@@ -529,7 +551,17 @@ export class SendPillController {
   }
 
   private setRecentVisible(visible: boolean): void {
-    if (this.recentSection) this.recentSection.hidden = !visible;
+    if (!this.recentSection) return;
+    if (visible && this.recentSection.hidden) {
+      // Anchor to the panel's live geometry: right edge + a small gap,
+      // bottoms aligned. Root-relative coordinates (both are absolutely
+      // positioned children of the root).
+      const rootRect = this.root.getBoundingClientRect();
+      const panelRect = this.panel.getBoundingClientRect();
+      this.recentSection.style.left = `${panelRect.right - rootRect.left + 6}px`;
+      this.recentSection.style.bottom = `${rootRect.bottom - panelRect.bottom}px`;
+    }
+    this.recentSection.hidden = !visible;
   }
 
   /** In drag mode the two action footprints change meaning: the left

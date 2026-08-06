@@ -14093,11 +14093,21 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
 .pmd-send-action-collab-hidden {
   display: none;
 }
-/* Drag-revealed recent-senders sub-list (rows are ordinary targets). */
-.pmd-send-recent-section {
-  border-top: 1px dashed var(--pmd-c-border-soft);
-  margin-top: 4px;
-  padding-top: 2px;
+/* Drag-revealed recent-senders FLYOUT: a separate area to the right of
+   the panel (left/bottom set in JS from the panel's live rect). Same
+   chrome as the panel so the pair reads as one surface. */
+.pmd-send-recent-flyout {
+  position: absolute;
+  min-width: 160px;
+  max-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0.25rem;
+  background: var(--pmd-c-bg);
+  border: 1px solid var(--pmd-c-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px var(--pmd-c-shadow-fade);
+  z-index: 1;
 }
 .pmd-send-recent-row {
   font-style: italic;

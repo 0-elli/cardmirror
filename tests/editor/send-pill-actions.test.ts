@@ -143,7 +143,7 @@ describe('send pill actions row + snooze', () => {
       { code: 'cmk1.stranger', name: 'Sam', at: 1 },
     ]);
     const { root } = mountPill();
-    const section = root.querySelector('.pmd-send-recent-section')!;
+    const section = root.querySelector('.pmd-send-recent-flyout')!;
     expect(section).toBeTruthy();
     expect((section as HTMLElement).hidden).toBe(true); // drag-only reveal
     const labels = [...section.querySelectorAll('.pmd-send-target-name')].map(
