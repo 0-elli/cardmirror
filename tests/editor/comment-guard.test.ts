@@ -24,6 +24,7 @@ import {
   loadThreads,
   getCommentsState,
   addThreadsMeta,
+  newCommentId,
   type Thread,
 } from '../../src/editor/comments-plugin.js';
 
@@ -225,6 +226,41 @@ describe('comment guard', () => {
     const spans = spansOf(view);
     expect(spans).toHaveLength(2);
     expect(spans.every((s) => s.id === 'G6')).toBe(true); // remote content untouched
+    view.destroy();
+  });
+
+  it('a clone id never collides with a thread that arrived via addThreadsMeta', () => {
+    // Field report 2026-08-05: paste a commented card into a FRESH doc
+    // (thread restored via addThreadsMeta — which did not seed the id
+    // counter), then option-drag-copy the card. newCommentId() minted
+    // the restored thread's exact id, so the "duplicate" landed ON the
+    // original thread and the spans fused. First-time-only: the failed
+    // attempt advanced the counter. Pin the collision deterministically
+    // by restoring a thread whose id is exactly the counter's next.
+    const collideId = String(Number(newCommentId()) + 1);
+    const view = mkView(plainCard('Dest', 'x'));
+    // Clipboard-restore shape: marked content + its thread in ONE
+    // transaction (the guard leaves same-batch adds alone).
+    view.dispatch(
+      view.state.tr
+        .insert(view.state.doc.content.size, commentedCard('Pasted', 'commented body', collideId))
+        .setMeta(commentsKey, addThreadsMeta([thread(collideId, 'restored')])),
+    );
+    expect(getCommentsState(view.state).threads.has(collideId)).toBe(true);
+    // Now the option-drag copy — the FIRST duplicate after the restore.
+    view.dispatch(
+      view.state.tr.insert(
+        view.state.doc.content.size,
+        commentedCard('Copy', 'commented body', collideId),
+      ),
+    );
+    const state = getCommentsState(view.state);
+    expect(state.threads.size).toBe(2); // clone got a FRESH id, no fuse
+    const spans = spansOf(view);
+    expect(spans).toHaveLength(2);
+    expect(spans[0]!.id).toBe(collideId);
+    expect(spans[1]!.id).not.toBe(collideId);
+    expect(state.threads.get(spans[1]!.id)!.comments[0]!.text).toBe('restored');
     view.destroy();
   });
 

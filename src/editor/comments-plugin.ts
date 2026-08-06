@@ -111,6 +111,15 @@ export const commentsPlugin: Plugin<CommentsState> = new Plugin<CommentsState>({
           return { ...prev, threads, tombstone };
         }
         case 'add': {
+          // Seed the id counter from EVERY thread that enters state,
+          // not just loads: a clipboard restore lands its thread via
+          // this path, and without the bump the NEXT newCommentId()
+          // could re-mint that exact id — the first duplicate made
+          // after a cross-doc paste into a fresh doc collided with
+          // the restored thread and fused with it (field report
+          // 2026-08-05; first-time-only because the failed attempt
+          // advanced the counter).
+          seedCommentIdCounter([meta.thread]);
           const threads = new Map(prev.threads);
           threads.set(meta.thread.id, meta.thread);
           return { ...prev, threads };
@@ -118,7 +127,9 @@ export const commentsPlugin: Plugin<CommentsState> = new Plugin<CommentsState>({
         case 'add-batch': {
           // Multiple threads in one transaction (a paste restoring the
           // comments of a copied section) — the meta slot holds one
-          // payload per tr, so batching lives in the payload.
+          // payload per tr, so batching lives in the payload. Counter
+          // seeding: see 'add'.
+          seedCommentIdCounter(meta.threads);
           const threads = new Map(prev.threads);
           for (const t of meta.threads) threads.set(t.id, t);
           return { ...prev, threads };
