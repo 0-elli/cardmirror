@@ -118,6 +118,7 @@ import {
   sendViewToDropzone,
 } from './index.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
+import { isSyncOrigin } from './sync-origin.js';
 import { editorNodeViews } from './image-resize-nodeview.js';
 import { coordinatorBlocks, flashLockedLeases } from './ai/edit-coordinator.js';
 import {
@@ -3120,6 +3121,11 @@ function buildDocRecord(
         // debounced rebuilds so caret-tracking doesn't flicker to the next
         // heading while typing just above it (parity with single-doc, index.ts).
         record.navPanel.remapPositions(tx.mapping);
+        // Sync-arrived headings fold to this pane's current depth (the
+        // joined-session initial fill used to land fully expanded) —
+        // parity with single-doc, and it must run before the debounced
+        // rebuild refreshes lastSeenIds.
+        if (isSyncOrigin(tx)) record.navPanel.applyMaxLevelToNewHeadings();
         if (record.heavyUpdateTimer !== null) {
           cancelIdle(record.heavyUpdateTimer);
         }

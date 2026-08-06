@@ -55,7 +55,8 @@ import { openSelectSpeechDocModal } from './select-speech-doc-ui.js';
 import { dropzoneStore, deriveDropzoneLabel } from './dropzone-store.js';
 import { DropzoneController } from './dropzone-ui.js';
 import { mountPairingPills, initPairingWiring } from './pairing/pairing-wiring.js';
-import { insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
+import {
+  setReceivedInsertNavHook, insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
 import { installExternalConsent } from './external-consent-ui.js';
 import { installExternalInsertHost } from './external-insert-host.js';
@@ -226,6 +227,7 @@ import { buildImageNodeFromBlob, insertImageNode } from './image-insert.js';
 import { imageContextMenuPlugin } from './image-context-menu-plugin.js';
 import { editorNodeViews } from './image-resize-nodeview.js';
 import { setViewDocPath, getViewDocPath } from './transclusion-doc-path.js';
+import { isSyncOrigin } from './sync-origin.js';
 import { listSessionRecords, deleteSessionRecord } from './collab/collab-store.js';
 import { setRePickOpener, setOpenSourceOpener } from './transclusion-actions.js';
 import { isTransclusionNode, fragmentHasZone } from './transclusion.js';
@@ -863,6 +865,8 @@ let findReplaceBar: FindReplaceBar | null = null;
  *  swaps this for a focused-pane resolver via
  *  `setActiveNavPanelResolver`. */
 let activeNavPanelResolver: () => NavigationPanel | null = () => navPanel;
+// Receive-pill inserts fold their new headings to the active pane's depth.
+setReceivedInsertNavHook(() => activeNavPanelResolver()?.applyMaxLevelToNewHeadings());
 export function setActiveNavPanelResolver(
   resolver: () => NavigationPanel | null,
 ): void {
@@ -5421,6 +5425,12 @@ function mountView(doc: PMNode, threads: Thread[] = []): void {
         // otherwise the highlight flickers to the next heading while you type
         // on the line just above it.
         navPanel.remapPositions(tx.mapping);
+        // Headings that ARRIVE via sync (a joined session's initial fill,
+        // a partner's additions mid-session) fold to the pane's current
+        // depth instead of landing fully expanded. Synchronous, before
+        // the debounced rebuild — the hook diffs against lastSeenIds,
+        // which any intervening render would refresh (see its JSDoc).
+        if (isSyncOrigin(tx)) navPanel.applyMaxLevelToNewHeadings();
       }
       // Selection-only changes refresh just the word-count readout so
       // the read time reflects the selection immediately instead of

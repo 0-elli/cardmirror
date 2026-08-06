@@ -49,8 +49,21 @@ export function insertReceivedItem(view: EditorView, item: InboxItem, atEnd: boo
     .insert(insertPos, rewritten.content)
     .setMeta(READ_MODE_DRAG_META, true);
   view.dispatch(tr.scrollIntoView());
+  // The inserted card's headings fold to the pane's current nav depth
+  // instead of landing fully expanded — same treatment as a drag-drop
+  // (onSliceLanded). Synchronous, before any debounced nav rebuild
+  // refreshes the panel's seen-ids baseline.
+  onReceivedInsert?.();
   view.focus();
   return true;
+}
+
+/** Nav hook: the shells register "fold new headings to the active
+ *  pane's depth" here (single-doc and multi-pane resolve different
+ *  panels, so the seam lives with them, not with this module). */
+let onReceivedInsert: (() => void) | null = null;
+export function setReceivedInsertNavHook(fn: (() => void) | null): void {
+  onReceivedInsert = fn;
 }
 
 /** Grab the most-recently-received card (the last item in the inbox) and insert
