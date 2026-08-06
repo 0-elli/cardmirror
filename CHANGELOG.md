@@ -73,6 +73,13 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Fixed
 
+- **Typing at the bottom of the document no longer hides behind the
+  Send/Receive pills.** When the pills are showing and you type near
+  the end of the doc, the editor now scrolls automatically so the
+  line you're on stays clear of them — no more typing blind or
+  scrolling by hand to see your own text. (The pills stay where they
+  are.)
+
 - **A collaborator's cursor could crash everyone else's cursor
   overlay.** If a presence update pointed at a spot this machine
   hadn't received yet (or had deleted), redrawing collaborator cursors

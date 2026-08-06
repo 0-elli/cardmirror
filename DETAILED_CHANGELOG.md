@@ -83,6 +83,21 @@ in each release, see `CHANGELOG.md`.
   The inline-edit form's line-count row guess is gone — pre-filled
   text measures itself on the next frame.
 
+- **Pill-tray scroll clearance** (new
+  `src/editor/pill-scroll-clearance.ts`, in `buildEditorPlugins` —
+  both shells). The tray already triggered a bottom padding runway on
+  the doc (`pmd-pill-tray-active` rules), so the last lines COULD
+  scroll clear — but PM's type-time auto-scroll didn't know the
+  bottom strip was obscured and parked the caret behind the pills.
+  The plugin supplies PM's `scrollThreshold`/`scrollMargin` props
+  with a live bottom value: prop-object side getters re-measure the
+  tray's rect on every scroll pass (no listeners; correct across pill
+  show/hide, panel expansion, editor zoom), clamped so a transient
+  expanded panel can't yank the viewport, and zeroed for multi-pane
+  panes other than the tray-anchored one. Clicking to park the caret
+  at the bottom deliberately does not scroll — PM only applies these
+  props on its scrollIntoView passes (typing, arrow keys, paste).
+
 - **Send pill actions row** (`send-pill-ui.ts`, `settings-ui.ts`,
   `pairing-ids.ts`). A second bottom row in the expanded pill: **Add
   contact** and **Start session** buttons in click mode; the same
