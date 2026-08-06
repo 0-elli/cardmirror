@@ -1202,6 +1202,9 @@ settings tab lists everyone who recently sent you cards or a session
 invite; add them to your recipients (and name them) or block them from
 there.
 
+When the pills are showing, typing near the bottom of the document
+automatically scrolls so the line you're on stays visible above them.
+
 **Receive:** incoming cards land in the **Receive** pill, which flashes
 and shows a "total · N new" badge. Click it to open the inbox; each
 row shows the card's label, who sent it, and when. From a row:
@@ -1410,8 +1413,9 @@ sluggish, hiding it may help.
 - **Add a note (Mod-Shift-N)** for a private annotation. Notes are green
   throughout — chip, in-text highlight, card accent — and behave like
   comments (a root message plus replies) but stay on your machine.
-- **Edit in place** — every comment, reply, and note has a pencil button;
-  Enter saves, Esc cancels.
+- **Edit in place** — hover a comment, reply, or note and a pencil
+  appears; Enter saves, Esc cancels. Typing boxes start one line tall
+  and grow as you type (up to a few lines, then they scroll).
 - **Resolve** — the check on a comment's header marks the thread
   handled: the card dims, and the state travels with the file (it's
   Word's own resolve, so threads you resolve here show resolved in
