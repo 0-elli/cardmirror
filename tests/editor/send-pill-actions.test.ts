@@ -188,13 +188,35 @@ describe('multi-selection bundling', () => {
     expect(out).toHaveLength(2);
   });
 
-  it('the receiver derives the ×N badge from the slice itself', async () => {
+  it('the ×N badge counts the HIGHEST outline level, not top-level nodes', async () => {
     const { inboxItemCardCount } = await import('../../src/editor/pairing/inbox-store.js');
+    const block = (label: string) =>
+      schema.nodes['block']!.create({ id: newHeadingId() }, schema.text(label));
+    const sliceOf = (...nodes: ReturnType<typeof cardNode>[]) =>
+      new Slice(Fragment.from(nodes), 0, 0);
+
+    // One dragged block = [block, card, card] → ×1, not ×3.
+    const oneBlock = sliceOf(block('B1'), cardNode('A', 'x'), cardNode('B', 'y'));
+    expect(inboxItemCardCount({ sliceJson: oneBlock.toJSON() })).toBe(1);
+
+    // Two blocks (each with cards) → ×2: the blocks count, their cards don't.
+    const twoBlocks = sliceOf(
+      block('B1'),
+      cardNode('A', 'x'),
+      block('B2'),
+      cardNode('B', 'y'),
+      cardNode('C', 'z'),
+    );
+    expect(inboxItemCardCount({ sliceJson: twoBlocks.toJSON() })).toBe(2);
+
+    // Three bare cards → ×3.
     const bundled = bundleSendItems([
       { slice: closed(cardNode('A', 'x')), type: 'card', label: 'A' },
       { slice: closed(cardNode('B', 'y')), type: 'card', label: 'B' },
+      { slice: closed(cardNode('C', 'z')), type: 'card', label: 'C' },
     ])[0]!;
-    expect(inboxItemCardCount({ sliceJson: bundled.sliceJson })).toBe(2);
+    expect(inboxItemCardCount({ sliceJson: bundled.sliceJson })).toBe(3);
+
     const single = bundleSendItems([
       { slice: closed(cardNode('A', 'x')), type: 'card', label: 'A' },
     ])[0]!;

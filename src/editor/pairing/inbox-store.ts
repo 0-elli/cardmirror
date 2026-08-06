@@ -271,13 +271,34 @@ function recordRecentSenders(items: InboxItem[]): void {
 
 /** People who've recently sent you a card or a collaboration invite,
  *  newest-first — survives item removal and app restarts. */
-/** How many top-level nodes an inbox item's slice carries — a bundled
- *  multi-selection send shows this as a ×N badge. Derived from the raw
- *  JSON (no schema parse): the slice's content array IS the top-level
- *  node list. 1 for ordinary items and anything malformed. */
+/** Outline rank per node type — smaller = higher in the hierarchy.
+ *  Mirrors the doc's flat sibling structure: a dragged block ships as
+ *  [block, card, card…], all top-level in the slice. */
+const HEADING_RANK: Record<string, number> = {
+  pocket: 1,
+  hat: 2,
+  block: 3,
+  card: 4,
+  analytic_unit: 4,
+};
+
+/** How many THINGS an inbox item carries, for the ×N badge: the count
+ *  of top-level nodes at the HIGHEST outline level present. A single
+ *  block arrives as [block, card, card…] — that is ×1 block, not ×3;
+ *  two blocks count 2 (their cards don't); three hats count the hats,
+ *  not their blocks. A slice with no heading nodes at all (loose
+ *  paragraphs bundled together) counts its nodes directly. Derived
+ *  from the raw JSON — no schema parse, no wire field, so any sender
+ *  version yields the right badge. */
 export function inboxItemCardCount(item: Pick<InboxItem, 'sliceJson'>): number {
   const content = (item.sliceJson as { content?: unknown } | null)?.content;
-  return Array.isArray(content) && content.length > 1 ? content.length : 1;
+  if (!Array.isArray(content) || content.length < 2) return 1;
+  const ranks = content.map(
+    (n) => HEADING_RANK[String((n as { type?: unknown } | null)?.type ?? '')] ?? 99,
+  );
+  const top = Math.min(...ranks);
+  if (top === 99) return content.length; // no headings: plain nodes count
+  return ranks.filter((r) => r === top).length;
 }
 
 export function recentSenders(): RecentSender[] {
