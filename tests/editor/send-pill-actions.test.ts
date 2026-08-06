@@ -10,12 +10,15 @@ vi.mock('../../src/editor/text-prompt.js', () => ({
   promptForText: (o: unknown) => promptForText(o as never),
 }));
 const recentSendersMock = vi.fn((): { code: string; name: string; at: number }[] => []);
-vi.mock('../../src/editor/pairing/inbox-store.js', () => ({
+vi.mock('../../src/editor/pairing/inbox-store.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   recentSenders: () => recentSendersMock(),
 }));
 vi.mock('../../src/editor/toast.js', () => ({ showToast: vi.fn() }));
 
-import { SendPillController } from '../../src/editor/pairing/send-pill-ui.js';
+import { SendPillController, bundleSendItems } from '../../src/editor/pairing/send-pill-ui.js';
+import { Slice, Fragment } from 'prosemirror-model';
+import { schema, newHeadingId } from '../../src/schema/index.js';
 import { settings } from '../../src/editor/settings.js';
 import { setCollabSessionStarter } from '../../src/editor/collab/collab-hooks.js';
 import { showToast } from '../../src/editor/toast.js';
@@ -152,5 +155,50 @@ describe('send pill actions row + snooze', () => {
     expect(labels).toContain('Ana'); // your nickname wins over self-declared
     expect(labels).toContain('Sam');
     expect(labels.join(' ')).not.toContain('Bad');
+  });
+});
+
+describe('multi-selection bundling', () => {
+  const cardNode = (tag: string, body: string) =>
+    schema.nodes['card']!.createChecked(null, [
+      schema.nodes['tag']!.create({ id: newHeadingId() }, schema.text(tag)),
+      schema.nodes['card_body']!.create(null, schema.text(body)),
+    ]);
+  const closed = (n: ReturnType<typeof cardNode>) => new Slice(Fragment.from(n), 0, 0);
+
+  it('several closed card slices ship as ONE atomic item', () => {
+    const out = bundleSendItems([
+      { slice: closed(cardNode('Alpha', 'a body')), type: 'card', label: 'Alpha' },
+      { slice: closed(cardNode('Beta', 'b body')), type: 'card', label: 'Beta' },
+      { slice: closed(cardNode('Gamma', 'c body')), type: 'card', label: 'Gamma' },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.label).toBe('Alpha + 2 more');
+    expect(out[0]!.type).toBe('card');
+    const json = out[0]!.sliceJson as { content: unknown[] };
+    expect(json.content).toHaveLength(3); // all three cards, in order
+  });
+
+  it('an open text fragment falls back to per-item sends', () => {
+    const open = new Slice(Fragment.from(schema.text('loose text')), 1, 1);
+    const out = bundleSendItems([
+      { slice: closed(cardNode('Alpha', 'a')), type: 'card', label: 'Alpha' },
+      { slice: open, type: 'text', label: 'loose' },
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('the receiver derives the ×N badge from the slice itself', async () => {
+    const { inboxItemCardCount } = await import('../../src/editor/pairing/inbox-store.js');
+    const bundled = bundleSendItems([
+      { slice: closed(cardNode('A', 'x')), type: 'card', label: 'A' },
+      { slice: closed(cardNode('B', 'y')), type: 'card', label: 'B' },
+    ])[0]!;
+    expect(inboxItemCardCount({ sliceJson: bundled.sliceJson })).toBe(2);
+    const single = bundleSendItems([
+      { slice: closed(cardNode('A', 'x')), type: 'card', label: 'A' },
+    ])[0]!;
+    expect(inboxItemCardCount({ sliceJson: single.sliceJson })).toBe(1);
+    expect(inboxItemCardCount({ sliceJson: null })).toBe(1); // malformed → plain
   });
 });

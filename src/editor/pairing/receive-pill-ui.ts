@@ -18,7 +18,8 @@ import { schema } from '../../schema/index.js';
 import { setIcon } from '../icons';
 import { typeBadge, dropzoneDragLevel } from '../dropzone-ui.js';
 import { settings } from '../settings.js';
-import { inboxStore, type InboxItem } from './inbox-store.js';
+import {
+  inboxItemCardCount, inboxStore, type InboxItem } from './inbox-store.js';
 import { insertReceivedItem, RECEIVE_NEEDS_DOC_MESSAGE } from './inbox-insert.js';
 import { showToast } from '../toast.js';
 import { parseRoomInvite } from './room-invite.js';
@@ -255,6 +256,19 @@ export class ReceivePillController {
     badge.className = `pmd-dropzone-row-type pmd-dropzone-row-type-${kind}`;
     badge.textContent = typeLabel;
     row.appendChild(badge);
+
+    // Bundled multi-selection send → ×N count beside the type chip.
+    // Everything about the row stays atomic: click, drag-out, and ✕
+    // all act on the whole bundle (partial grabs are deliberately not
+    // a thing — the sender chose what travels together).
+    const cardCount = inboxItemCardCount(item);
+    if (cardCount > 1) {
+      const count = document.createElement('span');
+      count.className = 'pmd-receive-row-count';
+      count.textContent = `×${cardCount}`;
+      count.title = `${cardCount} cards — inserted together`;
+      row.appendChild(count);
+    }
 
     const main = document.createElement('span');
     main.className = 'pmd-receive-row-main';

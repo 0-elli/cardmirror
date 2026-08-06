@@ -271,6 +271,15 @@ function recordRecentSenders(items: InboxItem[]): void {
 
 /** People who've recently sent you a card or a collaboration invite,
  *  newest-first — survives item removal and app restarts. */
+/** How many top-level nodes an inbox item's slice carries — a bundled
+ *  multi-selection send shows this as a ×N badge. Derived from the raw
+ *  JSON (no schema parse): the slice's content array IS the top-level
+ *  node list. 1 for ordinary items and anything malformed. */
+export function inboxItemCardCount(item: Pick<InboxItem, 'sliceJson'>): number {
+  const content = (item.sliceJson as { content?: unknown } | null)?.content;
+  return Array.isArray(content) && content.length > 1 ? content.length : 1;
+}
+
 export function recentSenders(): RecentSender[] {
   return readRecentSenders();
 }
