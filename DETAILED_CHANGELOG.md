@@ -74,7 +74,14 @@ in each release, see `CHANGELOG.md`.
   hover/focus-within (thread-level controls stay visible); the
   composer's send key is a compact 1.9rem square pinned to the
   textarea's bottom edge (was stretched to its full height) and the
-  👍 is a matching ghost square.
+  👍 is a matching ghost square. All four composer textareas (reply,
+  AI question, note, inline edit) auto-grow via a shared `autoGrow`:
+  rows=1 at spawn (matching the 1.9rem buttons when empty), height
+  tracks scrollHeight per input, CSS max-height (~6 lines) caps it
+  and hands off to the internal scrollbar; manual `resize: vertical`
+  removed (the drag handle fought the auto-height every keystroke).
+  The inline-edit form's line-count row guess is gone — pre-filled
+  text measures itself on the next frame.
 
 - **Send pill actions row** (`send-pill-ui.ts`, `settings-ui.ts`,
   `pairing-ids.ts`). A second bottom row in the expanded pill: **Add
