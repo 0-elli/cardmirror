@@ -67,7 +67,9 @@ see `DETAILED_CHANGELOG.md`.
   (blue when resolved) instead of a filled blue circle, edit and
   delete buttons appear when you hover a comment instead of
   cluttering every row, and the reply box's send and 👍 are compact
-  matched buttons instead of a full-height blue slab.
+  matched buttons instead of a full-height blue slab. The reply box
+  itself now spawns one line tall — matching its buttons — and grows
+  as you type, up to about six lines before it scrolls.
 
 ### Fixed
 

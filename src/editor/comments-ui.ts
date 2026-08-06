@@ -1405,8 +1405,9 @@ export class CommentsColumn {
     form.className = 'pmd-comment-reply-form';
     const ta = document.createElement('textarea');
     ta.className = 'pmd-comment-reply-input';
-    ta.rows = 2;
+    ta.rows = 1;
     ta.placeholder = placeholder;
+    this.autoGrow(ta);
     if (this.activeReplyThreadId === itemId) ta.value = this.activeReplyText;
     ta.addEventListener('focus', () => {
       this.activeReplyThreadId = itemId;
@@ -1806,8 +1807,9 @@ export class CommentsColumn {
     form.className = 'pmd-comment-reply-form';
     const ta = document.createElement('textarea');
     ta.className = 'pmd-comment-reply-input';
-    ta.rows = 2;
+    ta.rows = 1;
     ta.placeholder = placeholder;
+    this.autoGrow(ta);
     if (this.activeReplyThreadId === itemId) ta.value = this.activeReplyText;
     ta.addEventListener('focus', () => {
       this.activeReplyThreadId = itemId;
@@ -2079,6 +2081,23 @@ export class CommentsColumn {
     return form;
   }
 
+  /** Make a composer textarea auto-grow with its content: spawns one
+   *  line tall (so the send/👍 squares match its empty height), grows
+   *  to fit as the user types, and caps at the CSS max-height (~6
+   *  lines), where the internal scrollbar takes over. Manual resize
+   *  is off — the drag handle fought the auto-height on every input.
+   *  Runs once immediately for restored / pre-filled text. */
+  private autoGrow(ta: HTMLTextAreaElement): void {
+    const grow = (): void => {
+      ta.style.height = 'auto';
+      ta.style.height = `${ta.scrollHeight + 2}px`; // +2: borders (border-box)
+    };
+    ta.addEventListener('input', grow);
+    // The element isn't in the DOM yet at build time — scrollHeight
+    // reads 0 there — so measure on the next frame.
+    requestAnimationFrame(grow);
+  }
+
   private buildInputForm(
     thread: Thread,
     placeholder: string,
@@ -2090,8 +2109,9 @@ export class CommentsColumn {
 
     const ta = document.createElement('textarea');
     ta.className = 'pmd-comment-reply-input';
-    ta.rows = 2;
+    ta.rows = 1;
     ta.placeholder = placeholder;
+    this.autoGrow(ta);
     if (this.activeReplyThreadId === thread.id) ta.value = this.activeReplyText;
     ta.addEventListener('focus', () => {
       this.activeReplyThreadId = thread.id;
@@ -2172,8 +2192,9 @@ export class CommentsColumn {
     form.addEventListener('click', (e) => e.stopPropagation());
     const ta = document.createElement('textarea');
     ta.className = 'pmd-comment-reply-input pmd-comment-edit-input';
-    ta.rows = Math.min(8, Math.max(2, currentText.split('\n').length));
+    ta.rows = 1;
     ta.value = currentText;
+    this.autoGrow(ta);
     form.appendChild(ta);
     const actions = document.createElement('div');
     actions.className = 'pmd-comment-edit-actions';

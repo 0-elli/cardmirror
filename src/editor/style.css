@@ -8515,15 +8515,22 @@ body.pmd-comments-resize-active {
 }
 .pmd-comment-reply-input {
   flex: 1 1 auto;
-  resize: vertical;
+  /* Auto-grows with content (comments-ui autoGrow) from one line up
+     to the cap below, then scrolls internally. No manual resize —
+     the drag handle fought the auto-height on every keystroke. */
+  resize: none;
+  overflow-y: auto;
+  box-sizing: border-box;
   padding: 0.35rem 0.45rem;
   font-family: inherit;
   font-size: 0.85rem;
+  line-height: 1.35;
   border: 1px solid var(--pmd-c-border);
   border-radius: 4px;
   background: var(--pmd-c-bg);
   color: var(--pmd-c-text);
-  min-height: 2.2em;
+  min-height: 1.9rem;
+  max-height: 9.5em;
 }
 
 .pmd-comment-reply-submit {
