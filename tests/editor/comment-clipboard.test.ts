@@ -21,6 +21,7 @@ import {
   getCommentsState,
   type Thread,
 } from '../../src/editor/comments-plugin.js';
+import { buildPastePlugin, type PastePluginCtx } from '../../src/editor/paste-plugin.js';
 
 function commentedCard(tag: string, body: string, threadId: string): PMNode {
   return schema.nodes['card']!.createChecked(null, [
@@ -229,5 +230,111 @@ describe('comments travel with copied text', () => {
     expect(state.threads.get('M2')?.comments[0]?.text).toBe('note two');
     source.destroy();
     target.destroy();
+  });
+});
+
+// ---- The REAL paste path (regression, field report 2026-08-05) ------
+//
+// The app's handlePaste has a custom insertion ladder (card-fit /
+// split-container / body-then-structural / smart-paste) whose
+// branches dispatch their own transactions. Those dispatches
+// originally lacked the `uiEvent: 'paste'` meta PM's default path
+// sets, so a same-doc paste of commented body text card-fitted
+// WITHOUT triggering the duplicate pass: the pasted span kept the
+// original threadId and the comment UI bridged the two ranges into
+// one long span. The ladder now stamps the meta; this walks the
+// card-fit branch end to end.
+describe('comments duplicate through the custom paste ladder', () => {
+  const ctx: PastePluginCtx = {
+    condenseOnPaste: () => false,
+    paragraphIntegrity: () => false,
+    usePilcrows: () => false,
+    headingMode: () => 'respect',
+    smartPasteConversion: () => false,
+  };
+
+  function fakePasteEvent(flavors: Record<string, string>): ClipboardEvent {
+    return {
+      clipboardData: {
+        getData: (type: string) => flavors[type] ?? '',
+        files: { length: 0 },
+      },
+      preventDefault: () => {},
+    } as unknown as ClipboardEvent;
+  }
+
+  it('same-doc card-fit paste duplicates the comment instead of extending it', () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const view = new EditorView(el, {
+      state: EditorState.create({
+        doc: schema.nodes['doc']!.createChecked(null, [
+          commentedCard('Alpha', 'commented body', 'R1'),
+          schema.nodes['card']!.createChecked(null, [
+            schema.nodes['tag']!.create({ id: newHeadingId() }, schema.text('Dest')),
+            schema.nodes['card_body']!.create(null, schema.text('dest body')),
+          ]),
+        ]),
+        plugins: [buildPastePlugin(ctx), commentsPlugin, commentClipboardPlugin()],
+      }),
+    });
+    view.dispatch(loadThreads(view.state, [thread('R1', 'the note')]));
+
+    // Clipboard HTML as the copy path writes it: the comment span
+    // carries its thread payload. TWO paragraphs, so handlePaste's
+    // card-fit branch (not PM's default path) takes the paste.
+    const payload = JSON.stringify(thread('R1', 'the note')).replace(/"/g, '&quot;');
+    const html =
+      `<p><span class="pmd-comment-range" data-comment-id="R1" ` +
+      `${THREAD_PAYLOAD_ATTR}="${payload}">carried text</span></p><p>plain trailer</p>`;
+
+    // Caret inside the SECOND card's body.
+    let destPos = -1;
+    view.state.doc.descendants((n, p) => {
+      if (n.isText && n.text === 'dest body') destPos = p;
+      return destPos < 0;
+    });
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, destPos + 4)),
+    );
+
+    // The genuine pipeline: transformPastedHTML → parse → transformPasted
+    // → handlePaste. The ladder must take it (returns true) — if this
+    // ever starts returning false the test is exercising nothing.
+    let transformed = html;
+    view.someProp('transformPastedHTML', (f) => {
+      transformed = f(transformed, view);
+    });
+    const dom = new DOMParser().parseFromString(transformed, 'text/html');
+    let slice = PMDOMParser.fromSchema(schema).parseSlice(dom.body);
+    view.someProp('transformPasted', (f) => {
+      slice = f(slice, view, false);
+    });
+    const handled = view.someProp('handlePaste', (f) =>
+      f(view, fakePasteEvent({ 'text/html': transformed }), slice),
+    );
+    expect(handled).toBe(true);
+
+    // Duplicated, not extended: two threads, and the pasted span
+    // carries the fresh id while the original keeps R1.
+    const state = getCommentsState(view.state);
+    expect(state.threads.size).toBe(2);
+    const dupe = [...state.threads.values()].find((t) => t.id !== 'R1')!;
+    expect(dupe.comments[0]!.text).toBe('the note');
+    const spans: { id: string; text: string }[] = [];
+    view.state.doc.descendants((n) => {
+      if (n.isText) {
+        for (const m of n.marks) {
+          if (m.type.name === 'comment_range') {
+            spans.push({ id: String(m.attrs['threadId']), text: n.text ?? '' });
+          }
+        }
+      }
+      return true;
+    });
+    expect(spans).toHaveLength(2);
+    expect(spans.find((x) => x.text === 'commented body')!.id).toBe('R1');
+    expect(spans.find((x) => x.text === 'carried text')!.id).toBe(dupe.id);
+    view.destroy();
   });
 });

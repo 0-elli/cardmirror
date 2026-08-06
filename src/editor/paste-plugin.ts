@@ -434,6 +434,12 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
         // use the transclude command (it mints a fresh link).
         return flattenZonesInSlice(out);
       },
+      // Every custom insertion path below stamps `uiEvent: 'paste'` on
+      // its transaction, matching what PM's default paste path does.
+      // Downstream plugins key real-paste-only behavior off that meta
+      // (comment-clipboard's duplicate-on-paste pass), and a paste that
+      // happens to card-fit or split must look like any other paste to
+      // them.
       handlePaste(view, event, slice) {
         // Clipboard image paste — screenshots, copy-image from a
         // browser, etc. Take precedence over text / HTML branches
@@ -481,7 +487,7 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
           let tr = tryPasteAsCardBodies(view.state, plainSlice);
           if (!tr) tr = view.state.tr.replaceSelection(plainSlice);
           tr.setStoredMarks([]);
-          view.dispatch(tr.scrollIntoView());
+          view.dispatch(tr.scrollIntoView().setMeta('uiEvent', 'paste'));
           if (ctx.condenseOnPaste()) condensePastedRange(view, pasteFrom, ctx);
           return true;
         }
@@ -516,7 +522,7 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
               tryPasteSplitContainer(view.state, convSlice) ??
               tryPasteBodyThenStructural(view.state, convSlice);
             if (!tr) tr = view.state.tr.replaceSelection(convSlice);
-            view.dispatch(tr.scrollIntoView());
+            view.dispatch(tr.scrollIntoView().setMeta('uiEvent', 'paste'));
             return true;
           }
         }
@@ -532,7 +538,7 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
         const cardBodyTr = tryPasteCardContent(view.state, slice);
         if (cardBodyTr) {
           event.preventDefault();
-          view.dispatch(cardBodyTr.scrollIntoView());
+          view.dispatch(cardBodyTr.scrollIntoView().setMeta('uiEvent', 'paste'));
           return true;
         }
 
@@ -556,7 +562,7 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
         }
         if (splitTr) {
           event.preventDefault();
-          view.dispatch(splitTr.scrollIntoView());
+          view.dispatch(splitTr.scrollIntoView().setMeta('uiEvent', 'paste'));
           return true;
         }
 
@@ -570,7 +576,7 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
         if (!mixedTr) mixedTr = tryPasteBodyThenStructural(view.state, slice);
         if (mixedTr) {
           event.preventDefault();
-          view.dispatch(mixedTr.scrollIntoView());
+          view.dispatch(mixedTr.scrollIntoView().setMeta('uiEvent', 'paste'));
           return true;
         }
 
