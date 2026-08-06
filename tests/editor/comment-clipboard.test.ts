@@ -72,17 +72,19 @@ function copySelectionHtml(view: EditorView): string {
 }
 
 /** Feed `html` through the paste pipeline into `view`: the
- *  transformPastedHTML hook, then a paste-shaped insertion of the
- *  parsed content at the selection. */
+ *  transformPastedHTML hook, the transformPasted slice hook (where the
+ *  duplicate-vs-restore rewrite happens), then a paste-shaped
+ *  insertion of the transformed slice at the selection. */
 function pasteHtml(view: EditorView, html: string): void {
   let transformed = html;
   view.someProp('transformPastedHTML', (f) => {
     transformed = f(transformed, view);
   });
   const dom = new DOMParser().parseFromString(transformed, 'text/html');
-  const slice = PMDOMParser.fromSchema(schema).parseSlice(dom.body);
-  // Real pastes carry the uiEvent meta — the duplicate-vs-restore logic
-  // gates on it so ordinary typing can never re-id a comment.
+  let slice = PMDOMParser.fromSchema(schema).parseSlice(dom.body);
+  view.someProp('transformPasted', (f) => {
+    slice = f(slice, view, false);
+  });
   view.dispatch(view.state.tr.replaceSelection(slice).setMeta('uiEvent', 'paste'));
 }
 
@@ -334,6 +336,76 @@ describe('comments duplicate through the custom paste ladder', () => {
     });
     expect(spans).toHaveLength(2);
     expect(spans.find((x) => x.text === 'commented body')!.id).toBe('R1');
+    expect(spans.find((x) => x.text === 'carried text')!.id).toBe(dupe.id);
+    view.destroy();
+  });
+
+  it('pasting into the SAME card never re-ids the original span (field bug #2)', () => {
+    // The card-fit path can rebuild the whole card_body as ONE replace
+    // step, so any doc-side "rename what the paste touched" walk sees
+    // the pre-existing span inside the pasted range and re-ids it too
+    // — the original thread orphans, gets GC'd, and both spans render
+    // as one long comment. The slice-level rewrite can't do that.
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const view = new EditorView(el, {
+      state: EditorState.create({
+        doc: schema.nodes['doc']!.createChecked(null, [
+          commentedCard('Alpha', 'commented body', 'S1'),
+        ]),
+        plugins: [buildPastePlugin(ctx), commentsPlugin, commentClipboardPlugin()],
+      }),
+    });
+    view.dispatch(loadThreads(view.state, [thread('S1', 'the note')]));
+
+    const payload = JSON.stringify(thread('S1', 'the note')).replace(/"/g, '&quot;');
+    const html =
+      `<p><span class="pmd-comment-range" data-comment-id="S1" ` +
+      `${THREAD_PAYLOAD_ATTR}="${payload}">carried text</span></p><p>plain trailer</p>`;
+
+    // Caret at the END of the same commented card's body.
+    let from = -1;
+    view.state.doc.descendants((n, p) => {
+      if (n.isText && n.text === 'commented body') from = p;
+      return from < 0;
+    });
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, from + 'commented body'.length),
+      ),
+    );
+
+    let transformed = html;
+    view.someProp('transformPastedHTML', (f) => {
+      transformed = f(transformed, view);
+    });
+    const dom = new DOMParser().parseFromString(transformed, 'text/html');
+    let slice = PMDOMParser.fromSchema(schema).parseSlice(dom.body);
+    view.someProp('transformPasted', (f) => {
+      slice = f(slice, view, false);
+    });
+    const handled = view.someProp('handlePaste', (f) =>
+      f(view, fakePasteEvent({ 'text/html': transformed }), slice),
+    );
+    expect(handled).toBe(true);
+
+    const state = getCommentsState(view.state);
+    expect(state.threads.size).toBe(2);
+    expect(state.threads.has('S1')).toBe(true); // original SURVIVES under its id
+    const dupe = [...state.threads.values()].find((t) => t.id !== 'S1')!;
+    const spans: { id: string; text: string }[] = [];
+    view.state.doc.descendants((n) => {
+      if (n.isText) {
+        for (const m of n.marks) {
+          if (m.type.name === 'comment_range') {
+            spans.push({ id: String(m.attrs['threadId']), text: n.text ?? '' });
+          }
+        }
+      }
+      return true;
+    });
+    expect(spans).toHaveLength(2);
+    expect(spans.find((x) => x.text === 'commented body')!.id).toBe('S1');
     expect(spans.find((x) => x.text === 'carried text')!.id).toBe(dupe.id);
     view.destroy();
   });
