@@ -329,12 +329,12 @@ export class SendPillController {
     this.targets.clear();
     this.recentRows.clear();
 
-    // Snoozed recipients stay OUT of the pill (that is what snooze is)
+    // Hidden recipients stay OUT of the pill (that is what hiding is)
     // but remain reachable elsewhere: group sends still fan out to
-    // them, and a snoozed starred partner keeps its quick-send
-    // shortcut — snooze is about pill clutter, not reachability.
+    // them, and a hidden starred partner keeps its quick-send
+    // shortcut — hiding is about pill clutter, not reachability.
     const allPartners = settings.get('pairingPartners').filter((p) => p.code);
-    const partners = allPartners.filter((p) => !p.snoozed);
+    const partners = allPartners.filter((p) => !p.hidden);
     const groups = settings
       .get('pairingGroups')
       .filter((g) => g.memberCodes.some((c) => allPartners.some((p) => p.code === c)));

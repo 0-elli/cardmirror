@@ -33,10 +33,10 @@ see `DETAILED_CHANGELOG.md`.
   add them to your recipients (with a name of your choosing) or block
   them, and rows already in your recipients say so.
 
-- **Snooze a recipient.** The crescent button next to a recipient
-  hides them from the Send pill without deleting them — groups they
-  belong to still reach them, and snoozing is independent of starring.
-  Un-snooze any time from the same spot.
+- **Hide a recipient.** The eye button next to a recipient hides
+  them from the Send pill without deleting them — groups they belong
+  to still reach them, and hiding is independent of starring. Unhide
+  any time from the same spot.
 
 - **Multi-selections send as one bundle.** Dragging a nav-pane
   multi-selection onto the Send pill now ships everything as a single

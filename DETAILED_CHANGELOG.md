@@ -58,8 +58,8 @@ in each release, see `CHANGELOG.md`.
   - Settings: **Recent senders** is promoted to a titled row in
     Settings → Collaboration (blocked-senders styling) with per-row
     Add… (name prompt) / Block and an "In recipients" badge.
-    Recipients gained a snooze toggle (`PairingPartner.snoozed`,
-    preserved by the settings sanitizer); snoozed partners are
+    Recipients gained a hide toggle (`PairingPartner.hidden`,
+    preserved by the settings sanitizer); hidden partners are
     filtered from pill rows only — group fan-out and Send to Starred
     still include them.
 

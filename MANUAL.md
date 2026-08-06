@@ -1194,9 +1194,9 @@ the left sends the card to a pasted pairing code as a one-off (no contact
 saved), and hovering the right opens a list of people who **recently sent
 you** things — drop on one to send back, no pairing setup needed.
 
-Recipients you rarely send to can be **snoozed** (the crescent button in
-Settings → Collaboration → Recipients): a snoozed contact disappears from
-the pill without being deleted — groups still reach them, and a snoozed
+Recipients you rarely send to can be **hidden** (the eye button in
+Settings → Collaboration → Recipients): a hidden contact disappears from
+the pill without being deleted — groups still reach them, and a hidden
 starred partner still gets Send to Starred. **Recent senders** in the same
 settings tab lists everyone who recently sent you cards or a session
 invite; add them to your recipients (and name them) or block them from

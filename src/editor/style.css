@@ -14517,8 +14517,8 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
   color: var(--pmd-c-text-muted);
   margin-right: 0.4rem;
 }
-/* Snooze toggle in the recipients list. */
-.pmd-pairing-snooze {
+/* Hide toggle in the recipients list. */
+.pmd-pairing-hide {
   background: transparent;
   border: none;
   cursor: pointer;
@@ -14527,15 +14527,15 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
   display: inline-flex;
   align-items: center;
 }
-.pmd-pairing-snooze[aria-pressed='true'] {
+.pmd-pairing-hide[aria-pressed='true'] {
   color: var(--pmd-c-accent);
 }
-.pmd-pairing-snooze:disabled {
+.pmd-pairing-hide:disabled {
   opacity: 0.4;
   cursor: default;
 }
-.pmd-pairing-row-snoozed .pmd-pairing-name,
-.pmd-pairing-row-snoozed .pmd-pairing-code {
+.pmd-pairing-row-hidden .pmd-pairing-name,
+.pmd-pairing-row-hidden .pmd-pairing-code {
   opacity: 0.55;
 }
 

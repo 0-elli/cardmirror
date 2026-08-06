@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Send pill: the bottom actions row (add contact / start session ↔ the
- * drag zones), snooze filtering, and the recent-senders drag list.
+ * drag zones), hidden-recipient filtering, and the recent-senders drag list.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -48,11 +48,11 @@ afterEach(() => {
   setCollabSessionStarter(null);
 });
 
-describe('send pill actions row + snooze', () => {
-  it('snoozed recipients vanish from the pill rows; groups still fan out to them', () => {
+describe('send pill actions row + hidden recipients', () => {
+  it('hidden recipients vanish from the pill rows; groups still fan out to them', () => {
     settings.set('pairingPartners', [
       { code: 'cmk1.aaa', name: 'Awake' },
-      { code: 'cmk1.bbb', name: 'Sleepy', snoozed: true },
+      { code: 'cmk1.bbb', name: 'Sleepy', hidden: true },
     ]);
     settings.set('pairingGroups', [
       { id: 'g1', label: 'Team', memberCodes: ['cmk1.aaa', 'cmk1.bbb'] },
@@ -63,12 +63,12 @@ describe('send pill actions row + snooze', () => {
     );
     expect(rowNames).toContain('Awake');
     expect(rowNames).toContain('Team');
-    expect(rowNames).not.toContain('Sleepy'); // snoozed → no pill row
-    // …but the group target still reaches the snoozed member.
+    expect(rowNames).not.toContain('Sleepy'); // hidden → no pill row
+    // …but the group target still reaches the hidden member.
     const pillAny = document.querySelector('.pmd-send-pill');
     expect(pillAny).toBeTruthy();
     const groupCount = root.querySelector('.pmd-send-target-count');
-    expect(groupCount?.textContent).toBe('2'); // both members, snoozed included
+    expect(groupCount?.textContent).toBe('2'); // both members, hidden included
   });
 
   it('the actions row renders; Start session hides while the collab gate is closed', () => {
@@ -80,14 +80,14 @@ describe('send pill actions row + snooze', () => {
     expect(actions[1]!.classList.contains('pmd-send-action-collab-hidden')).toBe(true);
   });
 
-  it('snoozed flag survives the settings sanitize round-trip', () => {
+  it('hidden flag survives the settings sanitize round-trip', () => {
     settings.set('pairingPartners', [
-      { code: 'cmk1.aaa', name: 'Keep', snoozed: true },
+      { code: 'cmk1.aaa', name: 'Keep', hidden: true },
       { code: 'cmk1.bbb', name: 'Plain' },
     ]);
     const back = settings.get('pairingPartners');
-    expect(back[0]!.snoozed).toBe(true);
-    expect(back[1]!.snoozed).toBeUndefined();
+    expect(back[0]!.hidden).toBe(true);
+    expect(back[1]!.hidden).toBeUndefined();
   });
 
   it('Add contact: code prompt, then a name prompt pre-filled from recent senders', async () => {

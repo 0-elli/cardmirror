@@ -2815,31 +2815,31 @@ function buildPairingPartnersEditor(): HTMLElement {
         row.appendChild(b);
       }
 
-      // Snooze: hide from the Send pill without deleting the contact.
-      // Deliberately orthogonal to the star — a snoozed starred partner
+      // Hide from the Send pill without deleting the contact.
+      // Deliberately orthogonal to the star — a hidden starred partner
       // stays one keystroke away via the starred quick-send commands
       // while no longer taking a row in the pill.
-      const snooze = document.createElement('button');
-      snooze.type = 'button';
-      snooze.className = 'pmd-pairing-snooze';
-      snooze.disabled = !partner.code;
-      snooze.setAttribute('aria-pressed', String(partner.snoozed === true));
-      snooze.title = partner.snoozed
-        ? 'Snoozed — hidden from the Send pill. Click to show again.'
-        : 'Snooze: hide from the Send pill (keeps the contact)';
-      snooze.innerHTML =
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
-      snooze.addEventListener('click', () => {
+      const hide = document.createElement('button');
+      hide.type = 'button';
+      hide.className = 'pmd-pairing-hide';
+      hide.disabled = !partner.code;
+      hide.setAttribute('aria-pressed', String(partner.hidden === true));
+      hide.title = partner.hidden
+        ? 'Hidden from the Send pill. Click to show again.'
+        : 'Hide from the Send pill (keeps the contact)';
+      hide.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>';
+      hide.addEventListener('click', () => {
         commit(
           settings
             .get('pairingPartners')
             .map((p, i) =>
-              i === idx ? { ...p, ...(p.snoozed ? { snoozed: false } : { snoozed: true }) } : p,
+              i === idx ? { ...p, ...(p.hidden ? { hidden: false } : { hidden: true }) } : p,
             ),
         );
       });
-      row.appendChild(snooze);
-      if (partner.snoozed) row.classList.add('pmd-pairing-row-snoozed');
+      row.appendChild(hide);
+      if (partner.hidden) row.classList.add('pmd-pairing-row-hidden');
 
       row.appendChild(
         makeStarButton(isStarredTarget('partner', partner.code), !partner.code, () =>

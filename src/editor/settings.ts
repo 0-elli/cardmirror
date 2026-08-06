@@ -92,12 +92,12 @@ export interface ReaderConfig {
 export interface PairingPartner {
   code: string;
   name: string;
-  /** Snoozed = hidden from the Send pill (both its click rows and its
+  /** Hidden = not shown in the Send pill (both its click rows and its
    *  drag targets) without deleting the contact. Orthogonal to
-   *  starring: a snoozed starred partner stays reachable through the
-   *  starred quick-send commands — snooze is about pill clutter, not
+   *  starring: a hidden starred partner stays reachable through the
+   *  starred quick-send commands — hiding is about pill clutter, not
    *  reachability. */
-  snoozed?: boolean;
+  hidden?: boolean;
 }
 
 /** A named set of partners (e.g. a coach's "Smith/Jones" partnership).
@@ -3465,7 +3465,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'pairingPartners',
     label: 'Recipients',
     description:
-      'Machines you can send to. Add one by pasting the code it shared with you and giving it a name (shown in the To list when sending, and on cards you receive from it). Snooze a recipient to hide it from the Send pill without deleting it.',
+      'Machines you can send to. Add one by pasting the code it shared with you and giving it a name (shown in the To list when sending, and on cards you receive from it). Hide a recipient from the Send pill (the eye button) without deleting it.',
     kind: 'pairingPartners',
     category: 'pairing',
     electronOnly: true,
@@ -5130,7 +5130,7 @@ function sanitizePairingPartners(raw: unknown): PairingPartner[] {
     if (!code && !name) continue;
     if (code && seen.has(code)) continue;
     if (code) seen.add(code);
-    out.push({ code, name, ...((p as PairingPartner).snoozed === true ? { snoozed: true } : {}) });
+    out.push({ code, name, ...((p as PairingPartner).hidden === true ? { hidden: true } : {}) });
   }
   return out;
 }
