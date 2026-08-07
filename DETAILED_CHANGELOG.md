@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.30 — Unreleased
+## 0.1.0-beta.30 — 2026-08-07
 
 - **Read-mode paragraph integrity** (new `readModeParagraphIntegrity`
   setting; `style.css`, `index.ts`, `multi-pane-shell.ts`). Read mode
