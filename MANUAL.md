@@ -2024,6 +2024,13 @@ headers shown inside each tab.
   gesture.
 - **Jump to doc top when read mode toggles** — when on, toggling read
   mode scrolls to the top and puts the cursor at the start.
+- **Read mode: preserve paragraph integrity** — when on, read mode keeps
+  each body paragraph on its own line instead of flowing a card's
+  paragraphs together into one block. Body paragraphs with nothing
+  read-aloud in them still disappear completely, so you never get blank
+  lines. Off by default. Display-only, like the rest of read mode — the
+  document isn't touched (that's what
+  [Condense](#condense-pilcrows-and-case) does).
 
 **Word counts**
 

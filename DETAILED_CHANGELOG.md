@@ -163,6 +163,35 @@ in each release, see `CHANGELOG.md`.
   frame or the arriving doc update heals it) and every other peer
   still renders; the peer stays in the roster.
 
+- **Read-mode paragraph integrity** (new `readModeParagraphIntegrity`
+  setting; `style.css`, `index.ts`, `multi-pane-shell.ts`). Read mode
+  fuses a card's body paragraphs into one flow via `display: contents`
+  on `.pmd-card-body` — the paragraphs' boxes leave layout entirely and
+  their kept runs become inline siblings of the tag/cite. Readers who
+  navigate by the document's shape had no way back. The setting stamps
+  `pmd-rm-para-integrity` on the editor host (single-doc) or the pane
+  element (multi-doc, beside the existing `pmd-rm-no-emphasis-borders`)
+  and restores `display: block` to `.pmd-card-body` and to table cell
+  paragraphs — the table's container chain deliberately stays
+  `contents`, so only the cell paragraphs come back as lines, not the
+  table's boxes. Paragraphs holding no read-aloud text are hidden
+  outright by `:not(:has(.pmd-rm-keep))`, or every un-highlighted
+  paragraph would leave a blank line, which is worse than the fusing
+  the setting exists to fix. Display-only, mirroring the condense
+  setting of the same name; off by default.
+
+  Fixed alongside: the single-doc settings subscriber routed read-mode
+  display-preference changes through `applyReadMode(s.readMode)`. Under
+  multi-doc, `settings.readMode` stays `false` while a pane reads (read
+  mode is per-pane), so flipping either display preference dispatched
+  toggle-OFF into the focused pane's view — its hide decorations went
+  away while the pane element kept `pmd-read-mode`, i.e. read mode
+  suddenly showing every word of every card. The subscriber now skips
+  the block entirely under `multiDocActive`; the shell's own subscriber
+  re-stamps the classes per pane, which is all a display preference
+  needs. Reachable before this release via **Hide all emphasis borders
+  in read mode**.
+
 ## 0.1.0-beta.28 — 2026-08-05
 
 - **Reformat Every Cite in Document (AI)** (new

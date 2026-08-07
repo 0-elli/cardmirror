@@ -853,6 +853,13 @@ export interface Settings {
    *  the ones around hidden text). Some users prefer the cleanest look
    *  in read mode regardless of what's emphasized. */
   hideEmphasisBordersInReadMode: boolean;
+  /** When true, read mode keeps each body paragraph on its own line
+   *  instead of flowing a card's paragraphs together as one continuous
+   *  run. The display-only counterpart of the condense setting of the
+   *  same name (`paragraphIntegrity`) — that one rewrites the doc, this
+   *  one only changes what read mode draws. Off by default: the single
+   *  continuous flow is what most people want at the podium. */
+  readModeParagraphIntegrity: boolean;
   /** When true, tint every run of card body text that falls AFTER a
    *  reading-position marker red, a visual record of what you didn't reach
    *  in a round. Bounded per-card; display-only (a decoration, never a doc
@@ -1649,6 +1656,7 @@ const DEFAULTS: Settings = {
   autosaveEnabled: false,
   readMode: false,
   hideEmphasisBordersInReadMode: false,
+  readModeParagraphIntegrity: false,
   markUnreadAfterMarker: false,
   defaultZoomPct: 100,
   chromeScalePct: 100,
@@ -2032,6 +2040,16 @@ export const SETTING_METADATA: SettingMeta[] = [
     kind: 'toggle',
     category: 'general',
     section: 'Editor behavior',
+  },
+  {
+    key: 'readModeParagraphIntegrity',
+    label: 'Read mode: preserve paragraph integrity',
+    description:
+      'When on, read mode keeps each body paragraph on its own line instead of flowing a card\'s paragraphs together into one block of text. Body paragraphs with nothing read-aloud in them still collapse away entirely, so no blank lines appear. Off by default — display-only, exactly like the rest of read mode (the document is untouched).',
+    kind: 'toggle',
+    category: 'general',
+    section: 'Editor behavior',
+    aliases: ['paragraph breaks', 'paragraph integrity', 'separate lines', 'read mode paragraphs'],
   },
   // ─── General ────────────────────────────────────────────────────
   {
@@ -4132,6 +4150,7 @@ function sanitize(s: Settings): Settings {
     autosaveEnabled: !!s.autosaveEnabled,
     readMode: !!s.readMode,
     hideEmphasisBordersInReadMode: !!s.hideEmphasisBordersInReadMode,
+    readModeParagraphIntegrity: !!s.readModeParagraphIntegrity,
     markUnreadAfterMarker: !!s.markUnreadAfterMarker,
     // A legacy persisted `zoomPct` is deliberately ignored — live body
     // zoom is transient; documents open at this default.

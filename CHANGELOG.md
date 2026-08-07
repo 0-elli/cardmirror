@@ -57,6 +57,16 @@ see `DETAILED_CHANGELOG.md`.
   fold in the nav pane to your current outline depth instead of
   landing fully expanded.
 
+- **Read mode can keep your paragraphs apart.** Read mode has always
+  run a card's highlighted text together into one continuous block.
+  The new **Read mode: preserve paragraph integrity** setting
+  (Settings → General → Editor behavior) puts each body paragraph back
+  on its own line, so what you read follows the shape of the document.
+  Paragraphs with nothing highlighted in them still vanish outright —
+  you never get a blank line where a skipped paragraph used to be. Off
+  by default, and display-only: nothing about the document changes,
+  the same way the rest of read mode works.
+
 ### Changed
 
 - **The comments panel got a visual tune-up** (private notes and AI

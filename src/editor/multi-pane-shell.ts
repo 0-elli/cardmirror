@@ -1443,17 +1443,22 @@ class MultiPaneShell {
       // `settings.readMode` here. Otherwise toggling read mode in
       // one pane would force every other open doc into the same
       // state.
-      // The `pmd-rm-no-emphasis-borders` flag IS settings-driven
-      // (it's a display preference, not per-doc), so when it
-      // changes we re-stamp the class on every currently-read-
-      // mode'd pane to match.
+      // The `pmd-rm-no-emphasis-borders` and `pmd-rm-para-integrity`
+      // flags ARE settings-driven (display preferences, not per-doc),
+      // so when they change we re-stamp the classes on every
+      // currently-read-mode'd pane to match.
       const hideEmphasisBorders = s.hideEmphasisBordersInReadMode;
+      const readParagraphIntegrity = s.readModeParagraphIntegrity;
       for (const id of SLOT_IDS) {
         for (const rec of this.slots[id].stack) {
           if (rec.readMode) {
             rec.editorEl.classList.toggle(
               'pmd-rm-no-emphasis-borders',
               hideEmphasisBorders,
+            );
+            rec.editorEl.classList.toggle(
+              'pmd-rm-para-integrity',
+              readParagraphIntegrity,
             );
           }
         }
@@ -2110,6 +2115,7 @@ class MultiPaneShell {
       rec.view,
       rec.readMode,
       settings.get('hideEmphasisBordersInReadMode'),
+      settings.get('readModeParagraphIntegrity'),
     );
     // setActiveView is the path that drives `refreshReadModeBtn`,
     // so we route through it to keep the ribbon button in sync.
