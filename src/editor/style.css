@@ -5375,6 +5375,37 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   display: contents;
 }
 
+/* Optional setting: keep the document's paragraph breaks in read mode
+   (settings.readModeParagraphIntegrity → `pmd-rm-para-integrity` on
+   the editor host). The `display: contents` rules above are what fuse a
+   card's paragraphs — and its table cells — into one continuous run;
+   restoring `display: block` puts each source paragraph back on its own
+   line. The container chain (tableWrapper → table → tbody → tr → cell)
+   deliberately stays `contents`, so the table's boxes remain out of
+   layout and only its cell paragraphs come back as lines.
+
+   Paragraphs holding no read-aloud text must still collapse away, or
+   the reader gets a blank line for every un-highlighted paragraph — far
+   worse than the fusing this setting is fixing. `:has(.pmd-rm-keep)` is
+   the test: the plugin tags every visible text node with that class
+   (including a dropped reading marker), so "no kept child" is exactly
+   "nothing shows here".
+   `:is(#editor, .pmd-pane-editor)` takes an id's specificity, which is
+   what lifts these over the `display: contents` rules above in both the
+   single-doc and per-pane surfaces. */
+:is(#editor, .pmd-pane-editor).pmd-read-mode.pmd-rm-para-integrity
+  :is(.pmd-card, .pmd-analytic-unit) > .pmd-card-body,
+:is(#editor, .pmd-pane-editor).pmd-read-mode.pmd-rm-para-integrity
+  :is(.pmd-card, .pmd-analytic-unit) .tableWrapper :is(td, th) > p {
+  display: block;
+}
+:is(#editor, .pmd-pane-editor).pmd-read-mode.pmd-rm-para-integrity
+  :is(.pmd-card, .pmd-analytic-unit) > .pmd-card-body:not(:has(.pmd-rm-keep)),
+:is(#editor, .pmd-pane-editor).pmd-read-mode.pmd-rm-para-integrity
+  :is(.pmd-card, .pmd-analytic-unit) .tableWrapper :is(td, th) > p:not(:has(.pmd-rm-keep)) {
+  display: none;
+}
+
 /* Inline-level visibility: each text node is wrapped (via the
    read-mode plugin) in a span with `pmd-rm-keep` or `pmd-rm-hide`.
    Pure display: none / inline rule — no specificity tricks because

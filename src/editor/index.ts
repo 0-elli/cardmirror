@@ -3583,6 +3583,7 @@ let lastKeyboardMacros = settings.get('keyboardMacros');
 // make every settings change lag on big docs.
 let lastReadMode = settings.get('readMode');
 let lastReadModeBorders = settings.get('hideEmphasisBordersInReadMode');
+let lastReadModeParaIntegrity = settings.get('readModeParagraphIntegrity');
 let lastMarkUnread = settings.get('markUnreadAfterMarker');
 let lastNumberingDisplay = numberingDisplaySig();
 
@@ -3635,9 +3636,22 @@ settings.subscribe((s) => {
   applyUnboldCites(s.unboldCites);
   applyTimerPosition(s.timerPosition);
   applyCursorBlink(s.disableCursorBlink);
-  if (s.readMode !== lastReadMode || s.hideEmphasisBordersInReadMode !== lastReadModeBorders) {
+  // Multi-doc owns read mode per-pane: `settings.readMode` stays false
+  // there even while a pane is reading, so routing a display-preference
+  // change through `applyReadMode(s.readMode)` would dispatch
+  // toggle-OFF into the focused pane's view — stripping its hide
+  // decorations while the pane element keeps `pmd-read-mode`, i.e. read
+  // mode showing every word of every card. The shell's own subscriber
+  // re-stamps these classes per pane instead.
+  if (
+    !multiDocActive &&
+    (s.readMode !== lastReadMode ||
+      s.hideEmphasisBordersInReadMode !== lastReadModeBorders ||
+      s.readModeParagraphIntegrity !== lastReadModeParaIntegrity)
+  ) {
     lastReadMode = s.readMode;
     lastReadModeBorders = s.hideEmphasisBordersInReadMode;
+    lastReadModeParaIntegrity = s.readModeParagraphIntegrity;
     applyReadMode(s.readMode);
   }
   // Nudge the mark-unread plugin to rebuild when its toggle flips (diff-gated
@@ -4766,6 +4780,10 @@ function applyReadMode(on: boolean): void {
     'pmd-rm-no-emphasis-borders',
     on && settings.get('hideEmphasisBordersInReadMode'),
   );
+  editorEl.classList.toggle(
+    'pmd-rm-para-integrity',
+    on && settings.get('readModeParagraphIntegrity'),
+  );
   if (!multiDocActive) refreshReadModeBtn();
   if (view) {
     // Read mode keeps the editor EDITABLE so the caret stays placeable
@@ -4794,12 +4812,14 @@ export function applyReadModeToTarget(
   targetView: EditorView,
   on: boolean,
   hideEmphasisBorders: boolean,
+  readParagraphIntegrity: boolean,
 ): void {
   const anchor = settings.get('jumpToDocTopOnReadModeToggle')
     ? null
     : captureViewportAnchor(targetView, { readMode: true });
   hostEl.classList.toggle('pmd-read-mode', on);
   hostEl.classList.toggle('pmd-rm-no-emphasis-borders', on && hideEmphasisBorders);
+  hostEl.classList.toggle('pmd-rm-para-integrity', on && readParagraphIntegrity);
   // Stay editable so the caret is placeable; edits are blocked by the
   // read-mode plugin's filterTransaction.
   targetView.setProps({ editable: () => true });
