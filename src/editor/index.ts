@@ -310,6 +310,7 @@ import {
   fileLockedMessage,
   isFileGoneError,
   isFileChangedOnDiskError,
+  isWriteBlockedError,
 } from './error-surface.js';
 import { captureCleanToken } from './save-clean-token.js';
 import { wireWebEditionHeaderButtons } from './web-download.js';
@@ -7702,6 +7703,38 @@ async function runSaveFlowInner(): Promise<boolean> {
     return true;
   } catch (err) {
     console.error('Save failed:', err);
+    // The file's LOCATION refused the write (web host, after its own
+    // refresh-and-retry): Chromium can deterministically reject swap-file
+    // writes on cloud-backed ChromeOS mounts — Dropbox and Google Drive are
+    // provider filesystems in the Files app, not local folders. A blind
+    // retry cannot succeed there; Save-As to a local folder is the exit,
+    // and this dialog's button click supplies the fresh user gesture the
+    // Save-As picker needs.
+    if (isWriteBlockedError(err)) {
+      const choice = await promptForRouteChoice<'saveAs' | 'retry'>({
+        message:
+          `"${file.filename ?? 'This document'}" couldn't be saved in place — ` +
+          `its folder refused the write. On Chromebooks this happens in ` +
+          `cloud-synced folders (Google Drive, Dropbox): they can block ` +
+          `direct saves from web apps. Your work is still open and safe.`,
+        choices: [
+          {
+            value: 'saveAs',
+            label: 'Save As\u2026',
+            description:
+              'Pick a new location \u2014 a local folder (My Files / Downloads) always works.',
+          },
+          {
+            value: 'retry',
+            label: 'Try Again',
+            description: 'Retry writing to the same file.',
+          },
+        ],
+      });
+      if (choice === 'saveAs') return runSaveAsFlow();
+      if (choice === 'retry') return runSaveFlowInner();
+      return false;
+    }
     // The file's folder was renamed/moved/deleted out from under us (field
     // bug 2026-07-11: a shared Dropbox folder rename left every open doc
     // with a stale path — saves ENOENT'd with no way forward, and the
@@ -7969,7 +8002,9 @@ export function reportAutosaveFailure(filename: string, err: unknown): void {
       ? `Autosave failed — "${filename}" no longer exists at its saved location. Use Save As to pick a new one.`
       : isFileChangedOnDiskError(err)
         ? `Autosave paused — "${filename}" changed on disk (edited by another program or device?). Use Save to review before overwriting.`
-        : `Autosave failed for "${filename}" — your latest changes are not saved.`,
+        : isWriteBlockedError(err)
+          ? `Autosave failed — "${filename}"'s folder refused the write (cloud-synced folder?). Use Save As to move it to a local folder like My Files/Downloads.`
+          : `Autosave failed for "${filename}" — your latest changes are not saved.`,
   );
 }
 
@@ -9602,10 +9637,11 @@ async function saveRecoveryEntry(entry: JournalEntry): Promise<boolean> {
         });
         return true;
       } catch (err) {
-        // Original file renamed/moved/deleted since the crash → fall
-        // through to the Save-As modal below so the draft still has an
-        // exit (saveExisting no longer recreates files at stale paths).
-        if (!isFileGoneError(err)) {
+        // Original file renamed/moved/deleted since the crash — or its
+        // location refuses writes (blocked cloud mount) → fall through to
+        // the Save-As modal below so the draft still has an exit
+        // (saveExisting no longer recreates files at stale paths).
+        if (!isFileGoneError(err) && !isWriteBlockedError(err)) {
           console.error('Recovery save failed:', err);
           const lockedMsg = fileLockedMessage(err);
           void alertDialog(`Save failed: ${lockedMsg ?? (err instanceof Error ? err.message : err)}`);

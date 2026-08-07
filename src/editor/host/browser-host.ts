@@ -430,9 +430,32 @@ export class BrowserHost implements Host {
       throw new Error('BrowserHost: write permission not granted for in-place save.');
     }
     const blob = bytesToBlob(bytes, fh.name ?? '');
-    const writable = await fh.createWritable();
-    await writable.write(blob);
-    await writable.close();
+    try {
+      await writeThrough(fh, blob);
+    } catch (err) {
+      if (!isRetriableWriteError(err)) throw err;
+      // Chromium's swap-file write can throw InvalidStateError when the
+      // target's cached state went stale under it — sync services (Dropbox,
+      // DriveFS on ChromeOS) touch files between our snapshot and the swap
+      // commit. Refresh the handle's cached state (getFile re-reads size and
+      // mtime), give the sync a beat to settle, and retry ONCE.
+      await fh.getFile?.().catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 300));
+      try {
+        await writeThrough(fh, blob);
+      } catch (err2) {
+        if (!isRetriableWriteError(err2)) throw err2;
+        // Deterministic refusal, not a race — cloud-backed ChromeOS mounts
+        // (Files-app provider filesystems) can reject swap-file writes
+        // outright. Mark the message so save flows can route to Save-As
+        // instead of dead-ending on a raw DOMException (same marker
+        // convention as EMODIFIED / ELOCKED: only the message string
+        // reliably crosses every boundary).
+        throw new Error(
+          `EWRITEBLOCKED: ${err2 instanceof Error ? err2.message : String(err2)}`,
+        );
+      }
+    }
   }
 
   /** Best-effort file stat for the recovery-save staleness check. Reads
@@ -599,6 +622,27 @@ export class BrowserHost implements Host {
 
 /** Build a Blob from a Uint8Array, picking a reasonable MIME type
  *  from the filename extension. */
+/** One write attempt: swap-file open → write → commit. */
+async function writeThrough(fh: FileSystemFileHandle, blob: Blob): Promise<void> {
+  const writable = await fh.createWritable();
+  await writable.write(blob);
+  await writable.close();
+}
+
+/** Write failures worth a refresh-and-retry. InvalidStateError is
+ *  Chromium's stale-cached-state signal (its message is the generic
+ *  "state cached in an interface object … changed since it was read
+ *  from disk" text); NoModificationAllowedError is the write-refused
+ *  variant some filesystems raise. NotFoundError and NotAllowedError
+ *  stay excluded — those mean gone and permission, which retries can't
+ *  fix and which upstream flows already classify. */
+function isRetriableWriteError(err: unknown): boolean {
+  return (
+    err instanceof DOMException &&
+    (err.name === 'InvalidStateError' || err.name === 'NoModificationAllowedError')
+  );
+}
+
 function bytesToBlob(bytes: Uint8Array, filename: string): Blob {
   // Copy into a regular ArrayBuffer so Blob's BlobPart contract is
   // happy. Some TypedArray backing buffers are SharedArrayBuffer in
