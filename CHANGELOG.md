@@ -5,6 +5,21 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.30 — Unreleased
+
+### Added
+
+- **Read mode can keep your paragraphs apart.** Read mode has always
+  run a card's highlighted text together into one continuous block.
+  The new **Read mode: preserve paragraph integrity** setting
+  (Settings → General → Editor behavior) puts each body paragraph back
+  on its own line, so what you read follows the shape of the document.
+  Paragraphs with nothing highlighted in them still vanish outright —
+  you never get a blank line where a skipped paragraph used to be. Off
+  by default, and display-only: nothing about the document changes,
+  the same way the rest of read mode works. (PR #33, thanks to
+  [Cora](https://github.com/coralynnkc).)
+
 ## 0.1.0-beta.29 — 2026-08-05
 
 ### Added
@@ -56,16 +71,6 @@ see `DETAILED_CHANGELOG.md`.
   Receive pill — and documents arriving when you join a session — now
   fold in the nav pane to your current outline depth instead of
   landing fully expanded.
-
-- **Read mode can keep your paragraphs apart.** Read mode has always
-  run a card's highlighted text together into one continuous block.
-  The new **Read mode: preserve paragraph integrity** setting
-  (Settings → General → Editor behavior) puts each body paragraph back
-  on its own line, so what you read follows the shape of the document.
-  Paragraphs with nothing highlighted in them still vanish outright —
-  you never get a blank line where a skipped paragraph used to be. Off
-  by default, and display-only: nothing about the document changes,
-  the same way the rest of read mode works.
 
 ### Changed
 
