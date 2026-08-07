@@ -36,6 +36,14 @@ see `DETAILED_CHANGELOG.md`.
   `write EPIPE` — hiding the real message behind a scary dialog.
   Logging is now best-effort and can never take the app down.
 
+- **Web app: saves blocked by cloud folders now recover or route to
+  Save As.** On ChromeOS (and anywhere the browser's file access sits
+  on a cloud-backed folder), saving in place could fail with a raw
+  browser error and no way forward. The web app now refreshes and
+  retries once — which rescues the common sync-churn case — and when
+  the folder truly won't accept in-place writes, it offers Save As to
+  a local folder instead of a dead-end error.
+
 ## 0.1.0-beta.29 — 2026-08-05
 
 ### Added

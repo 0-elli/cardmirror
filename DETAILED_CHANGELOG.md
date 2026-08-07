@@ -62,6 +62,24 @@ in each release, see `CHANGELOG.md`.
   listener per stream makes logging best-effort; the cardmirror-read
   CLI has shipped the same guard for piped stdout since 2026-07.
 
+- **Web saves: refresh-and-retry ladder + Save-As routing for blocked
+  writes** (`browser-host.ts`, `error-surface.ts`, `index.ts`). Field
+  report (ChromeOS, beta.27): in-place saves failed with Chromium's
+  raw InvalidStateError ("state cached in an interface object …
+  changed since it was read from disk") in cloud-provider mounts —
+  and on a Chromebook both Dropbox and the natural "outside Dropbox"
+  destination (Google Drive) are Files-app provider mounts. Two app
+  bugs made it a dead end: the changed-on-disk handling matched only
+  the Electron EMODIFIED marker (browser DOMExceptions fell to a raw
+  Save-failed alert), and BrowserHost accepted-and-ignored the
+  Overwrite path's force flag, so the retry repeated the identical
+  failing call. BrowserHost.saveExisting now runs a ladder: on
+  InvalidStateError / NoModificationAllowedError, refresh the
+  handle's cached state (getFile), pause 300ms, retry once (rescues
+  the transient sync-churn variant), then rethrow marked
+  EWRITEBLOCKED — which the renderer routes to Save As, the only
+  honest exit on a mount that refuses in-place writes.
+
 ## 0.1.0-beta.29 — 2026-08-05
 
 - **Comments travel with the clipboard** (new
