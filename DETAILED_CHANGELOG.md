@@ -37,6 +37,31 @@ in each release, see `CHANGELOG.md`.
   needs. Reachable before this release via **Hide all emphasis borders
   in read mode**.
 
+- **Changed-on-disk guard: content-hash rescue for sync metadata churn**
+  (`apps/desktop/src/doc-writes.ts`). The guard remembered mtime+size
+  per path; cloud sync layers rewrite mtimes without touching content
+  (rclone finalizing its upload of OUR OWN save — field report
+  2026-08-06, Linux + rclone Dropbox mount — refused every second save
+  as changed-on-disk). The baseline now also carries a sha256 of the
+  bytes CardMirror last read/wrote (all read and write paths pass
+  them); on a stat mismatch the guard reads the file back and compares
+  before refusing — identical bytes = metadata churn, save proceeds
+  and re-baselines. Real edits, including same-size ones, still refuse
+  (covered by the existing regression test). Baselines recorded
+  without bytes (older paths, journal recovery) keep the strict
+  behavior.
+
+- **EPIPE-proof main-process stdio** (new `apps/desktop/src/
+  stdio-harden.ts`, first executable statement in main.ts). On Linux
+  the app's stdout/stderr are often pipes owned by a since-closed
+  launcher; any console call — including Electron's own
+  `replyWithError` console.error when an ipcMain.handle rejects —
+  then raised EPIPE as an UNCAUGHT exception and popped the
+  main-process crash dialog, masking the real error (same field
+  report: every refused save produced the dialog). One 'error'
+  listener per stream makes logging best-effort; the cardmirror-read
+  CLI has shipped the same guard for piped stdout since 2026-07.
+
 ## 0.1.0-beta.29 — 2026-08-05
 
 - **Comments travel with the clipboard** (new

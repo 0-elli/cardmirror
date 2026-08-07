@@ -109,6 +109,40 @@ describe('saveExistingDoc — changed-on-disk guard', () => {
     );
   });
 
+  it('metadata-only churn (identical content, new mtime) passes with a hashed baseline', async () => {
+    // Field report 2026-08-06 (Linux + rclone Dropbox mount): the sync
+    // layer rewrites the file's mtime after finalizing its upload of
+    // OUR OWN save — content untouched. The old mtime+size guard
+    // refused every second save as changed-on-disk.
+    const p = docPath('churn.cmir');
+    await saveNewDoc(p, Buffer.from('my own content')); // baselines WITH hash
+    const st = await fs.stat(p);
+    await fs.utimes(p, st.atime, new Date(st.mtimeMs + 5000)); // rclone's touch
+    await saveExistingDoc(p, Buffer.from('my own content v2'));
+    expect(await read(p)).toBe('my own content v2');
+  });
+
+  it('a hashed baseline still refuses a REAL same-size external edit', async () => {
+    const p = docPath('real-edit.cmir');
+    await saveNewDoc(p, Buffer.from('original'));
+    await fs.writeFile(p, 'ORIGINAL'); // same length, different bytes
+    const st = await fs.stat(p);
+    await fs.utimes(p, st.atime, new Date(st.mtimeMs + 5000));
+    await expect(saveExistingDoc(p, Buffer.from('v2'))).rejects.toThrow(
+      new RegExp(CHANGED_ON_DISK_MARKER),
+    );
+  });
+
+  it('a READ-time baseline with bytes also arms the churn rescue', async () => {
+    const p = docPath('read-baseline.cmir');
+    await fs.writeFile(p, 'opened contents');
+    await recordDiskStateFromDisk(p, Buffer.from('opened contents'));
+    const st = await fs.stat(p);
+    await fs.utimes(p, st.atime, new Date(st.mtimeMs + 5000));
+    await saveExistingDoc(p, Buffer.from('edited in-app'));
+    expect(await read(p)).toBe('edited in-app');
+  });
+
   it('force (the explicit Overwrite choice) writes and re-baselines', async () => {
     const p = await openedDoc('original');
     await fs.writeFile(p, 'rewritten elsewhere');

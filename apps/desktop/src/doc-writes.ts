@@ -45,6 +45,7 @@
  * the entry, so only writes by OTHER programs trip the guard.
  */
 
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
@@ -82,6 +83,19 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 interface DiskState {
   mtimeMs: number;
   size: number;
+  /** sha256 of the bytes CardMirror last read from / wrote to the
+   *  path, when the caller had them in hand. Lets the changed-on-disk
+   *  guard distinguish metadata churn from real edits: cloud sync
+   *  layers rewrite mtimes without touching content — rclone mounts
+   *  restat after upload finalization, Dropbox touches timestamps
+   *  during sync (field report 2026-08-06, Ethan, Linux + rclone:
+   *  every second save refused as changed-on-disk with only
+   *  CardMirror writing). */
+  contentHash?: string;
+}
+
+function hashOf(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex');
 }
 
 /** Last-seen on-disk identity per resolved path. Populated by
@@ -120,14 +134,23 @@ export function chainDocWrite<T>(filePath: string, task: () => Promise<T>): Prom
   return run;
 }
 
-/** Remember `filePath`'s current on-disk mtime+size. Best-effort: a
- *  stat failure (file vanished between read and stat) just leaves no
- *  entry, which disables the changed-on-disk guard for that path —
- *  never breaks the read that called us. */
-export async function recordDiskStateFromDisk(filePath: string): Promise<void> {
+/** Remember `filePath`'s current on-disk mtime+size — plus a content
+ *  hash when the caller passes the bytes it just read/wrote, which
+ *  arms the guard's metadata-churn rescue (see DiskState.contentHash).
+ *  Best-effort: a stat failure (file vanished between read and stat)
+ *  just leaves no entry, which disables the changed-on-disk guard for
+ *  that path — never breaks the read that called us. */
+export async function recordDiskStateFromDisk(
+  filePath: string,
+  contentBytes?: Buffer,
+): Promise<void> {
   try {
     const st = await fs.stat(filePath);
-    knownDiskState.set(keyFor(filePath), { mtimeMs: st.mtimeMs, size: st.size });
+    knownDiskState.set(keyFor(filePath), {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      ...(contentBytes !== undefined ? { contentHash: hashOf(contentBytes) } : {}),
+    });
   } catch {
     /* best-effort */
   }
@@ -217,16 +240,31 @@ export function saveExistingDoc(
       known &&
       (known.mtimeMs !== st.mtimeMs || known.size !== st.size)
     ) {
-      throw new Error(
-        `${CHANGED_ON_DISK_MARKER}: "${path.basename(filePath)}" changed on disk ` +
-          `after CardMirror last read or wrote it — another program, device, or ` +
-          `sync service may have written it.`,
-      );
+      // Metadata-churn rescue: when we know what the content SHOULD
+      // be, a stat mismatch with identical bytes is a sync layer
+      // rewriting timestamps (rclone upload finalization, Dropbox
+      // touch) — not an edit. Read and compare before refusing; any
+      // read failure falls through to the refusal.
+      let identicalContent = false;
+      if (known.contentHash) {
+        try {
+          identicalContent = hashOf(await fs.readFile(filePath)) === known.contentHash;
+        } catch {
+          /* unreadable — treat as changed */
+        }
+      }
+      if (!identicalContent) {
+        throw new Error(
+          `${CHANGED_ON_DISK_MARKER}: "${path.basename(filePath)}" changed on disk ` +
+            `after CardMirror last read or wrote it — another program, device, or ` +
+            `sync service may have written it.`,
+        );
+      }
     }
     // Preserve the existing file's permission bits across the
     // tmp+rename (a plain in-place write would have kept them).
     await writeAtomic(filePath, buf, st.mode & 0o777);
-    await recordDiskStateFromDisk(filePath);
+    await recordDiskStateFromDisk(filePath, buf);
   });
 }
 
@@ -269,7 +307,7 @@ export function saveNewDoc(
     }
     if (opts?.mkdir) await fs.mkdir(path.dirname(filePath), { recursive: true });
     await writeAtomic(filePath, buf);
-    await recordDiskStateFromDisk(filePath);
+    await recordDiskStateFromDisk(filePath, buf);
   });
 }
 

@@ -82,6 +82,13 @@ import {
   scanFlowApps,
   flowPost,
 } from './bridge-handshake.js';
+import { hardenStdio } from './stdio-harden.js';
+
+// FIRST executable statement: once stdio's far end can be a closed
+// pipe (Linux launches), any console call — ours or Electron's own
+// internal error logging — can raise an uncaught EPIPE and pop the
+// main-process crash dialog. Nothing may log before this line.
+hardenStdio();
 
 const DEV_SERVER_URL = 'http://localhost:5173';
 
@@ -281,7 +288,7 @@ async function readDocumentBytes(filePath: string): Promise<Buffer> {
   if (bytes.length >= (await fs.stat(filePath)).size) {
     // Baseline for the changed-on-disk save guard: remember what the
     // file looked like when we read it (see doc-writes.ts).
-    await recordDiskStateFromDisk(filePath);
+    await recordDiskStateFromDisk(filePath, bytes);
     return bytes;
   }
   const started = Date.now();
@@ -291,7 +298,7 @@ async function readDocumentBytes(filePath: string): Promise<Buffer> {
     bytes = await fs.readFile(filePath);
     if (bytes.length >= size) break;
   }
-  await recordDiskStateFromDisk(filePath);
+  await recordDiskStateFromDisk(filePath, bytes);
   return bytes;
 }
 
@@ -1050,7 +1057,7 @@ ipcMain.handle(
       await fs.rename(tmpPath, real);
       // In-app write — refresh the changed-on-disk baseline so a doc
       // that has this file open doesn't get a false conflict prompt.
-      await recordDiskStateFromDisk(real);
+      await recordDiskStateFromDisk(real, buf);
       return { ok: true, name: path.basename(real) };
     } catch {
       try {
@@ -1203,7 +1210,7 @@ ipcMain.handle(
         // In-app rewrite (mtime restored but SIZE changed) — refresh the
         // changed-on-disk baseline so an open doc in this folder doesn't
         // get a false conflict prompt on its next save.
-        await recordDiskStateFromDisk(file);
+        await recordDiskStateFromDisk(file, gz);
         summary.compressed++;
         summary.bytesAfter += gz.length;
       } catch (err) {

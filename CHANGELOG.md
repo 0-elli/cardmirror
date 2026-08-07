@@ -20,6 +20,22 @@ see `DETAILED_CHANGELOG.md`.
   the same way the rest of read mode works. (PR #33, thanks to
   [Cora](https://github.com/coralynnkc).)
 
+### Fixed
+
+- **No more false "changed on disk" warnings from cloud sync.** Some
+  sync setups (rclone-mounted Dropbox on Linux, most visibly) rewrite
+  a file's timestamp after uploading CardMirror's own save, which made
+  the next save warn that the file had been modified even though
+  nothing touched its contents. CardMirror now checks whether the
+  content actually changed before warning — real edits from another
+  machine or program are still caught exactly as before.
+
+- **Fixed a "JavaScript error in the main process" crash dialog on
+  Linux.** When the app's logging pipe had been closed by whatever
+  launched it, reporting any error could itself crash with
+  `write EPIPE` — hiding the real message behind a scary dialog.
+  Logging is now best-effort and can never take the app down.
+
 ## 0.1.0-beta.29 — 2026-08-05
 
 ### Added
