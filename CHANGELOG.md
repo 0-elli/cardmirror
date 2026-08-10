@@ -5,6 +5,31 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 0.1.0-beta.31 — 2026-08-10
+
+### Added
+
+- **Morph mode: a Sensel Morph control surface for cutting cards.**
+  If you happen to own a Sensel Morph with the video-editing overlay
+  (discontinued, beloved), CardMirror can now treat it as a dedicated
+  card-cutting deck. Run **Toggle Morph Mode** from the command bar
+  (no default key — bind one in Settings → Keyboard shortcuts). While
+  armed: the jog wheel moves the caret — hold the overlay's
+  Shift/Alt cluster while wheeling for letter- or word-wise selection
+  — and the pad bank applies formatting to whatever you've selected:
+  underline, emphasis, tag, cite, condense and friends, each pad
+  rebindable to any command from the ⚙ on the status chip, which
+  draws the whole overlay as a labeled schematic. Pads only fire
+  while a selection is active, so with a bare caret everything still
+  types normally. The chip echoes each command as it lands, exactly
+  like the voice pill. Some features are just for me!
+
+- **Open Crash-Recovery Journals Folder.** A command-bar command that
+  opens the folder where CardMirror keeps its `.cmir-journal`
+  crash-recovery files, for when you want to see (or back up) what
+  would be restored after a crash. Desktop only; no default
+  keybinding.
+
 ## 0.1.0-beta.30 — 2026-08-07
 
 ### Added

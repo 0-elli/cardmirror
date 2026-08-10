@@ -5,6 +5,40 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 0.1.0-beta.31 — 2026-08-10
+
+### Morph mode (Sensel control surface)
+
+The Sensel Morph's overlays can't be remapped without the
+discontinued Sensel App and a USB data connection, so Morph mode
+takes the opposite approach: the video-editing overlay's fixed HID
+keyboard vocabulary is interpreted *inside the editor*. Movement
+stays native — the jog wheel emits arrow keys (burst-damped: the
+overlay sends several ticks per detent, so sub-60ms same-direction
+ticks are coalesced, while held-key auto-repeat passes through
+untouched), and the overlay's real modifier keys give the exact
+keyboard selection semantics. Formatting pads fire only while a
+selection is active and are interpreted before any keymap sees them;
+with a bare caret every pad types its letter, so tag and cite text
+can be written without disarming. Pads that emit chords (⌘K, ⌘D, ⌥.)
+are matched exactly, and the Slip/Nudge pads — which emit bare
+right-side modifiers — bind via tap-vs-hold detection on the
+right-hand key codes only, so the physical modifier cluster and
+normal typing never misfire them. Bindings persist in localStorage
+and are edited from a schematic of the overlay labeled with its
+printed legends; every pad picker is searchable. Armed state is
+toggled by the `toggleMorphMode` command (no default key) and
+survives plugin reconfigures and multi-pane rebuilds.
+
+### Open Crash-Recovery Journals Folder
+
+`openJournalsFolder` opens the OS file manager at
+`{userData}/journals`, creating the folder first so the command
+never lands on an error. Electron-gated (hidden on web). Palette
+aliases cover "crash", "recovery", "restore", "lost work", and
+"autosave folder" so it's findable under whatever name a user
+reaches for.
+
 ## 0.1.0-beta.30 — 2026-08-07
 
 - **Read-mode paragraph integrity** (new `readModeParagraphIntegrity`

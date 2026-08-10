@@ -153,6 +153,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Open the OS file manager at the crash-dumps folder. */
   openCrashDumpsFolder: () => ipcRenderer.invoke('host:open-crash-dumps'),
 
+  /** Open the OS file manager at the crash-recovery journals folder. */
+  openJournalsFolder: () => ipcRenderer.invoke('host:open-journals-folder'),
+
   /** Minimize this OS window (the `minimizeWindow` ribbon command /
    *  macOS Window-menu Minimize). */
   minimizeWindow: () => ipcRenderer.invoke('host:minimize-window'),

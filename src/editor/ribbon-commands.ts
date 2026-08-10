@@ -4420,6 +4420,10 @@ export type RibbonCommandId =
   // Minimize item routes through this same command so its accelerator
   // follows user rebinds (Mod-m default restores the stock Cmd+M).
   | 'minimizeWindow'
+  | 'openJournalsFolder'
+  // Arm/disarm Morph mode (the Sensel control-surface interpreter).
+  // No default key — bind via Settings, or run from the command bar.
+  | 'toggleMorphMode'
   // Cycle the theme setting light → dark → system → light. No default
   // binding; bind via Settings → Keyboard shortcuts.
   | 'cycleTheme'
@@ -4628,6 +4632,8 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'applyFontColor',
   'openSettings',
   'minimizeWindow',
+  'openJournalsFolder',
+  'toggleMorphMode',
   'cycleTheme',
   'cycleTimerPreset',
   'flipQuoteDirection',
@@ -4804,6 +4810,8 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   applyFontColor: 'Apply Font Color',
   openSettings: 'Open Settings',
   minimizeWindow: 'Minimize Window',
+  openJournalsFolder: 'Open Crash-Recovery Journals Folder',
+  toggleMorphMode: 'Toggle Morph Mode',
   cycleTheme: 'Cycle Theme (Light → Dark → System)',
   cycleTimerPreset: 'Cycle Timer Preset (College → High School → Pomodoro)',
   flipQuoteDirection: 'Flip Quote Direction',
@@ -4852,6 +4860,8 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
  */
 export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly string[]>> = {
   minimizeWindow: ['minimize', 'hide window', 'window menu'],
+  openJournalsFolder: ['crash', 'recovery', 'journal', 'restore', 'lost work', 'autosave folder'],
+  toggleMorphMode: ['morph', 'sensel', 'control surface', 'jog wheel', 'overlay'],
   collabStartSession: ['collaborate', 'coedit', 'co-edit', 'share session', 'live edit'],
   collabJoinSession: ['join session', 'share code', 'coedit'],
   collabCopyShareCode: ['share code', 'invite code', 'session code'],
@@ -5179,6 +5189,8 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   openSettings: '',
   // Stock macOS chord; also works on Win/Linux. Rebindable like all.
   minimizeWindow: 'Mod-m',
+  openJournalsFolder: '',
+  toggleMorphMode: '',
   cycleTheme: '',
   cycleTimerPreset: '',
   flipQuoteDirection: '',
@@ -5419,6 +5431,10 @@ export interface RibbonContext {
   openSettings: () => void;
   /** Minimize this OS window (desktop only; no-op elsewhere). */
   minimizeWindow: () => void;
+  /** Open the crash-recovery journals folder (desktop only; no-op elsewhere). */
+  openJournalsFolder: () => void;
+  /** Arm/disarm Morph mode (Sensel control-surface interpreter). */
+  toggleMorphMode: () => void;
   /** Cycle the theme setting light → dark → system → light. */
   cycleTheme: () => void;
   /** Cycle the timer profile College → High School → Pomodoro (wraps). */
@@ -5526,6 +5542,8 @@ const DEFAULT_RIBBON_CONTEXT: RibbonContext = {
   lastFontColor: () => null,
   openSettings: () => {},
   minimizeWindow: () => {},
+  openJournalsFolder: () => {},
+  toggleMorphMode: () => {},
   cycleTheme: () => {},
   cycleTimerPreset: () => {},
   toggleParagraphIntegrity: () => {},
@@ -6267,6 +6285,18 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
       return (_state, dispatch) => {
         if (!dispatch) return true;
         ctx.minimizeWindow();
+        return true;
+      };
+    case 'openJournalsFolder':
+      return (_state, dispatch) => {
+        if (!dispatch) return true;
+        ctx.openJournalsFolder();
+        return true;
+      };
+    case 'toggleMorphMode':
+      return (_state, dispatch) => {
+        if (!dispatch) return true;
+        ctx.toggleMorphMode();
         return true;
       };
     case 'cycleTheme':

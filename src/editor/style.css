@@ -14886,3 +14886,180 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
 .pmd-bench-btn-primary:hover {
   filter: brightness(1.05);
 }
+
+/* Sensel Morph mode (prototype). The armed chip speaks the voice pill's
+   exact visual language — it reuses the .pmd-voice-pill classes wholesale
+   (dot + mode badge + command echo) and only adds the gear button. The
+   config dialog reuses the route-dialog chrome. Bindable pads are the
+   overlay's physical purple ON PURPOSE — the dialog is a schematic of the
+   hardware, and matching the silicone's color is what makes it readable as
+   one — so that purple is fixed rather than themed; everything around the
+   pads follows the app theme. */
+.pmd-morph-chip {
+  display: flex;
+  cursor: default;
+}
+.pmd-morph-chip-gear {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--pmd-c-text-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0;
+  line-height: 1;
+}
+.pmd-morph-chip-gear:hover { color: var(--pmd-c-text); }
+
+.pmd-morph-dialog {
+  max-width: 1150px;
+  width: 94vw;
+  max-height: 90vh;
+  overflow: auto;
+}
+.pmd-morph-intro {
+  font-size: 0.8rem;
+  color: var(--pmd-c-text-muted);
+  line-height: 1.45;
+}
+.pmd-morph-zones {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+.pmd-morph-zone { min-width: 0; }
+.pmd-morph-zone-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pmd-c-text-muted);
+  margin-bottom: 0.25rem;
+}
+.pmd-morph-row {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.3rem;
+  align-items: stretch;
+}
+.pmd-morph-pad {
+  flex: 1;
+  min-width: 0;
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.72rem;
+}
+.pmd-morph-pad-legend { font-weight: 600; }
+.pmd-morph-pad-sub {
+  font-size: 0.62rem;
+  opacity: 0.75;
+  margin-top: 1px;
+}
+.pmd-morph-pad-fixed {
+  background: var(--pmd-c-surface);
+  border: 1px solid var(--pmd-c-border-soft);
+  color: var(--pmd-c-text-muted);
+}
+.pmd-morph-pad-fixed .pmd-morph-pad-legend { color: var(--pmd-c-text); }
+.pmd-morph-pad-bind {
+  /* The overlay's silicone purple — deliberately unthemed, see above. */
+  background: #8756b8;
+  border: 1px solid #9d74d0;
+  color: #fff;
+}
+/* The binding picker: the current command renders as WRAPPING text (a
+   native <select> clips long labels to one cramped line); clicking it
+   opens the searchable command popup (.pmd-morph-picker). */
+.pmd-morph-bind-value {
+  cursor: pointer;
+  position: relative;
+  margin: 0.2rem 0;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 0.15rem 0.9rem 0.15rem 0.3rem;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  min-height: 2.2em;
+  display: flex;
+  align-items: center;
+}
+.pmd-morph-bind-value::after {
+  content: '\25BE';
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.6rem;
+  opacity: 0.8;
+}
+.pmd-morph-bind-value-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pmd-morph-pad-bind .pmd-morph-unbound .pmd-morph-bind-value-text {
+  opacity: 0.65;
+  font-style: italic;
+}
+
+/* Searchable command popup for the binding pickers — the command list
+   is far too long for a bare <select>. Fixed-positioned above the
+   dialog (overlay is z 1400). */
+.pmd-morph-picker {
+  position: fixed;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  background: var(--pmd-c-bg);
+  border: 1px solid var(--pmd-c-border-soft);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px var(--pmd-c-shadow-deep);
+  font-family: var(--pmd-ui-font);
+}
+.pmd-morph-picker-input {
+  margin: 6px;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  border: 1px solid var(--pmd-c-border);
+  border-radius: 4px;
+  background: var(--pmd-c-bg);
+  color: var(--pmd-c-text);
+}
+.pmd-morph-picker-list {
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+.pmd-morph-picker-item {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  color: var(--pmd-c-text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pmd-morph-picker-item:hover,
+.pmd-morph-picker-item.pmd-morph-picker-active {
+  background: var(--pmd-c-accent-soft);
+}
+.pmd-morph-picker-item.pmd-morph-picker-current {
+  font-weight: 600;
+  color: var(--pmd-c-accent);
+}
+.pmd-morph-picker-empty {
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  color: var(--pmd-c-text-muted);
+}
+.pmd-morph-adv {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: 0.62rem;
+  cursor: pointer;
+  color: #e7ddf8;
+}
+.pmd-morph-adv input { margin: 0; }

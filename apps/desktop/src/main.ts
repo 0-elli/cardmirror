@@ -640,6 +640,14 @@ ipcMain.handle('host:open-crash-dumps', async () => {
   await shell.openPath(app.getPath('crashDumps'));
 });
 
+/** Open the OS file manager at the crash-recovery journals folder
+ *  ({userData}/journals). Ensures the folder exists first so the
+ *  command works even before any journal has been written. */
+ipcMain.handle('host:open-journals-folder', async () => {
+  await ensureJournalsDir();
+  await shell.openPath(journalsDir());
+});
+
 /** Minimize the calling window — the `minimizeWindow` ribbon command
  *  (Mod-m default) and the macOS Window-menu Minimize item. */
 ipcMain.handle('host:minimize-window', (event) => {

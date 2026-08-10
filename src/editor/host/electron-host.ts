@@ -436,6 +436,8 @@ interface ElectronAPI {
   /** Open the OS file manager at the crash-dumps folder (mirrors
    *  Help → Open Crash Dumps Folder). */
   openCrashDumpsFolder(): Promise<void>;
+  /** Open the OS file manager at the crash-recovery journals folder. */
+  openJournalsFolder(): Promise<void>;
   /** Renderer accessibility tree toggle. Default off — works around a known
    *  Chromium AX-serialization crash. Machine-local pref; changing it needs an
    *  app restart (`relaunchApp`). `isAccessibilitySupportActive` reports whether
@@ -1234,6 +1236,10 @@ export class ElectronHost implements Host {
 
   async openCrashDumpsFolder(): Promise<void> {
     await api().openCrashDumpsFolder();
+  }
+
+  async openJournalsFolder(): Promise<void> {
+    await api().openJournalsFolder();
   }
 
   async getAccessibilityTreeEnabled(): Promise<boolean> {

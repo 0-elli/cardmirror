@@ -171,6 +171,7 @@ export const RIBBON_GROUPS: RibbonGroup[] = [
     commands: [
       'toggleReadMode',
       'toggleNavPane',
+      'toggleMorphMode',
       'wordCountSelection',
       'openSettings',
       'cycleTheme',
@@ -205,7 +206,7 @@ export const RIBBON_GROUPS: RibbonGroup[] = [
   },
   {
     title: 'Diagnostics',
-    commands: ['openDevConsole'],
+    commands: ['openDevConsole', 'openJournalsFolder'],
   },
   {
     title: 'Comments',

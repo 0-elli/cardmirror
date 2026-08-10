@@ -243,6 +243,7 @@ import { autoCapitalizePlugin } from './auto-capitalize-plugin.js';
 import { customAutocorrectPlugin } from './custom-autocorrect-plugin.js';
 import { footnotePopoverPlugin } from './footnote-popover.js';
 import { wordSelectionKeymap } from './word-selection-keymap.js';
+import { morphModePlugin, toggleMorphMode } from './morph-mode.js';
 import { highlightFrequencyPlugin } from './highlight-frequency-plugin.js';
 import { editorDragSurface } from './drag-editor-surface.js';
 import {
@@ -1980,6 +1981,12 @@ const ribbonContext: RibbonContext = {
   openSettings: () => settingsBtn.click(),
   minimizeWindow: () => {
     void getElectronHost()?.minimizeWindow();
+  },
+  openJournalsFolder: () => {
+    void getElectronHost()?.openJournalsFolder();
+  },
+  toggleMorphMode: () => {
+    toggleMorphMode();
   },
   cycleTheme: () => {
     // light → dark → system → light. The settings subscription
@@ -5173,6 +5180,18 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
     // wins over a command bound to the same key (the macro is the user's
     // explicit, more-specific intent). Reconfigured by the
     // `keyboardMacros` subscriber below when the list changes.
+    // Sensel Morph control-surface interpreter (prototype). Must sit
+    // above every keymap: while armed it rate-divides jog-wheel arrow
+    // ticks and, when a selection is active, claims the overlay's
+    // pad-grid letters as formatting stamps before macros/ribbon/base
+    // see them. Inert until armed (toggleMorphMode command).
+    morphModePlugin({
+      buildCommand: (id) => getRibbonCommand(id, ribbonContext),
+      zoomBy: (deltaPct) => {
+        if (multiDocZoomBy) multiDocZoomBy(deltaPct);
+        else setZoom(liveZoomPct + deltaPct);
+      },
+    }),
     keymap(buildMacroKeymap(settings.get('keyboardMacros'))),
     keymap(
       buildRibbonKeymap(settings.get('ribbonKeyOverrides'), ribbonContext),
