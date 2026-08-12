@@ -81,15 +81,27 @@ function matchVersion(ua: string, re: RegExp): string | null {
 /** Best-effort OS detection from a user-agent string. The UA is the
  *  only cross-platform-uniform source we can read from the renderer
  *  without going through Electron's preload — `navigator.platform`
- *  is deprecated and increasingly returns generic values. */
-function detectOS(ua: string): string {
+ *  is deprecated and increasingly returns generic values.
+ *
+ *  Exported for tests. */
+export function detectOS(ua: string): string {
   if (!ua) return 'Unknown';
+  // iOS before macOS: iPhone agents read "… like Mac OS X", so the
+  // macOS branch claims them if it runs first. An iPad running modern
+  // iPadOS is a genuine blind spot either way — desktop-class Safari
+  // identifies as "Macintosh; Intel Mac OS X" with nothing in the agent
+  // to tell it apart, so only older iPads land here.
+  if (ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod')) return 'iOS';
   if (ua.includes('Mac OS X') || ua.includes('Macintosh')) return 'macOS';
   if (ua.includes('Windows')) return 'Windows';
   // Order matters: "Linux" appears in Android UAs too, so check
   // Android first.
   if (ua.includes('Android')) return 'Android';
-  if (ua.includes('iPhone') || ua.includes('iPad')) return 'iOS';
+  // ChromeOS before Linux: Chromebook UAs read `X11; CrOS x86_64 …`,
+  // which carries neither "Linux" nor "Android" — so without this case
+  // every Chromebook reported "Unknown", exactly where the web
+  // edition's save-path bug reports come from.
+  if (ua.includes('CrOS')) return 'ChromeOS';
   if (ua.includes('Linux')) return 'Linux';
   return 'Unknown';
 }
