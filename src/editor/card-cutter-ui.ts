@@ -423,6 +423,40 @@ async function runBulkCut(view: EditorView, multi: BulkTargets): Promise<void> {
   }
 }
 
+/**
+ * The trim panel's header: a title/total row, with the card identity on
+ * its OWN line beneath.
+ *
+ * The identity row is a block-level component — everywhere else it is
+ * appended straight to a dialog and spans the full width, which is what
+ * its internal `margin-left: auto` jump button and ellipsizing label
+ * assume. Making it a flex sibling of the title (as this header once
+ * did) put three items in one row inside a 24rem panel: the identity
+ * label and the read-time total both set `white-space: nowrap` and so
+ * refused to shrink, leaving the title as the only compressible item.
+ * The title collapsed into a three-line column while everything else
+ * overflowed past the panel's right edge.
+ *
+ * Exported for tests so that structure stays pinned.
+ */
+export function buildTrimHead(
+  titleText: string,
+  identity: HTMLElement,
+): { head: HTMLElement; total: HTMLElement } {
+  const head = document.createElement('div');
+  head.className = 'pmd-cardcutter-trim-head';
+  const top = document.createElement('div');
+  top.className = 'pmd-cardcutter-trim-head-top';
+  const title = document.createElement('div');
+  title.className = 'pmd-cardcutter-trim-title';
+  title.textContent = titleText;
+  const total = document.createElement('div');
+  total.className = 'pmd-cardcutter-trim-total';
+  top.append(title, total);
+  head.append(top, identity);
+  return { head, total };
+}
+
 /** Apply-then-refine checklist: a floating panel listing the optional
  *  sections of a just-applied cut. Each row's count is engine-exact;
  *  unchecking removes that section's highlights live on the card. */
@@ -438,17 +472,11 @@ function openTrimChecklist(
   const panel = document.createElement('div');
   panel.className = 'pmd-cardcutter-trim';
 
-  const head = document.createElement('div');
-  head.className = 'pmd-cardcutter-trim-head';
-  const title = document.createElement('div');
-  title.className = 'pmd-cardcutter-trim-title';
-  title.textContent = capSec ? `Couldn't hit ≤${capSec}s — trim more?` : 'Trim the read (optional)';
-  head.appendChild(title);
   // Cutting several cards in a row stacks these panels; name the card.
-  head.appendChild(cardIdentityRow(view, session.focused));
-  const total = document.createElement('div');
-  total.className = 'pmd-cardcutter-trim-total';
-  head.appendChild(total);
+  const { head, total } = buildTrimHead(
+    capSec ? `Couldn't hit ≤${capSec}s — trim more?` : 'Trim the read (optional)',
+    cardIdentityRow(view, session.focused),
+  );
   panel.appendChild(head);
 
   let readWords = session.readWords;

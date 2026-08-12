@@ -13795,6 +13795,11 @@ body.pmd-mobile-tablet.pmd-mobile-rail-collapsed .pmd-mobile-movesheet {
   color: var(--pmd-c-text-secondary);
 }
 .pmd-cardcutter-card-id-text {
+  /* A flex item won't shrink below its content unless min-width is
+     cleared, and nowrap makes that content as wide as the whole card
+     label — so without this the ellipsis never engages and the label
+     pushes the jump button out of its container instead. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13979,13 +13984,28 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
 }
 .pmd-cardcutter-trim-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.3rem;
   padding: 0.7rem 0.85rem;
   border-bottom: 1px solid var(--pmd-c-border-soft);
 }
+/* Title and read-time share one row; the card identity gets its own
+   line below. Both items here are narrow, so nothing has to overflow. */
+.pmd-cardcutter-trim-head-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+/* The identity row carries stacked-layout margins for the dialogs it
+   also lives in; inside this header the flex gap already spaces it. */
+.pmd-cardcutter-trim-head .pmd-cardcutter-card-id {
+  margin: 0;
+}
 .pmd-cardcutter-trim-title {
+  /* Without this the default `min-width: auto` stops the title from
+     shrinking, and it pushes the read-time out of the panel instead. */
+  min-width: 0;
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--pmd-c-text);
