@@ -18,6 +18,8 @@
  */
 
 import { base64ToBytes } from './collab-crypto.js';
+import { appVersion } from '../install-info.js';
+import { RELAY_CLIENT_VERSION_HEADER } from '../relay-protocol.js';
 
 export type RoomsFetch = typeof fetch;
 
@@ -74,7 +76,11 @@ export class RoomsClient {
   }
 
   private headers(extra?: Record<string, string>): Record<string, string> {
-    return { Authorization: `Bearer ${this.opts.token()}`, ...extra };
+    return {
+      Authorization: `Bearer ${this.opts.token()}`,
+      [RELAY_CLIENT_VERSION_HEADER]: appVersion,
+      ...extra,
+    };
   }
 
   private async request(path: string, init?: RequestInit): Promise<Response> {
@@ -362,7 +368,11 @@ export class RoomStream {
       const sidQ = this.opts.sid ? `?sid=${encodeURIComponent(this.opts.sid)}` : '';
       const res = await fetchImpl(`${this.opts.baseUrl()}/rooms/${this.opts.roomId}/stream${sidQ}`, {
         method: 'GET',
-        headers: { Accept: 'text/event-stream', Authorization: `Bearer ${this.opts.token()}` },
+        headers: {
+          Accept: 'text/event-stream',
+          Authorization: `Bearer ${this.opts.token()}`,
+          [RELAY_CLIENT_VERSION_HEADER]: appVersion,
+        },
         signal: this.controller.signal,
       });
       if (res.status === 410 || res.status === 404) {

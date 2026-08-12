@@ -39,6 +39,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { createPairingKeystore, routingId, type PairingKeystore, type SealedBundle } from './pairing-crypto.js';
 import { BUILT_IN_RELAY_TOKEN } from './pairing-build.js';
+import { RELAY_CLIENT_VERSION_HEADER } from '../../../src/editor/relay-protocol.js';
 import { RelayStream } from './relay-stream.js';
 import {
   entitlementIfValid,
@@ -261,7 +262,10 @@ async function connectAccount(connectCode: string, confirmEvict: boolean): Promi
   // Code-less renewal must prove continuity: present the stored
   // entitlement (even a recently-expired one — the relay accepts a
   // 30-day grace) as the bearer. A bare routing code mints nothing.
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [RELAY_CLIENT_VERSION_HEADER]: app.getVersion(),
+  };
   if (!connectCode.trim() && entitlementState) {
     headers['Authorization'] = `Bearer ${entitlementState.entitlement}`;
   }
@@ -437,7 +441,11 @@ function compareVersions(a: string, b: string): number {
 // ── Relay HTTP ───────────────────────────────────────────────────────
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
-  return { Authorization: `Bearer ${relayToken()}`, ...extra };
+  return {
+    Authorization: `Bearer ${relayToken()}`,
+    [RELAY_CLIENT_VERSION_HEADER]: app.getVersion(),
+    ...extra,
+  };
 }
 
 function deleteMessage(msgId: string): void {
