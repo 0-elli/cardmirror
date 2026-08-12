@@ -65,6 +65,22 @@ export function cleanedRel(rel: string): string {
   return `${dir}cleaned_${base}`;
 }
 
+/** The phrase the in-place overwrite dialog makes you type out. */
+export const OVERWRITE_CONFIRM_PHRASE = 'I accept the risk';
+
+/** Whether what the user typed counts as the confirmation phrase.
+ *
+ *  Case- and spacing-insensitive on purpose: this is a "prove you read the
+ *  warning" ritual, not a password, and the dialog has already shouted the
+ *  phrase in a label whose `text-transform: uppercase` makes it LOOK like it
+ *  wants caps. Matching exactly meant anyone who typed what the screen showed
+ *  was locked out of their own confirmation with no way to tell why. Pure (no
+ *  view) so it can be unit-tested. */
+export function matchesOverwriteConfirmPhrase(typed: string): boolean {
+  const norm = (s: string): string => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  return norm(typed) === norm(OVERWRITE_CONFIRM_PHRASE);
+}
+
 /** The directory part of a file path (its containing folder). */
 function dirName(p: string): string {
   const m = p.replace(/[\\/]+$/, '').match(/^(.*)[\\/][^\\/]*$/);
@@ -592,7 +608,7 @@ class CleanModal {
   /** Modal that requires the user to type the exact phrase before overwriting
    *  the originals in place. Resolves true only when they confirm. */
   private confirmOverwrite(): Promise<boolean> {
-    const PHRASE = 'I accept the risk';
+    const PHRASE = OVERWRITE_CONFIRM_PHRASE;
     return new Promise<boolean>((resolve) => {
       const overlay = document.createElement('div');
       overlay.className = 'pmd-bulk-overlay';
@@ -635,7 +651,9 @@ class CleanModal {
       bodyEl.appendChild(warn);
 
       const prompt = document.createElement('label');
-      prompt.className = 'pmd-bulk-field-label';
+      // Not uppercased like sibling field labels: this one names a string the
+      // user has to reproduce, so it must read exactly as typed.
+      prompt.className = 'pmd-bulk-field-label pmd-clean-overwrite-prompt';
       prompt.textContent = `Type “${PHRASE}” to proceed:`;
       bodyEl.appendChild(prompt);
       const input = document.createElement('input');
@@ -650,15 +668,15 @@ class CleanModal {
       actions.className = 'pmd-bulk-actions';
       const cancel = button('Cancel', () => finish(false));
       const confirm = button('Confirm Overwrite', () => {
-        if (input.value.trim() === PHRASE) finish(true);
+        if (matchesOverwriteConfirmPhrase(input.value)) finish(true);
       });
       confirm.classList.add('pmd-bulk-btn-primary', 'pmd-clean-overwrite-confirm');
       confirm.disabled = true;
       input.addEventListener('input', () => {
-        confirm.disabled = input.value.trim() !== PHRASE;
+        confirm.disabled = !matchesOverwriteConfirmPhrase(input.value);
       });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && input.value.trim() === PHRASE) {
+        if (e.key === 'Enter' && matchesOverwriteConfirmPhrase(input.value)) {
           e.preventDefault();
           finish(true);
         }

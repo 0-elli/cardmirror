@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { cleanedRel, cleanOverwritesInPlace } from '../../src/editor/clean-ui.js';
+import {
+  cleanedRel,
+  cleanOverwritesInPlace,
+  matchesOverwriteConfirmPhrase,
+  OVERWRITE_CONFIRM_PHRASE,
+} from '../../src/editor/clean-ui.js';
 
 describe('cleanedRel', () => {
   it('prefixes a bare filename with cleaned_', () => {
@@ -110,5 +115,33 @@ describe('cleanOverwritesInPlace', () => {
         }),
       ).toBe(false);
     });
+  });
+});
+
+describe('matchesOverwriteConfirmPhrase', () => {
+  // The dialog's instruction label is uppercased by CSS, so the phrase the
+  // user READS is all-caps while the constant is sentence case. Matching
+  // exactly meant typing what the screen showed left "Confirm Overwrite"
+  // permanently disabled with nothing on screen explaining why.
+  it('accepts the phrase as the dialog visually presents it', () => {
+    expect(matchesOverwriteConfirmPhrase('I ACCEPT THE RISK')).toBe(true);
+  });
+
+  it('accepts the phrase as written in the constant and placeholder', () => {
+    expect(matchesOverwriteConfirmPhrase(OVERWRITE_CONFIRM_PHRASE)).toBe(true);
+  });
+
+  it('ignores casing, surrounding space, and doubled inner spaces', () => {
+    expect(matchesOverwriteConfirmPhrase('i accept the risk')).toBe(true);
+    expect(matchesOverwriteConfirmPhrase('  I Accept The Risk  ')).toBe(true);
+    expect(matchesOverwriteConfirmPhrase('I  accept   the risk')).toBe(true);
+  });
+
+  it('still refuses anything that is not the phrase', () => {
+    expect(matchesOverwriteConfirmPhrase('')).toBe(false);
+    expect(matchesOverwriteConfirmPhrase('I accept')).toBe(false);
+    expect(matchesOverwriteConfirmPhrase('I accept the risks')).toBe(false);
+    expect(matchesOverwriteConfirmPhrase('yes')).toBe(false);
+    expect(matchesOverwriteConfirmPhrase('Iaccepttherisk')).toBe(false);
   });
 });

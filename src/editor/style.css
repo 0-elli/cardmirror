@@ -10336,6 +10336,13 @@ body.pmd-recovery-active.pmd-multi-doc #app {
   color: var(--pmd-c-error);
   font-weight: 500;
 }
+/* Sibling field labels uppercase themselves; this one quotes a phrase the user
+   has to retype, and CSS-only capitals don't change what the input compares
+   against — so it stays as written to match the placeholder and the check. */
+.pmd-clean-overwrite-prompt {
+  text-transform: none;
+  letter-spacing: normal;
+}
 .pmd-clean-overwrite-dialog .pmd-clean-overwrite-confirm {
   background: var(--pmd-c-danger);
   border-color: var(--pmd-c-danger);
