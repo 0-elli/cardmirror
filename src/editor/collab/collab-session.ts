@@ -35,6 +35,8 @@ import type { Node as PMNode } from 'prosemirror-model';
 import type { Plugin } from 'prosemirror-state';
 import { EditorState } from 'prosemirror-state';
 import { LoroSyncPlugin, updateLoroToPmState } from 'loro-prosemirror';
+import { appVersion } from '../install-info.js';
+import { compareAppVersions, MOVABLE_ROOMS_MIN_VERSION } from '../relay-protocol.js';
 import { schema } from '../../schema/index.js';
 import {
   bytesToBase64,
@@ -54,6 +56,17 @@ type SyncDoc = Parameters<typeof LoroSyncPlugin>[0]['doc'];
  *  set before any ops are created on the doc. Exported so the history
  *  recovery path configures its scratch docs identically — a mismatch
  *  would change mark-expansion behavior on the recovered copy. */
+/**
+ * Seed format for NEW rooms: builds at/after MOVABLE_ROOMS_MIN_VERSION
+ * seed movable-list children (the binding's per-room inheritance then
+ * keeps every container in the room matching the root, whatever build
+ * touches it later). Betas seed plain lists, so this line is dormant
+ * until the version crosses the floor — ship-and-forget for v1.0.
+ * Module-scope on purpose: the flag only matters at ROOT creation, and
+ * a per-build constant can't race anything.
+ */
+globalThis.__CM_MOVABLE_LIST__ = compareAppVersions(appVersion, MOVABLE_ROOMS_MIN_VERSION) >= 0;
+
 export function configTextStyle(doc: LoroDoc): void {
   doc.configTextStyle(
     Object.fromEntries(
@@ -381,6 +394,20 @@ export class CollabSession {
   }
 
   /** Full CRDT export — the persistence layer's compaction base. */
+  /** The room's children-container format — decides the invite floor
+   *  (movable rooms exclude builds that cannot read them). */
+  childrenFormat(): 'movable' | 'list' {
+    try {
+      const kids = this.loroDoc.getMap('doc').get('children');
+      if (kids != null && (kids as { kind?: () => string }).kind?.() === 'MovableList') {
+        return 'movable';
+      }
+    } catch {
+      /* unseeded/odd shape → treat as the legacy format */
+    }
+    return 'list';
+  }
+
   exportSnapshot(): Uint8Array {
     this.loroDoc.commit();
     return this.loroDoc.export({ mode: 'snapshot' });

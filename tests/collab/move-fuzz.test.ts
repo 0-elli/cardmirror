@@ -183,9 +183,18 @@ async function fuzzRun(strictExactlyOnce: boolean): Promise<number> {
 }
 
 describe('move fuzz (3 peers, offline partitions)', () => {
-  it(`shipped mode: nothing lost across ${SEEDS} seeds (duplicates logged)`, { timeout: 30_000 * SEEDS }, async () => {
-    const duplicates = await fuzzRun(false);
-    console.log(`[move-fuzz] shipped mode: 0 lost, ${duplicates} duplicate(s) from same-card contention`);
+  it(`list-format rooms: nothing lost across ${SEEDS} seeds (duplicates logged)`, { timeout: 30_000 * SEEDS }, async () => {
+    // Pinned explicitly: once the build crosses MOVABLE_ROOMS_MIN_VERSION,
+    // collab-session's module side-effect flips the ambient flag on — but
+    // list-format rooms keep existing forever, and THEIR semantics are
+    // what this run guards.
+    globalThis.__CM_MOVABLE_LIST__ = false;
+    try {
+      const duplicates = await fuzzRun(false);
+      console.log(`[move-fuzz] list rooms: 0 lost, ${duplicates} duplicate(s) from same-card contention`);
+    } finally {
+      globalThis.__CM_MOVABLE_LIST__ = undefined;
+    }
   });
 
   it(`movable-list mode (v1.0): strictly exactly-once across ${SEEDS} seeds`, { timeout: 30_000 * SEEDS }, async () => {

@@ -1,5 +1,5 @@
 diff --git a/node_modules/loro-prosemirror/dist/index.cjs b/node_modules/loro-prosemirror/dist/index.cjs
-index 74c4b30..e2ec3e6 100644
+index 74c4b30..1fcad6b 100644
 --- a/node_modules/loro-prosemirror/dist/index.cjs
 +++ b/node_modules/loro-prosemirror/dist/index.cjs
 @@ -28,6 +28,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
@@ -168,7 +168,7 @@ index 74c4b30..e2ec3e6 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -226,13 +341,64 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -226,13 +341,89 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!(0, lib0_function.equalityDeep)(attrs.get(key), value)) attrs.set(key, value);
@@ -232,11 +232,36 @@ index 74c4b30..e2ec3e6 100644
  }
  function getLoroMapChildren(obj) {
 -	return obj.getOrCreateContainer(CHILDREN_KEY, new loro_crdt.LoroList());
-+	return obj.getOrCreateContainer(CHILDREN_KEY, globalThis.__CM_MOVABLE_LIST__ ? new loro_crdt.LoroMovableList() : new loro_crdt.LoroList());
++	return obj.getOrCreateContainer(CHILDREN_KEY, cardmirrorChildrenKind(obj) === "movable" ? new loro_crdt.LoroMovableList() : new loro_crdt.LoroList());
++}
++/**
++ * CardMirror patch: per-ROOM container format. A new children container
++ * inherits the kind of the doc ROOT's children, so a room stays
++ * homogeneous no matter which build creates a node inside it — the
++ * v1.0 movable-list migration without a flag day (old rooms remain
++ * LoroList forever; rooms seeded by a movable-capable build are
++ * LoroMovableList throughout). The global flag decides only the ROOT's
++ * own children, i.e. the format of a freshly seeded doc.
++ */
++function cardmirrorChildrenKind(obj) {
++	try {
++		let cur = obj;
++		for (let i = 0; i < 64; i++) {
++			const up = cur.parent && cur.parent();
++			if (!up) break;
++			cur = up;
++		}
++		const rootKids = cur && cur.get && cur.get(CHILDREN_KEY);
++		if (rootKids instanceof loro_crdt.LoroMovableList) return "movable";
++		if (rootKids instanceof loro_crdt.LoroList) return "list";
++	} catch (e) {
++		/* detached/odd shape — fall through to the seed flag */
++	}
++	return globalThis.__CM_MOVABLE_LIST__ ? "movable" : "list";
  }
  function updateLoroMapChildren(obj, node, mapping) {
  	const loroChildren = getLoroMapChildren(obj);
-@@ -258,6 +424,26 @@ function updateLoroMapChildren(obj, node, mapping) {
+@@ -258,6 +449,26 @@ function updateLoroMapChildren(obj, node, mapping) {
  			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
  		} else break;
  	}
@@ -263,7 +288,7 @@ index 74c4b30..e2ec3e6 100644
  	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
  		const leftLoro = loroChildren.get(left);
  		const leftNode = nodeChildren[left];
-@@ -422,27 +608,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -422,27 +633,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -312,7 +337,7 @@ index 74c4b30..e2ec3e6 100644
  	}
  	return prosemirror_view.DecorationSet.create(state.doc, d);
  }
-@@ -506,7 +694,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+@@ -506,7 +719,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
  	}
  	while (loroNode != null) {
  		const children = loroNode.get(CHILDREN_KEY);
@@ -321,7 +346,7 @@ index 74c4b30..e2ec3e6 100644
  			const childIds = children.toArray();
  			for (const iter of childIds) {
  				if (iter.id === targetChildId) break;
-@@ -587,6 +775,23 @@ const LoroSyncPlugin = (props) => {
+@@ -587,6 +800,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -345,7 +370,7 @@ index 74c4b30..e2ec3e6 100644
  				return state;
  			}
  		},
-@@ -650,14 +855,63 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -650,14 +880,63 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
@@ -416,7 +441,7 @@ index 74c4b30..e2ec3e6 100644
  /**
  * Update ProseMirror selection based on the given Loro cursors.
 diff --git a/node_modules/loro-prosemirror/dist/index.js b/node_modules/loro-prosemirror/dist/index.js
-index e41095d..296933a 100644
+index e41095d..0261794 100644
 --- a/node_modules/loro-prosemirror/dist/index.js
 +++ b/node_modules/loro-prosemirror/dist/index.js
 @@ -1,6 +1,56 @@
@@ -642,7 +667,7 @@ index e41095d..296933a 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -225,13 +390,15 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -225,13 +390,40 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!equalityDeep(attrs.get(key), value)) attrs.set(key, value);
@@ -657,11 +682,36 @@ index e41095d..296933a 100644
  }
  function getLoroMapChildren(obj) {
 -	return obj.getOrCreateContainer(CHILDREN_KEY, new LoroList());
-+	return obj.getOrCreateContainer(CHILDREN_KEY, globalThis.__CM_MOVABLE_LIST__ ? new LoroMovableList() : new LoroList());
++	return obj.getOrCreateContainer(CHILDREN_KEY, cardmirrorChildrenKind(obj) === "movable" ? new LoroMovableList() : new LoroList());
++}
++/**
++ * CardMirror patch: per-ROOM container format. A new children container
++ * inherits the kind of the doc ROOT's children, so a room stays
++ * homogeneous no matter which build creates a node inside it — the
++ * v1.0 movable-list migration without a flag day (old rooms remain
++ * LoroList forever; rooms seeded by a movable-capable build are
++ * LoroMovableList throughout). The global flag decides only the ROOT's
++ * own children, i.e. the format of a freshly seeded doc.
++ */
++function cardmirrorChildrenKind(obj) {
++	try {
++		let cur = obj;
++		for (let i = 0; i < 64; i++) {
++			const up = cur.parent && cur.parent();
++			if (!up) break;
++			cur = up;
++		}
++		const rootKids = cur && cur.get && cur.get(CHILDREN_KEY);
++		if (rootKids instanceof LoroMovableList) return "movable";
++		if (rootKids instanceof LoroList) return "list";
++	} catch (e) {
++		/* detached/odd shape — fall through to the seed flag */
++	}
++	return globalThis.__CM_MOVABLE_LIST__ ? "movable" : "list";
  }
  function updateLoroMapChildren(obj, node, mapping) {
  	const loroChildren = getLoroMapChildren(obj);
-@@ -257,6 +424,26 @@ function updateLoroMapChildren(obj, node, mapping) {
+@@ -257,6 +449,26 @@ function updateLoroMapChildren(obj, node, mapping) {
  			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
  		} else break;
  	}
@@ -688,7 +738,7 @@ index e41095d..296933a 100644
  	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
  		const leftLoro = loroChildren.get(left);
  		const leftNode = nodeChildren[left];
-@@ -421,27 +608,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -421,27 +633,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -737,7 +787,7 @@ index e41095d..296933a 100644
  	}
  	return DecorationSet.create(state.doc, d);
  }
-@@ -505,7 +694,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+@@ -505,7 +719,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
  	}
  	while (loroNode != null) {
  		const children = loroNode.get(CHILDREN_KEY);
@@ -746,7 +796,7 @@ index e41095d..296933a 100644
  			const childIds = children.toArray();
  			for (const iter of childIds) {
  				if (iter.id === targetChildId) break;
-@@ -586,6 +775,23 @@ const LoroSyncPlugin = (props) => {
+@@ -586,6 +800,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -770,7 +820,7 @@ index e41095d..296933a 100644
  				return state;
  			}
  		},
-@@ -649,14 +855,72 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -649,14 +880,72 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);

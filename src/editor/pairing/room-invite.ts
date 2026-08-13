@@ -23,7 +23,17 @@ export const ROOM_INVITE_ITEM_TYPE = 'room-invite';
  *  clients drop the invite with the version-mismatch toast rather than
  *  rendering a dead card row. Keep in sync with the release that ships
  *  invite support. */
+import { MOVABLE_ROOMS_MIN_VERSION } from '../relay-protocol.js';
+
 export const ROOM_INVITE_MIN_VERSION = '0.1.0-beta.8';
+
+/** The invite's compatibility floor for a given room format. Movable
+ *  rooms require the movable-capable build — an older client joining
+ *  one could not materialize its children at all, so it must decline
+ *  the invite (existing minReceiverVersion UX) rather than import. */
+export function roomInviteFloor(format: 'movable' | 'list'): string {
+  return format === 'movable' ? MOVABLE_ROOMS_MIN_VERSION : ROOM_INVITE_MIN_VERSION;
+}
 
 export interface RoomInvitePayload {
   /** `cmshare1.<roomId>.<key>` — everything a client needs to join. */

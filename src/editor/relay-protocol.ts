@@ -24,3 +24,40 @@
  * build shipped before this header existed will send nothing at all.
  */
 export const RELAY_CLIENT_VERSION_HEADER = 'X-CardMirror-Version';
+
+/**
+ * First app version that seeds co-editing rooms with movable-list
+ * children (identity-preserving moves; strict exactly-once under
+ * concurrent same-card moves — fuzz-proven). The binding's per-room
+ * inheritance keeps every room homogeneous, so this constant does two
+ * jobs: builds >= it seed NEW rooms movable, and invites to movable
+ * rooms carry it as their compatibility floor so older builds decline
+ * cleanly instead of joining a room they cannot read.
+ */
+export const MOVABLE_ROOMS_MIN_VERSION = '1.0.0';
+
+/**
+ * Prerelease-aware version compare for CardMirror's version shapes
+ * (`X.Y.Z`, `X.Y.Z-alpha.N`, `-beta.N`, `-rc.N`). Returns <0, 0, >0.
+ * A release outranks its own prereleases; unknown prerelease labels
+ * rank with beta; unparseable strings rank lowest (a garbled version
+ * must never unlock version-gated behavior).
+ */
+export function compareAppVersions(a: string, b: string): number {
+  const key = (v: string): number[] => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(v.trim());
+    if (!m) return [-1, 0, 0, 0, 0, 0];
+    const core = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (!m[4]) return [...core, 1, 0, 0];
+    const parts = m[4].split('.');
+    const rank = { alpha: 0, beta: 1, rc: 2 }[parts[0]!.toLowerCase() as 'alpha'] ?? 1;
+    const num = parts[1] && /^\d+$/.test(parts[1]) ? Number(parts[1]) : 0;
+    return [...core, 0, rank, num];
+  };
+  const ka = key(a);
+  const kb = key(b);
+  for (let i = 0; i < 6; i++) {
+    if (ka[i]! !== kb[i]!) return ka[i]! - kb[i]!;
+  }
+  return 0;
+}

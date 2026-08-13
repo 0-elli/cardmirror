@@ -40,7 +40,7 @@ import { getElectronHost } from '../host/index.js';
 import { ensureBakedRelay, relayClient, endRoomOnRelay } from './collab-relay.js';
 import { relayClient as pairingRelayClient } from '../pairing/relay-client.js';
 import { resolveStarredTarget } from '../pairing/send-to-starred.js';
-import { buildRoomInviteItem, ROOM_INVITE_MIN_VERSION } from '../pairing/room-invite.js';
+import { buildRoomInviteItem, roomInviteFloor } from '../pairing/room-invite.js';
 import { collabInvariantHealPlugin } from './collab-invariants.js';
 import { causalMarkHealPlugin } from './causal-mark-heal.js';
 import {
@@ -1073,9 +1073,13 @@ async function sendInviteTo(
     shareCode,
     title: sessionDocTitle(ownerUid),
   });
+  // Movable-format rooms carry the higher floor: a pre-movable build
+  // joining one couldn't read its containers at all, so it must get
+  // the decline-with-update-toast instead of a broken join.
+  const format = actionSession()?.session.childrenFormat() ?? 'list';
   const res = await pairingRelayClient.send(target.codes, item, {
     via: target.via,
-    minReceiverVersion: ROOM_INVITE_MIN_VERSION,
+    minReceiverVersion: roomInviteFloor(format),
   });
   if (res.fail === 0) showToast(`Invited ${target.label} ✓`);
   else if (res.ok === 0) showToast(`Couldn't reach ${target.label}`);
