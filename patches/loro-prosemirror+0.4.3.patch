@@ -1,5 +1,5 @@
 diff --git a/node_modules/loro-prosemirror/dist/index.cjs b/node_modules/loro-prosemirror/dist/index.cjs
-index 74c4b30..8538cea 100644
+index 74c4b30..e2ec3e6 100644
 --- a/node_modules/loro-prosemirror/dist/index.cjs
 +++ b/node_modules/loro-prosemirror/dist/index.cjs
 @@ -28,6 +28,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
@@ -168,7 +168,7 @@ index 74c4b30..8538cea 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -226,10 +341,12 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -226,13 +341,64 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!(0, lib0_function.equalityDeep)(attrs.get(key), value)) attrs.set(key, value);
@@ -180,10 +180,90 @@ index 74c4b30..8538cea 100644
 +	for (const key of keys) {
 +		if (attrs.get(key) !== void 0) attrs.delete(key);
 +	}
++}
++/**
++ * CardMirror patch: move-aware child diffing.
++ *
++ * `updateLoroMapChildren` skips a matching prefix and suffix, then
++ * delete-and-recreates every misaligned pair in between. Relocating one
++ * child past N siblings misaligns the whole span, so all N are destroyed
++ * and rebuilt — ~0.65 KiB of permanent oplog per position traversed, a
++ * fresh container identity for every card passed over, and (measured)
++ * silent loss of cards under concurrent partitioned moves.
++ *
++ * After prefix/suffix trimming a pure relocation can only look like a
++ * rotation of the remaining span: [A,B,…,Z] → [B,…,Z,A] (moved right) or
++ * [B,…,Z,A] → [A,B,…,Z] (moved left). Identity is checked through the
++ * existing container→node `mapping`, so this recognizes only genuine
++ * relocations of untouched nodes; anything edited in the same
++ * transaction fails the check and falls through to the original path.
++ *
++ * `globalThis.__CM_DISABLE_MOVE_DIFF__` restores upstream behaviour
++ * (used by the regression harness to demonstrate the failure mode).
++ */
++function cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroLen, nodeLen, mapping) {
++	if (loroLen !== nodeLen) return null;
++	const span = loroLen - left - right;
++	if (span < 2) return null;
++	const loroMid = [];
++	for (let i = 0; i < span; i++) {
++		const child = loroChildren.get(left + i);
++		if (!loro_crdt.isContainer(child)) return null;
++		const mapped = mapping.get(child.id);
++		// Text children map to arrays of PM nodes; only whole-node moves qualify.
++		if (mapped == null || Array.isArray(mapped)) return null;
++		loroMid.push(mapped);
++	}
++	const nodeMid = nodeChildren.slice(left, left + span);
++	for (const n of nodeMid) if (n == null || Array.isArray(n)) return null;
++	// Moved right: the first child now sits last.
++	let rotated = nodeMid[span - 1] === loroMid[0];
++	if (rotated) {
++		for (let i = 1; i < span; i++) if (nodeMid[i - 1] !== loroMid[i]) { rotated = false; break; }
++		if (rotated) return { from: left, to: left + span - 1 };
++	}
++	// Moved left: the last child now sits first.
++	rotated = nodeMid[0] === loroMid[span - 1];
++	if (rotated) {
++		for (let i = 0; i < span - 1; i++) if (nodeMid[i + 1] !== loroMid[i]) { rotated = false; break; }
++		if (rotated) return { from: left + span - 1, to: left };
++	}
++	return null;
  }
  function getLoroMapChildren(obj) {
- 	return obj.getOrCreateContainer(CHILDREN_KEY, new loro_crdt.LoroList());
-@@ -422,27 +539,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+-	return obj.getOrCreateContainer(CHILDREN_KEY, new loro_crdt.LoroList());
++	return obj.getOrCreateContainer(CHILDREN_KEY, globalThis.__CM_MOVABLE_LIST__ ? new loro_crdt.LoroMovableList() : new loro_crdt.LoroList());
+ }
+ function updateLoroMapChildren(obj, node, mapping) {
+ 	const loroChildren = getLoroMapChildren(obj);
+@@ -258,6 +424,26 @@ function updateLoroMapChildren(obj, node, mapping) {
+ 			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
+ 		} else break;
+ 	}
++	// CardMirror patch: a pure relocation is one op, not a span rewrite.
++	if (!globalThis.__CM_DISABLE_MOVE_DIFF__) {
++		const rot = cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroChildLength, nodeChildLength, mapping);
++		if (rot != null) {
++			if (typeof loroChildren.move === "function") {
++				// Movable list (v1.0, flag-gated): identity-preserving, O(1).
++				loroChildren.move(rot.from, rot.to);
++			} else {
++				// Plain list: one card's worth instead of the whole span. The
++				// moved child is rebuilt, so it gets a new identity — the
++				// passed-over children keep theirs, which is the loss fix.
++				const moving = nodeChildren[rot.to];
++				const doomed = loroChildren.get(rot.from);
++				if (loro_crdt.isContainer(doomed)) mapping.delete(doomed.id);
++				loroChildren.delete(rot.from, 1);
++				createLoroChild(loroChildren, rot.to, moving, mapping);
++			}
++			return;
++		}
++	}
+ 	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
+ 		const leftLoro = loroChildren.get(left);
+ 		const leftNode = nodeChildren[left];
+@@ -422,27 +608,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -232,7 +312,16 @@ index 74c4b30..8538cea 100644
  	}
  	return prosemirror_view.DecorationSet.create(state.doc, d);
  }
-@@ -587,6 +706,23 @@ const LoroSyncPlugin = (props) => {
+@@ -506,7 +694,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+ 	}
+ 	while (loroNode != null) {
+ 		const children = loroNode.get(CHILDREN_KEY);
+-		if (children instanceof loro_crdt.LoroList) {
++		if (children instanceof loro_crdt.LoroList || children instanceof loro_crdt.LoroMovableList) {
+ 			const childIds = children.toArray();
+ 			for (const iter of childIds) {
+ 				if (iter.id === targetChildId) break;
+@@ -587,6 +775,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -256,7 +345,7 @@ index 74c4b30..8538cea 100644
  				return state;
  			}
  		},
-@@ -650,14 +786,63 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -650,14 +855,63 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
@@ -327,10 +416,68 @@ index 74c4b30..8538cea 100644
  /**
  * Update ProseMirror selection based on the given Loro cursors.
 diff --git a/node_modules/loro-prosemirror/dist/index.js b/node_modules/loro-prosemirror/dist/index.js
-index e41095d..1e99e55 100644
+index e41095d..296933a 100644
 --- a/node_modules/loro-prosemirror/dist/index.js
 +++ b/node_modules/loro-prosemirror/dist/index.js
-@@ -27,6 +27,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
+@@ -1,6 +1,56 @@
+ import { Fragment, Node, Schema, Slice } from "prosemirror-model";
+ import { EditorState, Plugin, PluginKey, Selection, TextSelection } from "prosemirror-state";
+-import { Awareness, Cursor, EphemeralStore, LoroDoc, LoroList, LoroMap, LoroText, LoroTree, UndoManager, isContainer } from "loro-crdt";
++import { Awareness, Cursor, EphemeralStore, LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText, LoroTree, UndoManager, isContainer } from "loro-crdt";
++
++/**
++ * CardMirror patch: move-aware child diffing.
++ *
++ * `updateLoroMapChildren` skips a matching prefix and suffix, then
++ * delete-and-recreates every misaligned pair in between. Relocating one
++ * child past N siblings misaligns the whole span, so all N are destroyed
++ * and rebuilt — ~0.65 KiB of permanent oplog per position traversed, a
++ * fresh container identity for every card passed over, and (measured)
++ * silent loss of cards under concurrent partitioned moves.
++ *
++ * After prefix/suffix trimming a pure relocation can only look like a
++ * rotation of the remaining span: [A,B,…,Z] → [B,…,Z,A] (moved right) or
++ * [B,…,Z,A] → [A,B,…,Z] (moved left). Identity is checked through the
++ * existing container→node `mapping`, so this recognizes only genuine
++ * relocations of untouched nodes; anything edited in the same
++ * transaction fails the check and falls through to the original path.
++ *
++ * `globalThis.__CM_DISABLE_MOVE_DIFF__` restores upstream behaviour
++ * (used by the regression harness to demonstrate the failure mode).
++ */
++function cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroLen, nodeLen, mapping) {
++	if (loroLen !== nodeLen) return null;
++	const span = loroLen - left - right;
++	if (span < 2) return null;
++	const loroMid = [];
++	for (let i = 0; i < span; i++) {
++		const child = loroChildren.get(left + i);
++		if (!isContainer(child)) return null;
++		const mapped = mapping.get(child.id);
++		// Text children map to arrays of PM nodes; only whole-node moves qualify.
++		if (mapped == null || Array.isArray(mapped)) return null;
++		loroMid.push(mapped);
++	}
++	const nodeMid = nodeChildren.slice(left, left + span);
++	for (const n of nodeMid) if (n == null || Array.isArray(n)) return null;
++	// Moved right: the first child now sits last.
++	let rotated = nodeMid[span - 1] === loroMid[0];
++	if (rotated) {
++		for (let i = 1; i < span; i++) if (nodeMid[i - 1] !== loroMid[i]) { rotated = false; break; }
++		if (rotated) return { from: left, to: left + span - 1 };
++	}
++	// Moved left: the last child now sits first.
++	rotated = nodeMid[0] === loroMid[span - 1];
++	if (rotated) {
++		for (let i = 0; i < span - 1; i++) if (nodeMid[i + 1] !== loroMid[i]) { rotated = false; break; }
++		if (rotated) return { from: left + span - 1, to: left };
++	}
++	return null;
++}
+ import { Decoration, DecorationSet, EditorView } from "prosemirror-view";
+ import { simpleDiff } from "lib0/diff";
+ import { equalityDeep } from "lib0/function";
+@@ -27,6 +77,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
  	if (isInit) doc.commit({ origin: "sys:init" });
  	else doc.commit({ origin: "loroSyncPlugin" });
  }
@@ -394,7 +541,7 @@ index e41095d..1e99e55 100644
  function createNodeFromLoroObj(schema, obj, mapping) {
  	let retval = mapping.get(obj.id) ?? null;
  	if (retval != null) return retval;
-@@ -40,7 +97,9 @@ function createNodeFromLoroObj(schema, obj, mapping) {
+@@ -40,7 +147,9 @@ function createNodeFromLoroObj(schema, obj, mapping) {
  			retval = schema.node(nodeName, attributes.toJSON(), mappedChildren);
  			WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(retval, obj.id);
  		} catch (e) {
@@ -405,7 +552,7 @@ index e41095d..1e99e55 100644
  		}
  	} else if (obj instanceof LoroText) {
  		retval = [];
-@@ -82,19 +141,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
+@@ -82,19 +191,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
  function updateLoroText(obj, nodes, mapping) {
  	mapping.set(obj.id, nodes);
  	let str = obj.toString();
@@ -483,7 +630,7 @@ index e41095d..1e99e55 100644
  }
  function nodeMarksToAttributes(marks) {
  	const pattrs = {};
-@@ -155,6 +265,11 @@ function eqMappedNode(mapped, node) {
+@@ -155,6 +315,11 @@ function eqMappedNode(mapped, node) {
  	return false;
  }
  function normalizeNodeContent(node) {
@@ -495,7 +642,7 @@ index e41095d..1e99e55 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -225,10 +340,12 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -225,13 +390,15 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!equalityDeep(attrs.get(key), value)) attrs.set(key, value);
@@ -509,8 +656,39 @@ index e41095d..1e99e55 100644
 +	}
  }
  function getLoroMapChildren(obj) {
- 	return obj.getOrCreateContainer(CHILDREN_KEY, new LoroList());
-@@ -421,27 +538,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+-	return obj.getOrCreateContainer(CHILDREN_KEY, new LoroList());
++	return obj.getOrCreateContainer(CHILDREN_KEY, globalThis.__CM_MOVABLE_LIST__ ? new LoroMovableList() : new LoroList());
+ }
+ function updateLoroMapChildren(obj, node, mapping) {
+ 	const loroChildren = getLoroMapChildren(obj);
+@@ -257,6 +424,26 @@ function updateLoroMapChildren(obj, node, mapping) {
+ 			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
+ 		} else break;
+ 	}
++	// CardMirror patch: a pure relocation is one op, not a span rewrite.
++	if (!globalThis.__CM_DISABLE_MOVE_DIFF__) {
++		const rot = cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroChildLength, nodeChildLength, mapping);
++		if (rot != null) {
++			if (typeof loroChildren.move === "function") {
++				// Movable list (v1.0, flag-gated): identity-preserving, O(1).
++				loroChildren.move(rot.from, rot.to);
++			} else {
++				// Plain list: one card's worth instead of the whole span. The
++				// moved child is rebuilt, so it gets a new identity — the
++				// passed-over children keep theirs, which is the loss fix.
++				const moving = nodeChildren[rot.to];
++				const doomed = loroChildren.get(rot.from);
++				if (isContainer(doomed)) mapping.delete(doomed.id);
++				loroChildren.delete(rot.from, 1);
++				createLoroChild(loroChildren, rot.to, moving, mapping);
++			}
++			return;
++		}
++	}
+ 	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
+ 		const leftLoro = loroChildren.get(left);
+ 		const leftNode = nodeChildren[left];
+@@ -421,27 +608,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -559,7 +737,16 @@ index e41095d..1e99e55 100644
  	}
  	return DecorationSet.create(state.doc, d);
  }
-@@ -586,6 +705,23 @@ const LoroSyncPlugin = (props) => {
+@@ -505,7 +694,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+ 	}
+ 	while (loroNode != null) {
+ 		const children = loroNode.get(CHILDREN_KEY);
+-		if (children instanceof LoroList) {
++		if (children instanceof LoroList || children instanceof LoroMovableList) {
+ 			const childIds = children.toArray();
+ 			for (const iter of childIds) {
+ 				if (iter.id === targetChildId) break;
+@@ -586,6 +775,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -583,7 +770,7 @@ index e41095d..1e99e55 100644
  				return state;
  			}
  		},
-@@ -649,14 +785,72 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -649,14 +855,72 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
