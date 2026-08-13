@@ -1,6 +1,6 @@
 # CardMirror Privacy Policy
 
-**Last updated: July 27, 2026**
+**Last updated: August 12, 2026**
 
 CardMirror is a writing and research tool for debate and academic work. This
 policy explains, in plain language, what happens to your data when you use it.
@@ -67,7 +67,8 @@ on** in Settings.
   recipients and is never visible to the relay.
 - **What the relay can see.** To route a message the relay sees a **recipient
   routing code** (a one‑way hash of the recipient's public key — not a name or
-  email), a message id, the message's size, and timestamps. It does **not** see
+  email), a message id, the message's size, and timestamps — plus the version of
+  CardMirror making the request (see §9). It does **not** see
   the card's content, and it does **not** learn who sent the message (the
   sender's identity is inside the encryption).
 - **Retention:** an encrypted message is deleted from the relay **as soon as the
@@ -182,6 +183,13 @@ duration of your connection — which is inherent to delivering data over the
 internet and may be retained in standard server access logs per the hosting
 provider's practices. The relay's own application logs record only truncated
 routing identifiers and counts, never content.
+
+Each request also tells the relay **which version of CardMirror is making it**
+— a version string like `1.0.0`, sent as an ordinary request header. This lets
+the relay tell old and new clients apart, so that it can keep serving older
+releases, and so that a version can be turned away if it is too old to work
+correctly. It describes the app, not you: it says nothing about your identity,
+your device, or your documents.
 
 A relay access token gates use of the server to limit abuse; it is **not** the
 mechanism that protects your privacy — the end‑to‑end encryption is. CardMirror

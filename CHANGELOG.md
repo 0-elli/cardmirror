@@ -5,6 +5,38 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Changed
+
+- **Requests to the relay now say which version of CardMirror sent
+  them**, and the privacy policy has been updated to describe it. The
+  relay previously had no way to tell releases apart; naming the
+  version lets it keep serving older ones deliberately rather than by
+  accident, and lets a version be turned away if it's too old to work
+  correctly. It's the app's version number and nothing else — it says
+  nothing about you, your device, or your documents.
+
+### Fixed
+
+- **Clean's overwrite confirmation accepts the phrase the way it's
+  shown.** Cleaning files in place asks you to type a phrase to
+  confirm, and the instruction displays it in capitals — but the
+  check wanted it in sentence case, so typing exactly what the
+  screen showed left **Confirm Overwrite** greyed out with nothing
+  to explain why. The phrase now matches however you capitalize it
+  (and doesn't mind extra spaces), and the instruction no longer
+  shouts a form the box won't take.
+
+- **About this install names ChromeOS and iOS.** Settings → General
+  → About this install reported "Unknown" as the operating system on
+  every Chromebook, and reported iPhones as macOS — the two most
+  confusing possible answers on the two platforms hardest to guess
+  from a bug report. Both are now named correctly. (An iPad running
+  current iPadOS still reports macOS: it identifies itself to every
+  website as a Mac, and nothing in what it sends distinguishes the
+  two.)
+
 ## 0.1.0-beta.31 — 2026-08-10
 
 ### Added

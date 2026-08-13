@@ -5,6 +5,78 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+### Fixed: Clean's overwrite confirmation was unenterable as displayed
+
+The in-place overwrite dialog gates on typing a phrase. The phrase
+constant is sentence case, but the instruction label is rendered with
+a class carrying `text-transform: uppercase` — a purely visual
+transform that leaves the DOM text untouched. The gate compared
+`input.value.trim()` to the constant exactly, so a user who typed what
+the label displayed could never enable **Confirm Overwrite**, and the
+Enter shortcut was closed off by the same comparison. The input's
+`placeholder` is set from the constant and is not covered by that
+class, so it showed the accepted form — which is why the dialog worked
+for anyone who copied the placeholder and failed for anyone who read
+the instruction above it.
+
+Matching now runs through one exported helper (`matchesOverwriteConfirmPhrase`)
+that lowercases and collapses whitespace on both sides; the button's
+enable check, its click handler, and the Enter shortcut all call it
+instead of repeating an inline `===` that could drift apart. The
+phrase itself moved to an exported constant. The label additionally
+opts out of the uppercase treatment via `.pmd-clean-overwrite-prompt`,
+so instruction, placeholder, and comparison agree — but the
+case-insensitive match is the load-bearing half, since it keeps the
+dialog correct no matter what styling is later applied to the text.
+
+### Fixed: OS detection missed ChromeOS entirely and mislabeled iOS
+
+`detectOS` in `install-info.ts` walks a chain of user-agent substring
+checks. Two of them were wrong in ways that only showed on the
+platforms where the answer matters most.
+
+iPhone agents contain the string `like Mac OS X`, and the macOS branch
+ran two checks ahead of the iOS branch, so every iPhone was reported as
+macOS — the iOS branch was unreachable. iOS now runs first (and covers
+iPod alongside iPhone/iPad). Desktop-class iPadOS remains reported as
+macOS and is pinned as such by test: Safari on a modern iPad sends the
+`Macintosh; Intel Mac OS X` agent verbatim, so no string-based check
+can separate them, and guessing from touch points would mislabel real
+Macs.
+
+Chromebook agents read `X11; CrOS x86_64 …` and match neither `Linux`
+nor `Android`, so they fell through every branch to `Unknown`. A
+`CrOS` case now runs ahead of the `Linux` check (order matters for the
+same reason Android precedes it). This is diagnostic-only text, but it
+appears on the platform whose reports are hardest to reason about
+without it.
+
+### Changed: relay requests carry the client version
+
+Every request to the relay now sends `X-CardMirror-Version` naming the
+running build: from the mailbox's shared `authHeaders` (covering the
+send POST, the catch-up poll, deletes, and the delivery stream), from
+the entitlement `connect` call, and from the rooms client's REST and
+stream paths. The header name lives in a dependency-free module so the
+main and renderer bundles can share it without dragging in each other's
+environment.
+
+Nothing reads it yet — it is advisory. The relay previously had no way
+to distinguish client versions at all: the version travelling with a
+shared card sits inside the sealed envelope and is unreadable by the
+host by design, and requests otherwise carried only a bearer token.
+
+Ordering note for whoever wires up a consumer: the relay's `/relay/*`
+CORS layer answers preflights with an explicit allowlist rather than
+the app-level wildcard, and a preflight that omits a requested header
+fails the entire request. The header had to be allowlisted and
+deployed *before* any client could send it, or every browser-context
+client — the desktop renderer included, since rooms traffic originates
+there — would have lost co-editing. That deploy is live and was
+verified against production.
+
 ## 0.1.0-beta.31 — 2026-08-10
 
 ### Morph mode (Sensel control surface)
