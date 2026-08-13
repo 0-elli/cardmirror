@@ -18,13 +18,31 @@ see `DETAILED_CHANGELOG.md`.
   Previous Version** command (command bar; no default key) lists the
   session's earlier states grouped by pauses in the editing, lets you
   expand a group down to individual changes, and opens any of them as a
-  **separate unsaved copy** in its own window — the shared document is
-  never touched. Not in a session, the command opens the history folder
+  **separate unsaved copy** — in its own window, or into a pane of the
+  three-pane workspace — the shared document is never touched. Not in a session, the command opens the history folder
   directly so you can pick a file, and **Recover from file…** does the
   same from inside the dialog. The privacy policy's device-storage
   section describes the new file.
 
 ### Fixed
+
+- **Three-pane: one session indicator per pane, and the Send pill's
+  Start Session now works.** The status bar's global "Session: synced"
+  chip duplicated the per-pane indicators in the multi-doc workspace —
+  and could mislead, since it kept showing the one live session even
+  while you were looking at a document without one. Three-pane now
+  relies on the per-pane indicators alone (single-pane keeps the chip).
+  Separately, starting a session from the Send pill in three-pane
+  targeted the window rather than a document — a confirm dialog with
+  every open doc's name mashed together, then a session no pane would
+  claim. It now starts the session for the focused document, exactly
+  like the Start Collaboration Session command.
+
+- **Ending a session could leave the "Session: synced" chip stuck.**
+  The chip cleared based on a snapshot of which session it was showing,
+  taken before an async teardown — a focus change in that window let
+  the ghost survive. It now repaints from the live session state, which
+  can't go stale.
 
 - **Starting or joining a session on a large document no longer looks
   like a hang.** Preparing a big document for collaboration is real
