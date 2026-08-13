@@ -156,6 +156,7 @@ function openVersionDialog(envelope: HistoryEnvelope): void {
   actions.className = 'pmd-bulk-actions';
   const fromFile = document.createElement('button');
   fromFile.type = 'button';
+  fromFile.className = 'pmd-bulk-btn';
   fromFile.textContent = 'Recover from file…';
   fromFile.addEventListener('click', () => {
     void pickEnvelopeFromFile().then((other) => {
@@ -166,6 +167,7 @@ function openVersionDialog(envelope: HistoryEnvelope): void {
   });
   const done = document.createElement('button');
   done.type = 'button';
+  done.className = 'pmd-bulk-btn pmd-bulk-btn-primary';
   done.textContent = 'Close';
   done.addEventListener('click', close);
   actions.append(fromFile, done);
@@ -245,7 +247,7 @@ function recoverButton(
 ): HTMLElement {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'pmd-recover-open';
+  btn.className = 'pmd-bulk-btn pmd-recover-open';
   btn.textContent = 'Open copy';
   btn.addEventListener('click', () => {
     btn.disabled = true;

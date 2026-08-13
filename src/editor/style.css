@@ -15162,6 +15162,8 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
   white-space: nowrap;
 }
 .pmd-recover-open {
+  /* pmd-bulk-btn, compacted to sit inside list rows. */
   flex: none;
   font-size: 0.8rem;
+  padding: 0.2rem 0.6rem;
 }
