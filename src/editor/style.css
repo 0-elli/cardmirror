@@ -15196,3 +15196,12 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
   max-width: 26rem;
   text-align: center;
 }
+
+/* Three-pane: the GLOBAL session chip is redundant with the per-slot
+   footers — and its sole-session fallback (show the one live session
+   even when the focused doc has none) actively misleads when panes
+   hold a mix of session and non-session docs. The footers are the
+   per-doc truth; the global chip is single-pane chrome. */
+body.pmd-multi-doc #collab-chip {
+  display: none;
+}

@@ -1282,10 +1282,14 @@ setCollabInviter((target) => {
 });
 // The Send pill's Start-session button — identical to running the Start
 // Collaboration Session command (same confirm, same share-code copy).
+// collabDeps in BOTH modes: its getOwnerUid resolves the FOCUSED doc,
+// which is what starting means in three-pane too. The multi-pane deps
+// are join-shaped — their uid is null until newSessionDoc() fills it,
+// which start never calls — so using them here bound the session to an
+// empty uid with the window-joined title ("A.docx · B.docx") in the
+// confirm, orphaned from every pane footer (field find, 2026-08-12).
 setCollabSessionStarter(() => {
-  void loadCollabUi().then((m) =>
-    m.startSessionFlow(multiDocActive ? makeMultiPaneSessionDeps() : collabDeps),
-  );
+  void loadCollabUi().then((m) => m.startSessionFlow(collabDeps));
 });
 // Per-doc comment-id allocation: a comment gets a random (collision-safe) id
 // only when the doc it's created in is itself co-edited. Comment creation always
