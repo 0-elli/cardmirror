@@ -340,6 +340,24 @@ function installWakeHooks(session: CollabSession): () => void {
  *  into. Callers capture it at the moment that fixes the target — start: the
  *  focused doc when Start was chosen; join/resume: the freshly-created session
  *  doc right after newSessionDoc(). */
+/** Full-screen "working…" veil for the synchronous CRDT freezes a big
+ *  document forces: hosting seeds the whole doc into the CRDT (~36s
+ *  measured on a 6.7MB master) and joining materializes it back
+ *  (~10s). Neither can yield mid-work, so the honest thing is a
+ *  painted banner before the freeze starts. The 30ms wait is what
+ *  lets it PAINT — returning the cleanup so callers `finally` it. */
+async function sessionPrepOverlay(text: string): Promise<() => void> {
+  const overlay = document.createElement('div');
+  overlay.className = 'pmd-bulk-overlay pmd-session-prep';
+  const card = document.createElement('div');
+  card.className = 'pmd-session-prep-card';
+  card.textContent = text;
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  await new Promise((r) => setTimeout(r, 30));
+  return () => overlay.remove();
+}
+
 function installSeams(
   session: CollabSession,
   deps: CollabUiDeps,
@@ -677,11 +695,22 @@ async function startSessionFlowInner(
   try {
     // Host on the CURRENT (focused) doc — no doc swap, so its uid is the owner.
     let sessRef: ActiveSession | null = null;
-    const { session, shareCode } = await CollabSession.host({
-      pmDoc: view.state.doc,
-      client,
-      callbacks: sessionCallbacks(deps, () => sessRef),
-    });
+    // host() seeds the ENTIRE doc into the CRDT synchronously — tell
+    // the user the app is working, not hung.
+    const prepDone = await sessionPrepOverlay(
+      'Preparing collaboration session — a large document can take a moment…',
+    );
+    let hosted: { session: CollabSession; shareCode: string };
+    try {
+      hosted = await CollabSession.host({
+        pmDoc: view.state.doc,
+        client,
+        callbacks: sessionCallbacks(deps, () => sessRef),
+      });
+    } finally {
+      prepDone();
+    }
+    const { session, shareCode } = hosted;
     // ownerUid captured at flow start (line ~427), under the doc that was
     // focused when Start was chosen — host() shared THAT doc's content, so the
     // seams must bind to it even if focus has since moved.
@@ -816,8 +845,16 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
     const ownerUid = deps.getOwnerUid?.() ?? '';
     sessRef = installSeams(session, deps, code.trim(), ownerUid);
     // Add the binding to the fresh doc's view — its init replaces the empty
-    // content with the session's CRDT state.
-    deps.refreshPlugins();
+    // content with the session's CRDT state, synchronously (~10s on a
+    // tournament-master-sized doc); veil it so it reads as working.
+    const prepDone = await sessionPrepOverlay(
+      'Opening the shared document — a large document can take a moment…',
+    );
+    try {
+      deps.refreshPlugins();
+    } finally {
+      prepDone();
+    }
     // The join snapshot already carries the host's thread map — land it
     // in the fresh pane's plugin state; same for the published title.
     sessRef.commentsSync.pull();

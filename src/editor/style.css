@@ -15180,3 +15180,19 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
 .pmd-recover-dialog .pmd-bulk-actions .pmd-bulk-btn-primary {
   width: auto;
 }
+
+/* Session-preparation veil (collab-ui sessionPrepOverlay). */
+.pmd-session-prep {
+  z-index: 1200; /* above dialogs — nothing is interactive during the freeze */
+}
+.pmd-session-prep-card {
+  background: var(--pmd-c-bg);
+  color: var(--pmd-c-text);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px var(--pmd-c-shadow-deep);
+  padding: 1rem 1.5rem;
+  font-family: var(--pmd-ui-font);
+  font-size: 0.95rem;
+  max-width: 26rem;
+  text-align: center;
+}

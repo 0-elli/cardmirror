@@ -26,6 +26,15 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Fixed
 
+- **Starting or joining a session on a large document no longer looks
+  like a hang.** Preparing a big document for collaboration is real
+  work (the whole document is converted for syncing), and the editor
+  used to simply freeze with no explanation — now a "Preparing
+  collaboration session…" veil says so while it happens. The same
+  honest busy state covers opening a large shared document when
+  joining, and the recover dialog's **Open copy** while it rebuilds a
+  version.
+
 - **Reordering cards during a co-editing session could silently lose
   or duplicate cards.** This needed genuinely simultaneous reordering:
   two people each moving cards before either copy had synced the
