@@ -59,4 +59,14 @@ describe('relay client version header', () => {
   it('names a header the relay can read (ASCII, no spaces)', () => {
     expect(RELAY_CLIENT_VERSION_HEADER).toMatch(/^[A-Za-z0-9-]+$/);
   });
+
+  it('matches the desktop main process\'s local copy of the header name', async () => {
+    // pairing-ipc.ts declares the constant locally (the desktop tsc's
+    // rootDir excludes src/, so it cannot VALUE-import relay-protocol).
+    // This pin is what keeps the two copies from drifting.
+    const src = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('../../apps/desktop/src/pairing-ipc.ts', import.meta.url), 'utf8'),
+    );
+    expect(src).toContain(`RELAY_CLIENT_VERSION_HEADER = '${RELAY_CLIENT_VERSION_HEADER}'`);
+  });
 });

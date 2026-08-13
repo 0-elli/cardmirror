@@ -39,7 +39,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { createPairingKeystore, routingId, type PairingKeystore, type SealedBundle } from './pairing-crypto.js';
 import { BUILT_IN_RELAY_TOKEN } from './pairing-build.js';
-import { RELAY_CLIENT_VERSION_HEADER } from '../../../src/editor/relay-protocol.js';
 import { RelayStream } from './relay-stream.js';
 import {
   entitlementIfValid,
@@ -51,6 +50,12 @@ import {
   type ConnectResponseBody,
   type EntitlementState,
 } from './pairing-entitlement.js';
+
+// Mirrors src/editor/relay-protocol.ts (the renderer's copy). Declared
+// locally because this tsc's rootDir excludes src/ — a VALUE import
+// from there breaks the desktop build (type-only imports are fine; see
+// file-index-core.ts). Parity is pinned by relay-version-header.test.ts.
+const RELAY_CLIENT_VERSION_HEADER = 'X-CardMirror-Version';
 
 /** Relay endpoint defaults. Resolution order (see relayUrl()/relayToken()):
  *  user settings (self-hosted relay) → env override → baked default. Env
