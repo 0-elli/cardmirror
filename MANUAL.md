@@ -285,39 +285,35 @@ mirrors Word's Navigation Pane, but does more:
 
 ### Card numbering
 
-CardMirror can number your cards and their sub-parts automatically — handy for
-referring to "card 3" while you edit or read. Numbering is **display only**: it
+CardMirror can number your cards and substructure automatically — handy for
+referring to e.g. "2AC 3" while you edit or read. Numbering is **display only**: it
 never changes your card text, and you can turn it off any time.
 
 Turn it on from the **numbering** cluster in the ribbon (or search "numbering"
-in the command bar). You mark which cards carry a number, mark sub-parts to get
-a lettered sub-number, and set where numbering starts over; CardMirror computes
-the numbers and keeps them current as you reorder. The same numbers appear next
-to each card in the **navigation pane**, so the outline reads like your speech
-doc.
+in the command bar). You mark which cards carry a number, mark which cards carry substructure, 
+and set where numbering starts over; CardMirror computes the numbers and keeps them 
+current as you reorder. The same numbers appear next to each card in the 
+**navigation pane**, so the outline reads like your speech doc.
 
 You can also number straight from the outline: **Shift-click or Ctrl/Cmd-click
 several tags in the navigation pane**, then hit the number or substructure
 button (or their shortcuts) — the toggle applies to every selected card at
 once, and the selection stays put so you can toggle again. The **restart
-toggle** works the same way, one level up: select several **blocks** in the
+toggle** works the same way: select several **blocks** in the
 outline and hit restart to flip them all to "continue", so arguments
 separated by blocks number consecutively straight through (press again to
-restore the per-block restarts). A selection of tags flags those cards to
-restart the count instead.
+restore the per-block restarts). 
 
 While numbering is on, a block whose count **continues** from the block
 above shows a small grey **↓** at the right edge of its heading. No glyph
-means the default: the count restarts at that block. It's a display-only
-hint (it never exports) so you can read a long file's numbering scheme at
-a glance.
+means the default: the count restarts at that block. 
 
 Tune how they look in **Settings → Appearance → Card numbering**: independent
 formats for the number and its substructure, the separator between them (period,
 dash, colon, and more), whether the substructure is capitalized and whether it's
 bold, the number color, and how far each is indented — all display settings that
-change how the numbers *look*, never the card content. Numbers also carry
-through to Word on export.
+change how the numbers *look*, never the content. Numbers are exported to Word if
+you save as .docx.
 
 ---
 
@@ -334,14 +330,14 @@ what to operate on:
    you're sitting in, whatever level that is. **Condense** (F3) and
    **Shrink** (Mod-8) work this way.
 
-Two wrinkles on the no-selection case:
+Two caveats:
 
-- Some commands skip the scoped fallback and act on the **whole
+- When there is no selection, some commands will act on the **whole
   document** — the bulk cleanup commands like **Standardize Highlighting**
   and **Select Similar Formatting**.
 - A few inline-mark commands fall back to the **word at the cursor**
-  (**Underline**, **Emphasis**, **Cite**) or simply **do nothing**
-  (**Highlight**), since that's text you normally select on purpose.
+  (**Underline**, **Emphasis**, **Cite**). Some **do nothing** when there's no selection
+  (**Highlight**), since that's text you would normally select on purpose.
 
 CardMirror extends this selection-awareness to more commands than
 Verbatim does, but the model should feel familiar. The per-command notes
@@ -365,14 +361,16 @@ subscript also have shortcuts: **Mod-Shift-=** and **Mod-=**).
 ### Paste Text (F2)
 
 Use **F2** instead of Ctrl/Cmd-V when pasting card text from a webpage or
-PDF — it strips the source's styles, which otherwise bloat your file and
-clutter the outline. On the desktop app and in Chromium browsers (Chrome /
+PDF — this strips the source's styles, which will otherwise bloat your file. 
+On the desktop app and in Chromium browsers (Chrome /
 Edge / ChromeOS) F2 pastes immediately — the web edition reads the
-clipboard directly, asking once for clipboard permission and then
-remembering it. **(Web only:)** where the browser won't grant clipboard
+clipboard directly, so the first time it's used it will ask for permission. 
+**(Web only:)** where the browser won't grant clipboard
 access — including Firefox and Safari — F2 falls back to *arming* plain
 paste: the status bar shows a pill, and your next Ctrl/Cmd-V pastes as
-plain text. If **Condense on paste** is on (Settings → Editing), the
+plain text.
+
+If **Condense on paste** is on (Settings → Editing), the
 pasted text is condensed as it lands.
 
 <a id="smart-paste"></a>
@@ -390,7 +388,7 @@ Know its place: smart paste is a best-effort convenience working from
 the clipboard's HTML rendition of the source, and it is deliberately
 not built to handle every edge case. When fidelity matters — or when a
 paste comes out wrong — **open the .docx in CardMirror and copy from
-there**: the real importer reads the actual document and will always do
+there**: the real importer reads the actual document and may do
 better.
 
 ### Condense, pilcrows, and case
@@ -426,14 +424,8 @@ the web edition can't read the clipboard on a keypress.
 
 ### Autocorrect: quotes, dashes, replacements, and capitalization
 
-CardMirror ships a family of opt-in typing aids, all Word-style autocorrects:
-they fire as you type, every one is off by default, and every conversion is
-reversible with a single **Backspace** right after it fires — you always get
-back exactly what you typed. When several are enabled they never fight: at
-most one converts per keystroke, in a fixed order (smart quotes, then the
-dash, then your custom entries, then auto-capitalization), and the settings
-table warns you when a custom entry can't fire because another aid would
-intercept it first.
+CardMirror ships a family of Word-style autocorrects: all fire as you type and 
+every conversion is reversible with **Backspace** right after it fires. 
 
 - **Smart quotes** (Settings → Editing → "Smart quotes") curl a straight `'` or
   `"` to the right direction as you type — opening after a space, dash, bracket,
@@ -525,8 +517,8 @@ affecting one don't affect the other, allowing you to perform bulk edits on
 your document that leave some things unaffected. (If you'd like to tell
 them apart at a glance, **Settings → Appearance → Distinguish background
 color from highlighting** adds a subtle display-only cue.) As an example, you might
-want to recut an opponent's card and keep their highlighting, but in a
-different color from the color you'd normally read; you can do this by
+want to recut an opponent's card and keep their highlighting for reference, but 
+distinguish your own highlighting pass; you can do this by
 turning their highlighting into background color so it isn't affected by
 "standardize highlighting" in the future.
 
@@ -660,7 +652,7 @@ check — press **Enter** to drop a paragraph break right before that phrase.
 The box clears so you can type the next paragraph's opening phrase, and so on.
 
 Press **Ctrl-Enter** instead of Enter to break *and* mark that paragraph to be
-**indented** — it gets a green bar in the left margin. The indent isn't applied
+**indented** — it gets a thick green bar in the left margin. The indent isn't applied
 right away; it lands when you exit, on whatever that paragraph has become by
 then. So if you later split it again, only the final paragraph (up to the next
 break) is indented, not the rest of the card. Press **Esc** to apply any
@@ -729,7 +721,7 @@ block:
 - With **several paragraphs selected**, the style applies to all of them
   at once.
 
-Pressing the same heading key again clears indentation **and any manual
+Re-applying an already-applied style clears indentation **and any manual
 font-size override** while keeping the style — the way to reset an
 over-indented or hand-resized line back to the style's defaults. (Tags,
 analytics, pockets, hats, and blocks reset the font size; undertags clear
@@ -748,8 +740,8 @@ deliberately rather than the way they would in Word:
   body text into the heading.
 - **Delete at the end of a tag** merges with the next tag if there is
   one; otherwise nothing.
-- **Enter** at the end of a tag starts a card body; in the middle splits
-  the card; at the start inserts an empty card above.
+- **Enter** at the end of a tag starts a card body; in the middle of a tag
+  splits the card; at the start inserts an empty card above.
 
 Empty tags and stray blank lines clean themselves up as you delete around
 them.
@@ -757,8 +749,8 @@ them.
 ### Indenting
 
 **Tab** and **Shift-Tab** indent and outdent the current block (or
-selection) by one step. Indentation is visual only — it doesn't change a
-heading's outline level. (Inside a table, Tab moves between cells.)
+selection) by one step. Indentation doesn't change a heading's outline level. 
+(Inside a table, Tab moves between cells.)
 
 ### Drag-and-drop
 
@@ -841,8 +833,8 @@ the row, hovering it shows the full text in a tooltip.
 
 **Inserting evidence.** Quick-card, dropzone, and in-file results drop in
 at your cursor (the same insertion the send-to-speech and Quick Card
-buttons use). If your cursor is in the middle of a paragraph, CardMirror
-asks you to confirm first — you can turn that prompt off in Settings.
+buttons use). If your cursor is in the middle of a paragraph, the insertion
+will drop at the nearest valid target. 
 
 **Diving into a file (`f`, desktop only).** Press **Tab** on a selected file
 — or right-click any file — to dive *into* it without leaving the palette.
@@ -905,7 +897,7 @@ available from **any window**.
 
 ## 7. The multi-doc workspace
 
-Verbatim shows you one document at a time. CardMirror can show **three
+Verbatim shows you one document at a time. CardMirror can show up to **three
 editable panes side by side**, which makes assembling a speech,
 comparing files, and working on something while keeping something up for
 reference against a block practical without juggling windows.
@@ -913,16 +905,14 @@ reference against a block practical without juggling windows.
 ### Turning it on
 
 Enable **Settings → General → Multi-doc workspace** and reload. With one
-or two documents open it looks like a normal editor; the layout fills in
-as you open more. An empty workspace — a fresh launch, or after closing
-the last open document — shows the [Home screen](#1-getting-started);
-opening or creating any document dismisses it.
+document open it looks like a normal editor; the layout fills in
+as you open more. 
 
 ### Working with slots
 
 - Each of the three slots is independent: its own outline section, its own
   footer word count (with its own **Σ** Word Count button), and its own
-  document history.
+  document history. Think of each slot as its own "document pile." 
 - **Mod-1 / Mod-2 / Mod-3** focus a slot; **Mod-Shift-1/2/3** move the
   active document into a slot.
 - **Expand** a slot to full width with **Mod-Shift-F**, and restore it
@@ -1115,7 +1105,8 @@ Assemble a speech document by sending cards into it:
    away, leaving what you'll deliver.
 
 The **dropzone** is a holding shelf: press **Mod-`` ` ``** to send a card
-there and pull it back later — useful for parking common evidence temporarily.
+there and pull it back later — useful for parking common evidence temporarily,
+or parking a card you know you need but are not sure where to put yet.
 
 ### Saving a send doc
 
@@ -1127,21 +1118,20 @@ or in one keystroke with **Save Send Doc (Mod-Alt-S)**.
 
 ### Saving marked cards
 
-To hand over only the cards you actually read, place a reading marker in each
-one and use **Save Marked Cards** — it pulls just those cards out and saves them
-on their own, in your default format. Two ways in: a **Marked Doc** button in the
-Save As dialog, and a **Save Marked Cards** command (default **Mod-Alt-M**,
-rebindable) that saves silently to a destination you choose under Settings →
-*Marked Cards destination* (the source file's folder, or a fixed folder), using
-the `MARKED_` filename prefix and your default format — mirroring Save Send Doc.
-It keeps cards only (analytics and headings are dropped); if nothing is marked,
+To send a copy of just the cards you marked in your speech, use **Save Marked Cards** 
+— it pulls just those cards out and saves them on their own, in your default format. 
+Two ways in: a **Marked Doc** button in the Save As dialog, and a **Save Marked Cards** 
+command (default **Mod-Alt-M**, rebindable) that saves silently to a destination you 
+choose under Settings → *Marked Cards destination* (the source file's folder, or a 
+fixed folder), using the `MARKED_` filename prefix and your default format — mirroring 
+Save Send Doc. It keeps cards only (analytics and headings are dropped); if nothing is marked,
 it does nothing and tells you so.
 
 ---
 
 ## 9. Collaboration
 
-*Desktop only.* Two features share one setup: **card sharing** (send cards to
+*Desktop only.* There are two collaboration features: **card sharing** (send cards to
 another machine) and **co-editing** (edit a document together in real time).
 Both are off until you enable them, and both are end-to-end encrypted — the
 relay server that passes traffic along sees only scrambled data.
@@ -1154,15 +1144,19 @@ relay server that passes traffic along sees only scrambled data.
 2. Swap codes. Give your code to anyone who should be able to send to you.
    To send to *them*, paste the code they gave you under **Recipients** and
    give it a name.
-3. Optional, all in the same settings section:
+3. To cooperate just once, run the **Start Collaboration Session** command from
+   the command bar. This will copy a document code to your clipboard. Anyone you
+   share this code with will be able to collaborate on your document by running the
+   **Join Collaboration Session** command and pasting the code. 
+4. Optional, all in the same settings section:
    - **Groups** — a named set of recipients; sending to a group sends to
      every member. The **↑ / ↓** arrows reorder recipients and groups, and
      the Send pill lists them in that order.
    - **Star** one recipient or group to make it the target of the
      one-keystroke commands mentioned below (starring another moves the
      star).
-   - **Your display name** — stamped on cards you send, so someone who
-     hasn't named your code yet still sees who it's from.
+   - **Your display name** — stamped on cards you send and on your cursor when
+     co-editing, so someone who hasn't named your code yet still sees who it's from.
    - **Blocked senders** — cards and invites from these codes are dropped
      silently.
 
@@ -1182,8 +1176,7 @@ drop on a row to send. Dragging a **multi-selection** (from the nav pane)
 sends everything as **one bundle**: the recipient sees a single item and
 takes the whole set at once. **Send to Starred** sends the card under the
 cursor (or the current selection) to your starred target without opening
-the pill — it has no default key; assign one in Settings → Keyboard
-shortcuts.
+the pill.
 
 The pill's bottom row does more than send. **Clicking** the pill opens it
 with two buttons there: **Add contact** (paste a pairing code, name them,
@@ -1201,9 +1194,6 @@ starred partner still gets Send to Starred. **Recent senders** in the same
 settings tab lists everyone who recently sent you cards or a session
 invite; add them to your recipients (and name them) or block them from
 there.
-
-When the pills are showing, typing near the bottom of the document
-automatically scrolls so the line you're on stays visible above them.
 
 **Receive:** incoming cards land in the **Receive** pill, which flashes
 and shows a "total · N new" badge. Click it to open the inbox; each
@@ -1234,13 +1224,12 @@ are deleted from the relay after **three hours**.
 
 ### Co-editing
 
-*Experimental.* Up to **10 people** edit one document live — typing,
+Up to **10 people** can edit one document live — typing,
 cursors, and comments all sync, and simultaneous edits merge automatically. 
 The document belongs to the **host**; everyone else edits a synced copy, 
 and everyone keeps their copy when the session ends. A session is not a 
 permanent shared document: when the host ends it — or after about a week 
-idle — it's gone and participants retain local copies. It's also still 
-rough in places, so keep saving your own `.cmir` copies.
+idle — it's gone and participants retain local copies.
 
 **Invite from your recipients:** click the **Send** pill and press the
 invite button on a recipient or group row. That starts a session on the
@@ -1272,13 +1261,6 @@ warns you); reopen them from the Sessions list. Each open document runs its
 own independent session, so several can be live at once; in three-pane,
 each pane's footer shows its own session's collaborators.
 
-**Highlighting under simultaneous edits:** highlight, underline,
-emphasis, and background color follow the *typist's view*: text you
-type inside a highlight you can see continues it, but text someone
-typed while a highlight was being made elsewhere — offline, or in the
-same moment — no longer converges highlighted. Nobody meant to
-highlight words they never saw.
-
 **Ending or leaving:** run **End or Leave Collaboration Session** — the
 host ends it for everyone, a guest just leaves; either way each person
 keeps their current copy. Closing a co-edited document asks whether to keep
@@ -1306,7 +1288,7 @@ the official relay.
 
 CardMirror can show one section of content in more than one place, kept
 connected to its source. There are two flavors, and the difference is simple —
-**do you want to look at the original, or keep your own copy?**
+**do you want a window that shows the original, or make a self-updating copy?**
 
 - A **live view** is a read-only window onto another section of *this*
   document. It always shows the source's current content — edit the source and
@@ -1321,9 +1303,6 @@ connected to its source. There are two flavors, and the difference is simple —
 | -------------- | ------------- | ------------ |
 | **Live view**  | ✓             | —            |
 | **Linked copy**| ✓             | ✓            |
-
-(A live view of a *file* isn't offered — it would need that file present at all
-times, and CardMirror documents are self-contained.)
 
 **Make one.** From the command bar (Mod-Shift-Space, or the ribbon):
 
@@ -1355,12 +1334,12 @@ bottom of a live view starts a new line just below it.
 
 **When the source moves on.** Separately from your own edits, a linked copy can
 drift because its *source* changed. CardMirror marks such a copy with a small
-coloured **"source updated" dot** on the glyph (the menu says *Source has new
+colored **"source updated" dot** on the glyph (the menu says *Source has new
 content · Refresh to update*) — it
 checks when you open a document, periodically while it's idle, and on demand via
 *Check Linked Copy Sources for Updates*. Nothing is overwritten until you
 **Refresh**. (For a copy from *this document* the badge tracks the live section,
-so it appears the moment the source diverges.) You can recolour the badge under
+so it appears the moment the source diverges.) You can recolor the badge under
 Settings → Appearance → Style colors ("Linked-copy source-updated badge"). A live
 view never shows this — it's always current, so there's nothing to flag.
 
@@ -1459,7 +1438,7 @@ to an **Unanchored** section at the bottom of the column, with a
 ## 12. Learn: spaced-repetition flashcards
 
 CardMirror can turn your evidence into spaced-repetition flashcards, so
-you can actually remember your files. This has no Verbatim equivalent.
+you can study your files. 
 
 The cards live **only on your machine** and never travel with a shared
 file — your study material stays yours. (The design and the research
@@ -1506,7 +1485,7 @@ turn it off under Settings → Appearance → **Flashcards-due dot**.
 
 ## 13. AI features
 
-A handful of features call out to a large language model. They're **off by
+A handful of features call a large language model. They're **off by
 default** and require a key. Two providers are supported, chosen under
 **Settings → Comments & AI → AI provider**: **Anthropic** (the default —
 CardMirror talks straight to Anthropic's Claude, and picks a current model
