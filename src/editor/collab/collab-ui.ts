@@ -1190,7 +1190,9 @@ export function activeSession(): CollabSession | null {
  *  recover module) so the lazy-loaded collab-ui module is the single
  *  entry point index.ts's command wiring already uses, and so the
  *  recover module needs no import back into this one. */
-export async function recoverPreviousVersionFlow(): Promise<void> {
+export async function recoverPreviousVersionFlow(
+  openDoc?: import('./collab-recover-ui.js').OpenRecoveredDoc,
+): Promise<void> {
   const m = await import('./collab-recover-ui.js');
-  await m.openRecoverPreviousVersion(activeSession());
+  await m.openRecoverPreviousVersion(activeSession(), openDoc);
 }

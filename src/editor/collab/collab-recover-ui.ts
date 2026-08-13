@@ -38,8 +38,16 @@ import {
 import { LoroDoc } from 'loro-crdt';
 import { configTextStyle } from './collab-session.js';
 
+/** How a recovered copy gets opened. index.ts supplies a mode-aware
+ *  opener: multi-pane mounts it into a slot of THIS window (via the
+ *  same funnel as File → Open); single-pane spawns a fresh window. */
+export type OpenRecoveredDoc = (name: string, bytes: Uint8Array) => Promise<void>;
+
 /** Entry point (via collab-ui, which supplies the focused session). */
-export async function openRecoverPreviousVersion(session: CollabSession | null): Promise<void> {
+export async function openRecoverPreviousVersion(
+  session: CollabSession | null,
+  openDoc?: OpenRecoveredDoc,
+): Promise<void> {
   const host = getElectronHost();
   if (!host) {
     showToast('Recover Previous Version requires the desktop edition.');
@@ -59,7 +67,7 @@ export async function openRecoverPreviousVersion(session: CollabSession | null):
     envelope = await pickEnvelopeFromFile();
     if (!envelope) return; // cancelled, or already toasted
   }
-  openVersionDialog(envelope);
+  openVersionDialog(envelope, openDoc);
 }
 
 async function pickEnvelopeFromFile(): Promise<HistoryEnvelope | null> {
@@ -75,7 +83,7 @@ async function pickEnvelopeFromFile(): Promise<HistoryEnvelope | null> {
   return envelope;
 }
 
-function openVersionDialog(envelope: HistoryEnvelope): void {
+function openVersionDialog(envelope: HistoryEnvelope, openDoc?: OpenRecoveredDoc): void {
   // Derive the list up front; the snapshot import is the expensive part
   // and it is shared by every later checkout.
   let ldoc: LoroDoc;
@@ -148,7 +156,7 @@ function openVersionDialog(envelope: HistoryEnvelope): void {
   list.className = 'pmd-recover-list';
   // Newest first — vandalism recovery reaches for "just before the end".
   for (const group of [...groups].reverse()) {
-    list.appendChild(groupRow(group, envelope, close));
+    list.appendChild(groupRow(group, envelope, close, openDoc));
   }
   body.appendChild(list);
   dialog.appendChild(body);
@@ -163,7 +171,7 @@ function openVersionDialog(envelope: HistoryEnvelope): void {
     void pickEnvelopeFromFile().then((other) => {
       if (!other) return;
       close();
-      openVersionDialog(other);
+      openVersionDialog(other, openDoc);
     });
   });
   const done = document.createElement('button');
@@ -182,6 +190,7 @@ function groupRow(
   group: VersionGroup,
   envelope: HistoryEnvelope,
   closeDialog: () => void,
+  openDoc?: OpenRecoveredDoc,
 ): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'pmd-recover-group';
@@ -211,7 +220,7 @@ function groupRow(
 
   // The group's recover target is its LAST change — "the document as it
   // stood at the end of this burst of editing".
-  const open = recoverButton(group.rows[group.rows.length - 1]!, envelope, closeDialog);
+  const open = recoverButton(group.rows[group.rows.length - 1]!, envelope, closeDialog, openDoc);
 
   head.append(expand, label, meta, open);
   wrap.appendChild(head);
@@ -237,7 +246,7 @@ function groupRow(
       const who = document.createElement('span');
       who.className = 'pmd-recover-row-peer';
       who.textContent = row.isSeed ? 'session started (initial document)' : `editor …${row.peer.slice(-4)}`;
-      line.append(t, who, recoverButton(row, envelope, closeDialog));
+      line.append(t, who, recoverButton(row, envelope, closeDialog, openDoc));
       detail.appendChild(line);
     }
     wrap.appendChild(detail);
@@ -249,6 +258,7 @@ function recoverButton(
   row: VersionRow,
   envelope: HistoryEnvelope,
   closeDialog: () => void,
+  openDoc?: OpenRecoveredDoc,
 ): HTMLElement {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -256,7 +266,7 @@ function recoverButton(
   btn.textContent = 'Open copy';
   btn.addEventListener('click', () => {
     btn.disabled = true;
-    void recoverVersion(row, envelope)
+    void recoverVersion(row, envelope, openDoc)
       .then((ok) => {
         if (ok) closeDialog();
       })
@@ -267,19 +277,28 @@ function recoverButton(
   return btn;
 }
 
-async function recoverVersion(row: VersionRow, envelope: HistoryEnvelope): Promise<boolean> {
+async function recoverVersion(
+  row: VersionRow,
+  envelope: HistoryEnvelope,
+  openDoc?: OpenRecoveredDoc,
+): Promise<boolean> {
   const host = getElectronHost();
   if (!host) return false;
   try {
     const node = materializeVersion(snapshotFromEnvelope(envelope), row.frontier);
     const bytes = serializeNative(node, { appVersion });
-    await host.spawnWindow({
-      filename: envelope.docTitle || 'Recovered document',
-      bytes,
-      handle: null, // never the canonical file — unsaved by construction
-      format: 'cmir',
-      uid: null,
-    });
+    const name = envelope.docTitle || 'Recovered document';
+    if (openDoc) {
+      await openDoc(name, bytes);
+    } else {
+      await host.spawnWindow({
+        filename: name,
+        bytes,
+        handle: null, // never the canonical file — unsaved by construction
+        format: 'cmir',
+        uid: null,
+      });
+    }
     return true;
   } catch (err) {
     console.error('[recover] failed to open version:', err);

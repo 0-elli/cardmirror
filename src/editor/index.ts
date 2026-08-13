@@ -1989,7 +1989,23 @@ const ribbonContext: RibbonContext = {
     toggleMorphMode();
   },
   recoverPreviousVersion: () => {
-    void loadCollabUi().then((m) => m.recoverPreviousVersionFlow());
+    // Mode-aware opener: three-pane mounts the recovered copy into a
+    // slot of THIS window (the same funnel as File -> Open, so the slot
+    // picker and duplicate guards apply); single-pane spawns a window.
+    const openRecovered = async (name: string, bytes: Uint8Array): Promise<void> => {
+      if (multiDocActive && multiDocOnFileOpen) {
+        await multiDocOnFileOpen({ name, bytes, handle: undefined });
+        return;
+      }
+      await getElectronHost()?.spawnWindow({
+        filename: name,
+        bytes,
+        handle: null,
+        format: 'cmir',
+        uid: null,
+      });
+    };
+    void loadCollabUi().then((m) => m.recoverPreviousVersionFlow(openRecovered));
   },
   cycleTheme: () => {
     // light → dark → system → light. The settings subscription
