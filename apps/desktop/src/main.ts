@@ -1534,6 +1534,19 @@ interface HistoryEnvelopeIpc {
   snapshotB64: string;
 }
 
+/** Write-side IPC shape: raw snapshot bytes. Encoding happens HERE —
+ *  Buffer's native base64 costs ~2ms where the renderer's JS encoder
+ *  cost 463ms per write on a 20 MB tournament master. */
+interface HistoryWriteIpc {
+  v: 1;
+  roomId: string;
+  docTitle: string;
+  startedAt: number;
+  updatedAt: number;
+  changeTimes: { peer: string; counter: number; at: number }[];
+  snapshot: unknown;
+}
+
 function historyPathFor(roomId: string): string {
   // Room ids are relay-minted, but sanitize like journalPathFor does —
   // this string becomes a filename.
@@ -1577,22 +1590,35 @@ function parseHistoryEnvelope(text: string): HistoryEnvelopeIpc | null {
 // path otherwise race into a valid-JSON-then-garbage file.
 const historyWriteTails = new Map<string, Promise<void>>();
 
-ipcMain.handle('host:write-history', (_event, envelope: HistoryEnvelopeIpc) => {
-  if (!envelope || envelope.v !== 1 || typeof envelope.roomId !== 'string' || !envelope.roomId) {
+ipcMain.handle('host:write-history', (_event, entry: HistoryWriteIpc) => {
+  if (!entry || entry.v !== 1 || typeof entry.roomId !== 'string' || !entry.roomId) {
     throw new Error('host:write-history: a v1 envelope with roomId is required.');
   }
-  const previous = historyWriteTails.get(envelope.roomId) ?? Promise.resolve();
+  const snapshot = bytesToBuffer(entry.snapshot);
+  if (snapshot.length === 0) {
+    throw new Error('host:write-history: snapshot bytes are required.');
+  }
+  const previous = historyWriteTails.get(entry.roomId) ?? Promise.resolve();
   const next = previous.catch(() => {}).then(async () => {
     await ensureJournalsDir();
-    const finalPath = historyPathFor(envelope.roomId);
+    const envelope: HistoryEnvelopeIpc = {
+      v: 1,
+      roomId: entry.roomId,
+      docTitle: entry.docTitle,
+      startedAt: entry.startedAt,
+      updatedAt: entry.updatedAt,
+      changeTimes: entry.changeTimes,
+      snapshotB64: snapshot.toString('base64'),
+    };
+    const finalPath = historyPathFor(entry.roomId);
     const tmpPath = `${finalPath}.tmp`;
     await fs.writeFile(tmpPath, JSON.stringify(envelope));
     await fs.rename(tmpPath, finalPath);
   });
-  historyWriteTails.set(envelope.roomId, next);
+  historyWriteTails.set(entry.roomId, next);
   void next.finally(() => {
-    if (historyWriteTails.get(envelope.roomId) === next) {
-      historyWriteTails.delete(envelope.roomId);
+    if (historyWriteTails.get(entry.roomId) === next) {
+      historyWriteTails.delete(entry.roomId);
     }
   });
   return next;

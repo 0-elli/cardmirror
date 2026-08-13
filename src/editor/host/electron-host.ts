@@ -11,6 +11,7 @@
 import type {
   FileFilter,
   HistoryEnvelope,
+  HistoryEnvelopeWrite,
   HistoryMeta,
   Host,
   JournalEntry,
@@ -254,7 +255,7 @@ interface ElectronAPI {
   writeJournal(entry: JournalEntry): Promise<void>;
   readJournals(): Promise<JournalEntry[]>;
   deleteJournal(uid: string): Promise<void>;
-  writeHistory(envelope: HistoryEnvelope): Promise<void>;
+  writeHistory(envelope: HistoryEnvelopeWrite): Promise<void>;
   listHistory(): Promise<HistoryMeta[]>;
   readHistory(target: { roomId?: string; path?: string }): Promise<HistoryEnvelope | null>;
   deleteHistory(roomId: string): Promise<void>;
@@ -846,7 +847,7 @@ export class ElectronHost implements Host {
   /** Collab session-history files — envelopes are plain JSON (the
    *  snapshot rides as base64), so unlike journals no byte
    *  normalization is needed across the IPC boundary. */
-  async writeHistory(envelope: HistoryEnvelope): Promise<void> {
+  async writeHistory(envelope: HistoryEnvelopeWrite): Promise<void> {
     await api().writeHistory(envelope);
   }
 

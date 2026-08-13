@@ -266,12 +266,19 @@ function recoverButton(
   btn.textContent = 'Open copy';
   btn.addEventListener('click', () => {
     btn.disabled = true;
-    void recoverVersion(row, envelope, openDoc)
+    const original = btn.textContent;
+    btn.textContent = 'Opening…';
+    // Yield a beat so the busy state PAINTS: materializeVersion is a
+    // synchronous rebuild that freezes the renderer for ~10s on a
+    // tournament-master-sized file.
+    void new Promise((r) => setTimeout(r, 30))
+      .then(() => recoverVersion(row, envelope, openDoc))
       .then((ok) => {
         if (ok) closeDialog();
       })
       .finally(() => {
         btn.disabled = false;
+        btn.textContent = original;
       });
   });
   return btn;

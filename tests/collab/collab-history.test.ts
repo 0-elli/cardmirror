@@ -16,7 +16,7 @@ import { LoroDoc } from 'loro-crdt';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema, newHeadingId } from '../../src/schema/index.js';
 import type { CollabSession } from '../../src/editor/collab/collab-session.js';
-import type { HistoryEnvelope } from '../../src/editor/host/types.js';
+import type { HistoryEnvelope, HistoryEnvelopeWrite } from '../../src/editor/host/types.js';
 import {
   attachSessionHistory,
   collapseSeedPrefix,
@@ -237,14 +237,14 @@ describe('the writer', () => {
 
   function captureHost(prior: HistoryEnvelope | null = null): {
     host: HistoryHostLike;
-    writes: HistoryEnvelope[];
+    writes: HistoryEnvelopeWrite[];
   } {
-    const writes: HistoryEnvelope[] = [];
+    const writes: HistoryEnvelopeWrite[] = [];
     return {
       writes,
       host: {
         writeHistory: (envelope) => {
-          writes.push(JSON.parse(JSON.stringify(envelope)) as HistoryEnvelope);
+          writes.push({ ...envelope, changeTimes: [...envelope.changeTimes] });
           return Promise.resolve();
         },
         readHistory: () => Promise.resolve(prior),
@@ -252,7 +252,7 @@ describe('the writer', () => {
     };
   }
 
-  it('writes on attach, skips idle rewrites, writes again on change', async () => {
+  it('writes on first flush, skips idle rewrites, writes again on change', async () => {
     const { session, peer, edit } = await fakeSession();
     const { host, writes } = captureHost();
     const handle = attachSessionHistory(session, () => 'My Doc', host);
@@ -324,6 +324,7 @@ describe('the writer', () => {
     await settle();
     await handle.flush();
     const envelope = writes[writes.length - 1]!;
+    expect(envelope.snapshot.byteLength, 'snapshot rides as raw bytes').toBeGreaterThan(0);
     const scratch = new LoroDoc();
     scratch.import(peer.ldoc.export({ mode: 'snapshot' }));
     const rows = deriveVersionRows(scratch, envelope.changeTimes);

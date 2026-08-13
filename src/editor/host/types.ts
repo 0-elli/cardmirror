@@ -161,6 +161,20 @@ export interface HistoryEnvelope {
   snapshotB64: string;
 }
 
+/** The WRITE-side shape sent over IPC: the snapshot rides as raw bytes
+ *  and the MAIN process base64-encodes it into the stored envelope.
+ *  Measured on a 20 MB snapshot: the renderer-side JS encoder cost
+ *  463 ms per write; Buffer's native encoder costs 2 ms. */
+export interface HistoryEnvelopeWrite {
+  v: 1;
+  roomId: string;
+  docTitle: string;
+  startedAt: number;
+  updatedAt: number;
+  changeTimes: HistoryChangeTime[];
+  snapshot: Uint8Array;
+}
+
 /** A history file's listing row — the envelope minus its payload, so
  *  enumerating files never loads every snapshot into memory. */
 export interface HistoryMeta {

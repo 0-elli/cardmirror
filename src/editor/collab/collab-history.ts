@@ -31,15 +31,26 @@ import { createNodeFromLoroObj } from 'loro-prosemirror';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../schema/index.js';
 import { getElectronHost } from '../host/index.js';
-import type { HistoryChangeTime, HistoryEnvelope } from '../host/types.js';
-import { bytesToBase64, base64ToBytes } from './collab-crypto.js';
+import type { HistoryChangeTime, HistoryEnvelope, HistoryEnvelopeWrite } from '../host/types.js';
+import { base64ToBytes } from './collab-crypto.js';
 import { configTextStyle, type CollabSession } from './collab-session.js';
 
 /** Write cadence. Deliberately slower than the session record's 2.5s:
  *  each write is a full snapshot (~the document's own size), and losing
  *  the last few seconds of history is acceptable for a feature whose
- *  job is recovering from vandalism, not from crashes. */
+ *  job is recovering from vandalism, not from crashes. Huge documents
+ *  slow down further — exportSnapshot is a synchronous wasm call on the
+ *  renderer (measured 0.3-0.8s on a 20 MB tournament master), so the
+ *  remaining per-write hitch is paid once a minute there, not thrice. */
 const HISTORY_PERSIST_MS = 20_000;
+const HISTORY_PERSIST_SLOW_MS = 60_000;
+const BIG_SNAPSHOT_BYTES = 4 * 1024 * 1024;
+/** First write waits out the session-start critical path: hosting a
+ *  big document already freezes the renderer seeding the CRDT, and the
+ *  attach-time snapshot+write added ~1s on top of it. Nothing is lost
+ *  by waiting — crash safety is collab-persist's job, and pagehide
+ *  still forces a write if the window closes sooner. */
+const INITIAL_WRITE_DELAY_MS = 8_000;
 
 /** Idle gap that starts a new group in the version list. */
 export const HISTORY_GROUP_GAP_MS = 60_000;
@@ -61,7 +72,7 @@ export function historyHandleFor(roomId: string): HistoryHandle | null {
 
 /** The slice of the host the writer needs — injectable for tests. */
 export interface HistoryHostLike {
-  writeHistory(envelope: HistoryEnvelope): Promise<void>;
+  writeHistory(envelope: HistoryEnvelopeWrite): Promise<void>;
   readHistory(target: { roomId?: string; path?: string }): Promise<HistoryEnvelope | null>;
 }
 
@@ -80,6 +91,7 @@ export function attachSessionHistory(
   /** Version bytes of the last write, to skip idle rewrites. */
   let writtenVersion: Uint8Array | null = null;
   let seeded = false;
+  let lastSnapshotBytes = 0;
 
   const writeInner = async (): Promise<void> => {
     if (disposed || !host) return;
@@ -109,17 +121,19 @@ export function attachSessionHistory(
           changeTimes.push({ peer, counter, at: now });
         }
       }
-      const envelope: HistoryEnvelope = {
+      const snapshot = session.exportSnapshot();
+      const envelope: HistoryEnvelopeWrite = {
         v: 1,
         roomId: session.roomId,
         docTitle: getDocTitle() || 'Untitled',
         startedAt,
         updatedAt: now,
         changeTimes,
-        snapshotB64: bytesToBase64(session.exportSnapshot()),
+        snapshot,
       };
       await host.writeHistory(envelope);
       writtenVersion = version;
+      lastSnapshotBytes = snapshot.byteLength;
     } catch {
       /* disk full/denied — history degrades, the session still works */
     }
@@ -130,11 +144,21 @@ export function attachSessionHistory(
     return tail;
   };
 
-  const timer = setInterval(() => void write(), HISTORY_PERSIST_MS);
+  // Self-rescheduling timer so the cadence can slow for huge docs.
+  let timer: ReturnType<typeof setTimeout>;
+  const schedule = (delay: number): void => {
+    timer = setTimeout(() => {
+      void write().finally(() => {
+        if (!disposed) {
+          schedule(lastSnapshotBytes > BIG_SNAPSHOT_BYTES ? HISTORY_PERSIST_SLOW_MS : HISTORY_PERSIST_MS);
+        }
+      });
+    }, delay);
+  };
+  schedule(INITIAL_WRITE_DELAY_MS);
   const onPageHide = (): void => void write();
   window.addEventListener('pagehide', onPageHide);
   document.addEventListener('visibilitychange', onPageHide);
-  void write();
 
   const handle: HistoryHandle = {
     flush: () => write(),
@@ -145,7 +169,7 @@ export function attachSessionHistory(
       void write().finally(() => {
         disposed = true;
       });
-      clearInterval(timer);
+      clearTimeout(timer);
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onPageHide);
       liveHandles.delete(session.roomId);
