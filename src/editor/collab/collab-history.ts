@@ -170,6 +170,9 @@ export interface VersionRow {
   /** Local observation time, or null for changes that predate this
    *  machine's tracking (an imported room, a pre-feature session). */
   atMs: number | null;
+  /** True on the row that stands in for the session's initial seeding
+   *  (see collapseSeedPrefix). */
+  isSeed?: boolean;
 }
 
 export interface VersionGroup {
@@ -246,6 +249,34 @@ export function deriveVersionRows(
   return rows;
 }
 
+/**
+ * Collapse the seeding prefix to one row. Hosting a session writes the
+ * ENTIRE document into the CRDT as one commit, which Loro splits into
+ * several changes (~6 for a 60-card file) — so the list otherwise opens
+ * with a run of "versions" that are just the document half-built,
+ * top-down, reading as if the bottom cards were deleted. Those cuts are
+ * noise: nobody wants a partially seeded document. The leading run of
+ * same-peer rows sharing one observation tick (or untimed) collapses to
+ * its LAST row, marked `isSeed` so the dialog can label it "Session
+ * started". Host edits inside the first ~20s write window fold in too —
+ * an acceptable loss of granularity for the opening seconds.
+ */
+export function collapseSeedPrefix(rows: readonly VersionRow[]): VersionRow[] {
+  if (rows.length < 2) {
+    return rows.map((r, i) => (i === rows.length - 1 ? { ...r, isSeed: true } : r));
+  }
+  const first = rows[0]!;
+  let end = 0; // inclusive end of the seed run
+  while (
+    end + 1 < rows.length &&
+    rows[end + 1]!.peer === first.peer &&
+    rows[end + 1]!.atMs === first.atMs
+  ) {
+    end++;
+  }
+  return [{ ...rows[end]!, isSeed: true }, ...rows.slice(end + 1)];
+}
+
 /** Group rows by idle gap. Untimed rows extend the current group (or
  *  form a leading one), so pre-tracking history stays reachable. */
 export function groupVersionRows(
@@ -284,6 +315,12 @@ export function materializeVersion(
   const ldoc = new LoroDoc();
   configTextStyle(ldoc);
   ldoc.import(snapshot);
+  // The binding's reader uses getOrCreateContainer — a WRITE when a cut
+  // lands mid-node and a map lacks its children/attributes container.
+  // A checked-out doc is readonly by default and would throw; this is a
+  // throwaway scratch doc, so detached edits are harmless (the created
+  // empty container just lets the partial node heal or drop normally).
+  ldoc.setDetachedEditing(true);
   ldoc.checkout(frontier);
   return createNodeFromLoroObj(schema, ldoc.getMap('doc') as never, new Map()) as PMNode;
 }

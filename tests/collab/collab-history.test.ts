@@ -19,6 +19,7 @@ import type { CollabSession } from '../../src/editor/collab/collab-session.js';
 import type { HistoryEnvelope } from '../../src/editor/host/types.js';
 import {
   attachSessionHistory,
+  collapseSeedPrefix,
   deriveVersionRows,
   groupVersionRows,
   historyHandleFor,
@@ -117,6 +118,56 @@ describe('round-trip: derived frontier → checkout → materialize', () => {
     expect(final.eq(a.view.state.doc)).toBe(true);
     peers.forEach((p) => p.destroy());
   }, 120_000);
+});
+
+describe('seeding', () => {
+  it('the seed splits into several changes; collapse folds them into one flagged row', async () => {
+    // Seeding alone (zero user edits) — Loro splits the one big commit.
+    const bigSeed = schema.nodes['doc']!.createChecked(
+      null,
+      Array.from({ length: 60 }, (_, i) => card(i)),
+    );
+    const peers = await createLoroPeers(bigSeed, 1);
+    const a = peers[0]!;
+    const snapshot = a.exportAll();
+    const scratch = new LoroDoc();
+    scratch.import(snapshot);
+    const rows = deriveVersionRows(scratch, []);
+    expect(rows.length, 'seeding splits into multiple changes').toBeGreaterThan(1);
+
+    // EVERY cut materializes — including mid-seed cuts that land inside
+    // a half-built node (the binding reader creates missing containers,
+    // which needs detached editing enabled on the scratch doc).
+    for (const [i, row] of rows.entries()) {
+      const node = materializeVersion(snapshot, row.frontier);
+      expect(node.type.name, `row ${i} materializes`).toBe('doc');
+    }
+
+    // Collapsed: one seed row, flagged, reproducing the FULL seed state.
+    const collapsed = collapseSeedPrefix(rows);
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]!.isSeed).toBe(true);
+    const seedDoc = materializeVersion(snapshot, collapsed[0]!.frontier);
+    expect(docText(seedDoc)).toContain('ANCHOR59'); // bottom card present
+    peers.forEach((p) => p.destroy());
+  }, 120_000);
+
+  it('collapse folds only the leading same-peer same-tick run', () => {
+    const row = (atMs: number | null, peer = '1'): VersionRow => ({
+      frontier: [{ peer: '1', counter: 0 }],
+      peer,
+      atMs,
+    });
+    // Seed run of 3 (same peer, same tick), then later edits.
+    const collapsed = collapseSeedPrefix([row(100), row(100), row(100), row(100_000), row(200_000, '2')]);
+    expect(collapsed).toHaveLength(3);
+    expect(collapsed[0]!.isSeed).toBe(true);
+    expect(collapsed[1]!.atMs).toBe(100_000);
+    // A different PEER right after the first row ends the run immediately.
+    const mixed = collapseSeedPrefix([row(100, '1'), row(100, '2'), row(100, '1')]);
+    expect(mixed).toHaveLength(3);
+    expect(mixed[0]!.isSeed).toBe(true);
+  });
 });
 
 describe('grouping', () => {

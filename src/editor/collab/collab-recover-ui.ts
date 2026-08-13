@@ -26,6 +26,7 @@ import { pushOverlay, popOverlay, isTopOverlay } from '../overlay-stack.js';
 import { showToast } from '../toast.js';
 import type { CollabSession } from './collab-session.js';
 import {
+  collapseSeedPrefix,
   deriveVersionRows,
   groupVersionRows,
   historyHandleFor,
@@ -83,7 +84,7 @@ function openVersionDialog(envelope: HistoryEnvelope): void {
     ldoc = new LoroDoc();
     configTextStyle(ldoc);
     ldoc.import(snapshotFromEnvelope(envelope));
-    groups = groupVersionRows(deriveVersionRows(ldoc, envelope.changeTimes));
+    groups = groupVersionRows(collapseSeedPrefix(deriveVersionRows(ldoc, envelope.changeTimes)));
   } catch {
     showToast('That session history is damaged and could not be read.');
     return;
@@ -196,7 +197,11 @@ function groupRow(
 
   const label = document.createElement('span');
   label.className = 'pmd-recover-group-label';
-  label.textContent = groupLabel(group);
+  // A group that IS just the seed row gets named for what it is.
+  label.textContent =
+    group.rows.length === 1 && group.rows[0]!.isSeed
+      ? `Session started — ${groupLabel(group)}`
+      : groupLabel(group);
 
   const meta = document.createElement('span');
   meta.className = 'pmd-recover-group-meta';
@@ -231,7 +236,7 @@ function groupRow(
       t.textContent = row.atMs === null ? '—' : fmtTime(row.atMs);
       const who = document.createElement('span');
       who.className = 'pmd-recover-row-peer';
-      who.textContent = `editor …${row.peer.slice(-4)}`;
+      who.textContent = row.isSeed ? 'session started (initial document)' : `editor …${row.peer.slice(-4)}`;
       line.append(t, who, recoverButton(row, envelope, closeDialog));
       detail.appendChild(line);
     }
