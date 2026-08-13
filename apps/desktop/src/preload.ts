@@ -352,6 +352,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteJournal: (uid: string) =>
     ipcRenderer.invoke('host:delete-journal', uid),
 
+  /** Collab session-history API ({roomId}.cmir-history, same folder as
+   *  the journals; retained past session end — see collab-history.ts).
+   *  Envelopes are plain JSON (the snapshot rides as base64), so no
+   *  byte-conversion shims are needed at this boundary. */
+  writeHistory: (envelope: unknown) => ipcRenderer.invoke('host:write-history', envelope),
+  listHistory: () => ipcRenderer.invoke('host:list-history'),
+  readHistory: (target: { roomId?: string; path?: string }) =>
+    ipcRenderer.invoke('host:read-history', target),
+  deleteHistory: (roomId: string) => ipcRenderer.invoke('host:delete-history', roomId),
+  pickHistoryFile: () =>
+    ipcRenderer.invoke('host:pick-history-file') as Promise<string | null>,
+
   /** Learn store (local annotation layer) — whole-blob KV under
    *  `app.getPath('userData')/learn-store.json`. */
   readLearnStore: () => ipcRenderer.invoke('host:read-learn-store') as Promise<string | null>,

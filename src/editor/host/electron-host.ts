@@ -10,6 +10,8 @@
 
 import type {
   FileFilter,
+  HistoryEnvelope,
+  HistoryMeta,
   Host,
   JournalEntry,
   OpenFileOptions,
@@ -252,6 +254,11 @@ interface ElectronAPI {
   writeJournal(entry: JournalEntry): Promise<void>;
   readJournals(): Promise<JournalEntry[]>;
   deleteJournal(uid: string): Promise<void>;
+  writeHistory(envelope: HistoryEnvelope): Promise<void>;
+  listHistory(): Promise<HistoryMeta[]>;
+  readHistory(target: { roomId?: string; path?: string }): Promise<HistoryEnvelope | null>;
+  deleteHistory(roomId: string): Promise<void>;
+  pickHistoryFile(): Promise<string | null>;
   readLearnStore(): Promise<string | null>;
   writeLearnStore(json: string): Promise<void>;
   spawnWindow(payload: SpawnWindowPayload | null): Promise<void>;
@@ -834,6 +841,29 @@ export class ElectronHost implements Host {
 
   async deleteJournal(uid: string): Promise<void> {
     await api().deleteJournal(uid);
+  }
+
+  /** Collab session-history files — envelopes are plain JSON (the
+   *  snapshot rides as base64), so unlike journals no byte
+   *  normalization is needed across the IPC boundary. */
+  async writeHistory(envelope: HistoryEnvelope): Promise<void> {
+    await api().writeHistory(envelope);
+  }
+
+  async listHistory(): Promise<HistoryMeta[]> {
+    return api().listHistory();
+  }
+
+  async readHistory(target: { roomId?: string; path?: string }): Promise<HistoryEnvelope | null> {
+    return api().readHistory(target);
+  }
+
+  async deleteHistory(roomId: string): Promise<void> {
+    await api().deleteHistory(roomId);
+  }
+
+  async pickHistoryFile(): Promise<string | null> {
+    return api().pickHistoryFile();
   }
 
   async readLearnStore(): Promise<string | null> {

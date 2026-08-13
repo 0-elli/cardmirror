@@ -15090,3 +15090,78 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
   color: #e7ddf8;
 }
 .pmd-morph-adv input { margin: 0; }
+
+/* ─── Recover Previous Version (collab-recover-ui.ts) ─────────────── */
+.pmd-recover-dialog {
+  max-width: 34rem;
+}
+.pmd-recover-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.pmd-recover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.pmd-recover-group {
+  border: 1px solid var(--pmd-c-border-soft);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+}
+.pmd-recover-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pmd-recover-expand {
+  appearance: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--pmd-c-text-muted);
+  font-size: 0.8rem;
+  padding: 0.1rem 0.2rem;
+}
+.pmd-recover-group-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--pmd-c-text);
+}
+.pmd-recover-group-meta {
+  /* Pushes the Open button to the row's end; min-width lets it shrink. */
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--pmd-c-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pmd-recover-detail {
+  margin: 0.35rem 0 0.15rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.pmd-recover-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  color: var(--pmd-c-text-secondary);
+}
+.pmd-recover-row-time {
+  min-width: 6.5rem;
+}
+.pmd-recover-row-peer {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pmd-recover-open {
+  flex: none;
+  font-size: 0.8rem;
+}

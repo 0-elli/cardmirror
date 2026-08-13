@@ -47,6 +47,7 @@ export const RIBBON_GROUPS: RibbonGroup[] = [
       'collabCopyShareCode',
       'collabInviteStarred',
       'collabEndSession',
+      'recoverPreviousVersion',
     ],
   },
   {

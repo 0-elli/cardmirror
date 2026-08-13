@@ -130,6 +130,47 @@ export interface JournalEntry {
   bytes: Uint8Array;
 }
 
+/** One local observation of how far a peer's op counter had advanced —
+ *  the session-history file's substitute for CRDT timestamps (which are
+ *  deliberately not recorded; see collab-history.ts). `counter` is a
+ *  version-vector value, i.e. an EXCLUSIVE upper: "ops < counter
+ *  existed by `at`". */
+export interface HistoryChangeTime {
+  peer: string;
+  counter: number;
+  /** Local epoch ms at the write that first covered this counter. */
+  at: number;
+}
+
+/** On-disk envelope of a `{roomId}.cmir-history` session-history file
+ *  ({userData}/journals, beside the crash journals but with its own
+ *  extension so the crash-recovery scanner never offers it). Written
+ *  continuously during a collab session and RETAINED after it ends —
+ *  the durable record Recover Previous Version reads. Identical for
+ *  host and participants: everyone holds the same history. */
+export interface HistoryEnvelope {
+  v: 1;
+  roomId: string;
+  /** Last-known display title, for the recovery list. */
+  docTitle: string;
+  /** Local epoch ms: first write / most recent write. */
+  startedAt: number;
+  updatedAt: number;
+  changeTimes: HistoryChangeTime[];
+  /** Full Loro snapshot (state + complete oplog), base64. */
+  snapshotB64: string;
+}
+
+/** A history file's listing row — the envelope minus its payload, so
+ *  enumerating files never loads every snapshot into memory. */
+export interface HistoryMeta {
+  roomId: string;
+  docTitle: string;
+  startedAt: number;
+  updatedAt: number;
+  sizeBytes: number;
+}
+
 /** The interface every platform host implements. New methods land
  *  here when the editor needs a new capability that varies between
  *  web and desktop. */

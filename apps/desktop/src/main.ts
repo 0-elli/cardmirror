@@ -1511,6 +1511,212 @@ ipcMain.handle('host:delete-journal', async (_event, uid: string) => {
   }
 });
 
+// ─── Collab session history ({roomId}.cmir-history) ────────────────
+// Sibling of the crash journals, in the same folder, with a distinct
+// extension so the crash-recovery scanner above never offers one as a
+// recovery candidate. Written continuously during a collab session and
+// RETAINED after it ends (including a remote tombstone) — the durable
+// record behind Recover Previous Version. Unlike journals there is no
+// natural clear point, so retention is explicit: age + total-size
+// pruning on startup and hourly.
+
+const HISTORY_EXTENSION = '.cmir-history';
+const HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const HISTORY_MAX_TOTAL_BYTES = 500 * 1024 * 1024;
+
+interface HistoryEnvelopeIpc {
+  v: 1;
+  roomId: string;
+  docTitle: string;
+  startedAt: number;
+  updatedAt: number;
+  changeTimes: { peer: string; counter: number; at: number }[];
+  snapshotB64: string;
+}
+
+function historyPathFor(roomId: string): string {
+  // Room ids are relay-minted, but sanitize like journalPathFor does —
+  // this string becomes a filename.
+  const safe = roomId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return path.join(journalsDir(), `${safe}${HISTORY_EXTENSION}`);
+}
+
+function parseHistoryEnvelope(text: string): HistoryEnvelopeIpc | null {
+  try {
+    const p = JSON.parse(text) as Partial<HistoryEnvelopeIpc>;
+    if (
+      p?.v !== 1 ||
+      typeof p.roomId !== 'string' ||
+      !p.roomId ||
+      typeof p.snapshotB64 !== 'string' ||
+      !p.snapshotB64 ||
+      typeof p.startedAt !== 'number' ||
+      typeof p.updatedAt !== 'number' ||
+      !Array.isArray(p.changeTimes)
+    ) {
+      return null;
+    }
+    return {
+      v: 1,
+      roomId: p.roomId,
+      docTitle: typeof p.docTitle === 'string' ? p.docTitle : 'Untitled',
+      startedAt: p.startedAt,
+      updatedAt: p.updatedAt,
+      changeTimes: p.changeTimes.filter(
+        (t): t is { peer: string; counter: number; at: number } =>
+          typeof t?.peer === 'string' && typeof t?.counter === 'number' && typeof t?.at === 'number',
+      ),
+      snapshotB64: p.snapshotB64,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Same per-key write chain as journals: two in-flight writes to one
+// path otherwise race into a valid-JSON-then-garbage file.
+const historyWriteTails = new Map<string, Promise<void>>();
+
+ipcMain.handle('host:write-history', (_event, envelope: HistoryEnvelopeIpc) => {
+  if (!envelope || envelope.v !== 1 || typeof envelope.roomId !== 'string' || !envelope.roomId) {
+    throw new Error('host:write-history: a v1 envelope with roomId is required.');
+  }
+  const previous = historyWriteTails.get(envelope.roomId) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(async () => {
+    await ensureJournalsDir();
+    const finalPath = historyPathFor(envelope.roomId);
+    const tmpPath = `${finalPath}.tmp`;
+    await fs.writeFile(tmpPath, JSON.stringify(envelope));
+    await fs.rename(tmpPath, finalPath);
+  });
+  historyWriteTails.set(envelope.roomId, next);
+  void next.finally(() => {
+    if (historyWriteTails.get(envelope.roomId) === next) {
+      historyWriteTails.delete(envelope.roomId);
+    }
+  });
+  return next;
+});
+
+ipcMain.handle('host:list-history', async () => {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(journalsDir());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  const rows: { roomId: string; docTitle: string; startedAt: number; updatedAt: number; sizeBytes: number }[] = [];
+  for (const name of entries) {
+    if (!name.endsWith(HISTORY_EXTENSION)) continue;
+    const fullPath = path.join(journalsDir(), name);
+    try {
+      const text = await fs.readFile(fullPath, 'utf8');
+      const env = parseHistoryEnvelope(text);
+      if (!env) continue;
+      rows.push({
+        roomId: env.roomId,
+        docTitle: env.docTitle,
+        startedAt: env.startedAt,
+        updatedAt: env.updatedAt,
+        sizeBytes: Buffer.byteLength(text),
+      });
+    } catch (err) {
+      console.warn(`Skipping unreadable history file ${name}:`, err);
+    }
+  }
+  rows.sort((a, b) => b.updatedAt - a.updatedAt);
+  return rows;
+});
+
+ipcMain.handle(
+  'host:read-history',
+  async (_event, target: { roomId?: string; path?: string }) => {
+    const fullPath =
+      typeof target?.path === 'string' && target.path
+        ? target.path
+        : typeof target?.roomId === 'string' && target.roomId
+          ? historyPathFor(target.roomId)
+          : null;
+    if (!fullPath) throw new Error('host:read-history: roomId or path is required.');
+    try {
+      return parseHistoryEnvelope(await fs.readFile(fullPath, 'utf8'));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
+  },
+);
+
+ipcMain.handle('host:delete-history', async (_event, roomId: string) => {
+  if (typeof roomId !== 'string' || !roomId) return;
+  try {
+    await fs.unlink(historyPathFor(roomId));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+});
+
+/** "Recover from file…": native picker opened AT the journals folder,
+ *  filtered to history files. Returns the picked absolute path. */
+ipcMain.handle('host:pick-history-file', async (event) => {
+  await ensureJournalsDir();
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win ?? BrowserWindow.getAllWindows()[0]!, {
+    defaultPath: journalsDir(),
+    filters: [{ name: 'CardMirror session history', extensions: ['cmir-history'] }],
+    properties: ['openFile'],
+  });
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!;
+});
+
+/** Age + total-size pruning. Age first (30 days), then oldest-first
+ *  until under the total cap — the cap is a runaway guard (a history
+ *  file is ~2x its document's text; only heavy reorganizing sessions
+ *  get big, ~125 KiB of permanent oplog per long card move). */
+async function pruneHistoryFiles(): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(journalsDir());
+  } catch {
+    return; // No folder yet → nothing to prune.
+  }
+  const files: { path: string; mtimeMs: number; size: number }[] = [];
+  for (const name of entries) {
+    if (!name.endsWith(HISTORY_EXTENSION)) continue;
+    const fullPath = path.join(journalsDir(), name);
+    try {
+      const st = await fs.stat(fullPath);
+      files.push({ path: fullPath, mtimeMs: st.mtimeMs, size: st.size });
+    } catch {
+      /* raced a delete — skip */
+    }
+  }
+  const now = Date.now();
+  const kept: typeof files = [];
+  for (const f of files) {
+    if (now - f.mtimeMs > HISTORY_MAX_AGE_MS) {
+      await fs.unlink(f.path).catch(() => {});
+    } else {
+      kept.push(f);
+    }
+  }
+  kept.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
+  let total = kept.reduce((n, f) => n + f.size, 0);
+  for (const f of kept) {
+    if (total <= HISTORY_MAX_TOTAL_BYTES) break;
+    await fs.unlink(f.path).catch(() => {});
+    total -= f.size;
+  }
+}
+
+void app.whenReady().then(() => {
+  void pruneHistoryFiles();
+  const timer = setInterval(() => void pruneHistoryFiles(), 60 * 60 * 1000);
+  timer.unref?.();
+});
+
 // ─── Learn store (local annotation layer) — whole-blob KV ──────────
 function learnStorePath(): string {
   return path.join(app.getPath('userData'), 'learn-store.json');

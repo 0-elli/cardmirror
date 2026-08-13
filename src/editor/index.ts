@@ -1988,6 +1988,9 @@ const ribbonContext: RibbonContext = {
   toggleMorphMode: () => {
     toggleMorphMode();
   },
+  recoverPreviousVersion: () => {
+    void loadCollabUi().then((m) => m.recoverPreviousVersionFlow());
+  },
   cycleTheme: () => {
     // light → dark → system → light. The settings subscription
     // re-runs applyTheme, so this is all the command needs to do.

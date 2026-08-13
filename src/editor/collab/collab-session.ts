@@ -51,8 +51,10 @@ type SyncDoc = Parameters<typeof LoroSyncPlugin>[0]['doc'];
 /** Mirrors loro-prosemirror's configLoroTextStyle: PM `inclusive` is the
  *  local statement of Peritext expand behavior; the CRDT-level config
  *  makes CONCURRENT boundary insertions honor the same intent. Must be
- *  set before any ops are created on the doc. */
-function configTextStyle(doc: LoroDoc): void {
+ *  set before any ops are created on the doc. Exported so the history
+ *  recovery path configures its scratch docs identically — a mismatch
+ *  would change mark-expansion behavior on the recovered copy. */
+export function configTextStyle(doc: LoroDoc): void {
   doc.configTextStyle(
     Object.fromEntries(
       Object.entries(schema.marks).map(([name, type]) => [

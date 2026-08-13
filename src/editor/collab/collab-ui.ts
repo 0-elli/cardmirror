@@ -50,6 +50,7 @@ import {
 } from './collab-comments.js';
 import { UndoManager } from 'loro-crdt';
 import { attachSessionPersistence, type PersistHandle } from './collab-persist.js';
+import { attachSessionHistory, type HistoryHandle } from './collab-history.js';
 import { installCursorPresence, type CursorsHandle } from './collab-cursors.js';
 import { collabRepairPlugin, lowestPeerIsLeader } from './collab-repair.js';
 import { loadSessionRecord, loadPrefetch, deletePrefetch } from './collab-store.js';
@@ -104,6 +105,10 @@ interface ActiveSession {
   cursors: CursorsHandle;
   commentsSync: CommentsSyncHandle;
   persist: PersistHandle;
+  /** Session-history writer ({roomId}.cmir-history). Disposed at
+   *  teardown but its FILE is always retained — unlike the session
+   *  record, which is deleted on Leave/End/tombstone. */
+  history: HistoryHandle;
   wakeCleanup: () => void;
   /** Unsubscribe the meta-map (title) watcher installed by installSeams. */
   metaUnsub: () => void;
@@ -355,6 +360,13 @@ function installSeams(
     () => sessionDocTitle(ownerUid) || sharedDocTitle(session),
     () => docIdResolver?.(ownerUid) ?? null,
   );
+  // Recover Previous Version's durable record: full-history snapshots
+  // that survive session end (deliberately including a remote
+  // tombstone — an attacker ending the session must not destroy it).
+  const history = attachSessionHistory(
+    session,
+    () => sessionDocTitle(ownerUid) || sharedDocTitle(session),
+  );
   const cursors = installCursorPresence(session, ownerView);
   // One shared timer refreshes the focused session's chip dots AND every slot
   // footer's copresence (peers join/leave/expire between status updates).
@@ -382,6 +394,7 @@ function installSeams(
     cursors,
     commentsSync,
     persist,
+    history,
     wakeCleanup,
     metaUnsub,
     lastStatus: null,
@@ -451,6 +464,10 @@ function teardownSession(sess: ActiveSession, keepRecord = false): Promise<void>
   sess.metaUnsub();
   sess.commentsSync.dispose();
   sess.cursors.dispose();
+  // History stops writing but its file is NEVER cleared here — the
+  // whole point is surviving Leave/End/tombstone. Pruning is age-based,
+  // in the main process.
+  sess.history.dispose();
   let cleared: Promise<void> = Promise.resolve();
   if (keepRecord) sess.persist.dispose();
   else cleared = sess.persist.clear();
@@ -1167,4 +1184,13 @@ export async function endSessionFlow(deps: CollabUiDeps): Promise<void> {
  *  session), or null. */
 export function activeSession(): CollabSession | null {
   return chipSession()?.session ?? null;
+}
+
+/** Recover Previous Version command body. Lives here (not in the
+ *  recover module) so the lazy-loaded collab-ui module is the single
+ *  entry point index.ts's command wiring already uses, and so the
+ *  recover module needs no import back into this one. */
+export async function recoverPreviousVersionFlow(): Promise<void> {
+  const m = await import('./collab-recover-ui.js');
+  await m.openRecoverPreviousVersion(activeSession());
 }
