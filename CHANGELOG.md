@@ -35,9 +35,11 @@ see `DETAILED_CHANGELOG.md`.
   copy of the document agreeing on the damaged result. Long-distance
   moves (dragging a card far in the outline) also generated wildly
   oversized sync traffic that stayed in the session's history forever;
-  a single long drag now costs about as much as typing a few words,
-  and the concurrent-reordering damage no longer occurs between
-  up-to-date copies of CardMirror.
+  a single long drag now costs about as much as typing a few words.
+  Between up-to-date copies, nothing is ever lost anymore. One narrow
+  corner remains until the next major release: if two people move the
+  *same* card at the same time, it can end up in both places — a
+  visible duplicate you can just delete, rather than a silent loss.
 
 ### Changed
 

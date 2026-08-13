@@ -68,6 +68,18 @@ zero loss/duplication under partitioned concurrent moves, a canary
 that re-detects the upstream bug with the patch disabled, the
 wire-cost reduction, and undo/redo round-tripping a long move.
 
+A dedicated move fuzzer (3 peers, offline partitions, moves at 45% of
+the op mix, 150-seed sweep) established the shipped semantics
+precisely: **zero cards lost across every seed**, full convergence and
+validity — with one known corner: two peers concurrently moving the
+SAME card can leave a convergent duplicate, because each move
+recreates the card and both recreations survive the merge. Visible
+and user-fixable, unlike the silent loss this fix eliminated. The
+same fuzzer running in movable-list mode passes the strict
+exactly-once invariant across all 150 seeds, confirming the flagged
+`LoroMovableList` container (planned for the v1.0 cutover) closes
+that corner completely.
+
 Also carried in the patch, inert behind a flag: a `LoroMovableList`
 children container for the planned v1.0 cutover (container types
 cannot be mixed across builds — an old build cannot read a movable
