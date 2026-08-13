@@ -79,6 +79,9 @@ PAIRING_V2_PLAN.md
 PAIRING_AUTH_TURNKEY.md
 COLLAB_CRDT_PLAN.md
 COLLAB_MULTIDOC_PLAN.md
+COLLAB_HISTORY_PLAN.md
+COLLAB_MOVE_SPIKE_binding.patch
+COLLAB_MOVE_SPIKE_tests.patch
 TRANSCLUSION_PLAN.md
 NUMBERING_PLAN.md
 UNTESTED_CHANGES.md
@@ -91,3 +94,6 @@ bakeoff/
 # Python bytecode (relay/ smoke tests)
 __pycache__/
 FOCUS_AUDIT.md
+COLLAB_MOVE_SPIKE_partition-test.ts
+COLLAB_MOVE_SPIKE_identity-test.ts
+COLLAB_MOVE_SPIKE.md
