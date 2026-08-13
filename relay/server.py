@@ -86,6 +86,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -323,6 +324,64 @@ async def _pool_exhausted(_request: Request, _exc: SATimeoutError) -> JSONRespon
 
 
 # ── Auth ─────────────────────────────────────────────────────────────
+
+
+_VER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$")
+_PRE_RANK = {"alpha": 0, "beta": 1, "rc": 2}
+
+
+def _parse_version(s: str):
+    """Prerelease-aware key for CardMirror's version shapes, or None."""
+    m = _VER_RE.match(s.strip())
+    if not m:
+        return None
+    core = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    pre = m.group(4)
+    if pre is None:
+        return core + (1, 0, 0)
+    parts = pre.split(".")
+    rank = _PRE_RANK.get(parts[0].lower(), 1)
+    num = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return core + (0, rank, num)
+
+
+@app.middleware("http")
+async def _min_version_gate(request, call_next):
+    """OPT-IN minimum-client-version gate (mirrors the official relay's).
+
+    Dormant unless BOTH env vars are set:
+      RELAY_MIN_CLIENT_VERSION  e.g. "1.0.0"
+      RELAY_MIN_VERSION_SCOPE   "rooms" (block room CREATION only) or
+                                "all" (rooms + mailbox)
+
+    Clients >= 0.1.0-beta.32 send X-CardMirror-Version; older builds
+    send nothing and read as below any floor. Refusals are 426. This
+    runs before token auth (it is a middleware), which is acceptable
+    for an opt-in self-hosted policy knob; the official relay checks
+    auth first. Unparseable floors fail open.
+    """
+    floor_s = os.getenv("RELAY_MIN_CLIENT_VERSION", "").strip()
+    scope = os.getenv("RELAY_MIN_VERSION_SCOPE", "off").strip().lower()
+    if floor_s and scope in ("rooms", "all"):
+        path, method = request.url.path, request.method
+        gated = path == "/relay/rooms" and method == "POST"
+        if not gated and scope == "all":
+            gated = (
+                path.startswith("/relay/rooms/")
+                or path == "/relay/messages"
+                or path.startswith("/relay/messages/")
+                or path == "/relay/stream"
+            )
+        if gated:
+            floor = _parse_version(floor_s)
+            if floor is not None:
+                got = _parse_version(request.headers.get("x-cardmirror-version", ""))
+                if got is None or got < floor:
+                    return JSONResponse(
+                        {"detail": {"error": "update-required", "minVersion": floor_s}},
+                        status_code=426,
+                    )
+    return await call_next(request)
 
 
 def require_relay_token(authorization: Optional[str] = Header(None)) -> None:
