@@ -345,7 +345,9 @@ function installWakeHooks(session: CollabSession): () => void {
  *  measured on a 6.7MB master) and joining materializes it back
  *  (~10s). Neither can yield mid-work, so the honest thing is a
  *  painted banner before the freeze starts. The 30ms wait is what
- *  lets it PAINT — returning the cleanup so callers `finally` it. */
+ *  lets it PAINT — returning the cleanup so callers `finally` it
+ *  (via setTimeout(0), which FIFO-orders removal after the binding's
+ *  own deferred init freeze). */
 async function sessionPrepOverlay(text: string): Promise<() => void> {
   const overlay = document.createElement('div');
   overlay.className = 'pmd-bulk-overlay pmd-session-prep';
@@ -701,7 +703,7 @@ async function startSessionFlowInner(
     // binding's init (a setTimeout(0) inside the sync plugin) then does
     // its own synchronous pass — the veil must outlive BOTH, or it
     // vanishes while the editor is still frozen (field find, 2026-08-12
-    // three-pane test). Hence the flush yields before prepDone().
+    // three-pane test). The finally releases it via setTimeout(0).
     const prepDone = await sessionPrepOverlay(
       'Preparing collaboration session — a large document can take a moment…',
     );
@@ -727,10 +729,14 @@ async function startSessionFlowInner(
       session.loroDoc.commit({ origin: META_COMMIT_ORIGIN });
       deps.refreshPlugins();
       session.start();
-      // Let the deferred binding init fire (and freeze) under the veil.
-      for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
     } finally {
-      prepDone();
+      // The binding queued its init (the second synchronous freeze) via
+      // setTimeout(0) inside refreshPlugins; same-delay timeouts run
+      // FIFO, so queueing the veil's removal NOW runs it right after
+      // that init finishes — without inserting awaits into this flow,
+      // which lets live session callbacks interleave mid-flow (broke
+      // the flow tests when tried).
+      setTimeout(prepDone, 0);
     }
     sess.lastStatus = { connected: true, queuedUpdates: 0 };
     updateChip({ connected: true, queuedUpdates: 0 });
@@ -855,8 +861,8 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
     // Add the binding to the fresh doc's view — its init replaces the
     // empty content with the session's CRDT state synchronously (~10s
     // on a tournament-master-sized doc), but only after a setTimeout(0)
-    // deferral inside the sync plugin: the veil must outlive the flush
-    // yields or it vanishes before the freeze even starts.
+    // deferral inside the sync plugin: the veil's removal is queued
+    // BEHIND that init (FIFO), or it vanishes before the freeze starts.
     const prepDone = await sessionPrepOverlay(
       'Opening the shared document — a large document can take a moment…',
     );
@@ -867,9 +873,10 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
       sessRef.commentsSync.pull();
       adoptSharedTitle(deps, session);
       session.start();
-      for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
     } finally {
-      prepDone();
+      // FIFO with the binding's own setTimeout(0) init — see the host
+      // flow's finally for why this is a timeout, not an await.
+      setTimeout(prepDone, 0);
     }
     sessRef.lastStatus = { connected: !joinedOffline, queuedUpdates: 0 };
     updateChip({ connected: !joinedOffline, queuedUpdates: 0 });
