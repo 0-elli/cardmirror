@@ -7,6 +7,73 @@ in each release, see `CHANGELOG.md`.
 
 ## Unreleased
 
+### Added: Recover Previous Version (session history files)
+
+Co-editing gives each participant undo over only their own changes, so
+a session that gets wrecked had no recovery path once it ended: the
+crash-recovery session record is deleted on Leave/End/tombstone by
+design, `.cmir` files carry no CRDT history, and the relay compacts and
+then tombstones its copy. Every past state was gone everywhere the
+moment a session ended normally — no attacker required.
+
+Each session now writes `{roomId}.cmir-history` into the journals
+folder: a full Loro snapshot (state + complete oplog) in a JSON
+envelope, written every ~20s while the session runs, on pagehide, and
+once at teardown — and **retained** through Leave, End, and remote
+tombstone alike, since a hostile joiner can end a session for everyone.
+Age/size pruning (30 days; 500 MB oldest-first as a runaway guard) runs
+in the main process at startup and hourly. The distinct extension keeps
+the crash-recovery scanner from ever offering one as a crash candidate.
+
+The CRDT deliberately records no wall-clock time (`setRecordTimestamp`
+would grow every change and publish per-peer edit times), so the
+envelope carries *local observation times*: each write notes how far
+every peer's op counter had advanced. The version list is derived at
+dialog-open from the snapshot's change graph — one frontier per change,
+grouped by >1-minute idle gaps, expandable to individual changes —
+and timestamps come from those observations. Recovery checks the chosen
+frontier out on a scratch `LoroDoc` (never the live session's),
+materializes it via `createNodeFromLoroObj`, and spawns a new window
+with the result as an unsaved document: impossible to confuse with, or
+reflex-overwrite onto, the canonical file. Tests pin the full
+round-trip (derived frontier → checkout → materialize equals the
+checkpoint doc, marks and attrs included), that every derived row of a
+branching two-peer graph yields a valid frontier, grouping edge cases,
+and that the writer's dispose path flushes but can never delete.
+
+### Fixed: concurrent card moves corrupted co-edited documents
+
+`loro-prosemirror` reconciles a reordered children list by
+delete-and-recreating every misaligned pair, so moving one card past N
+siblings destroyed and rebuilt all N containers. Measured on a 300-card
+file: ~0.65 KiB of permanent oplog per position traversed (~206 KiB for
+one long nav-pane drag, carried by every subsequent snapshot, joiner
+download, and history file for the life of the room) — and, far worse,
+concurrent partitioned moves corrupted the merge: 16 cards lost and 16
+duplicated across six two-peer scenarios, silently, with both peers
+agreeing on the damaged result. The heal stack cannot help; the lost
+containers' ops no longer exist. Requires true concurrency — both
+moves made before either peer saw the other's, which live sync
+narrows to a sub-second window — so offline/partitioned editing was
+the realistic trigger and most sessions never hit it.
+
+The dependency patch now detects that the misaligned middle is a pure
+rotation and emits one delete + one insert instead of rewriting the
+span. Identity is matched through the binding's own container→node
+mapping, so a child *edited* in the same transaction falls through to
+the upstream path untouched. Mixed-version safe (the diff only shapes
+ops a peer emits for its own edits; both paths emit plain `LoroList`
+ops), so it protects proportionally as users update. New tests pin
+zero loss/duplication under partitioned concurrent moves, a canary
+that re-detects the upstream bug with the patch disabled, the
+wire-cost reduction, and undo/redo round-tripping a long move.
+
+Also carried in the patch, inert behind a flag: a `LoroMovableList`
+children container for the planned v1.0 cutover (container types
+cannot be mixed across builds — an old build cannot read a movable
+children list at all, and concurrent creation with different types
+silently discards one side), plus read-side tolerance for it.
+
 ### Fixed: Clean's overwrite confirmation was unenterable as displayed
 
 The in-place overwrite dialog gates on typing a phrase. The phrase

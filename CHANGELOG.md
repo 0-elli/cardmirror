@@ -7,6 +7,38 @@ see `DETAILED_CHANGELOG.md`.
 
 ## Unreleased
 
+### Added
+
+- **Recover Previous Version — get back what a bad co-editing session
+  destroyed.** In a collaboration session everyone can only undo their
+  *own* changes, so if a document gets wrecked — a bad merge, or someone
+  joining just to deface it — there was no way back. CardMirror now
+  keeps a history file for each session (in the same folder as the
+  crash-recovery journals, cleaned up after 30 days). The new **Recover
+  Previous Version** command (command bar; no default key) lists the
+  session's earlier states grouped by pauses in the editing, lets you
+  expand a group down to individual changes, and opens any of them as a
+  **separate unsaved copy** in its own window — the shared document is
+  never touched. Not in a session, the command opens the history folder
+  directly so you can pick a file, and **Recover from file…** does the
+  same from inside the dialog. The privacy policy's device-storage
+  section describes the new file.
+
+### Fixed
+
+- **Reordering cards during a co-editing session could silently lose
+  or duplicate cards.** This needed genuinely simultaneous reordering:
+  two people each moving cards before either copy had synced the
+  other's move (most likely while one was offline), so most sessions
+  would never have hit it. When it did happen, the merge could quietly
+  destroy some cards and double-print others, with no error and every
+  copy of the document agreeing on the damaged result. Long-distance
+  moves (dragging a card far in the outline) also generated wildly
+  oversized sync traffic that stayed in the session's history forever;
+  a single long drag now costs about as much as typing a few words,
+  and the concurrent-reordering damage no longer occurs between
+  up-to-date copies of CardMirror.
+
 ### Changed
 
 - **Requests to the relay now say which version of CardMirror sent

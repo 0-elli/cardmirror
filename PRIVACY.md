@@ -43,10 +43,17 @@ Almost everything CardMirror knows about you stays on your own computer:
 - Your recent‑files list, pinned items, quick cards, and study annotations.
 - If you use card sharing: a cryptographic key pair generated on your device,
   and an inbox of cards others have sent you.
-- If you use co‑editing: a local record of your collaboration sessions.
+- If you use co‑editing: a local record of your collaboration sessions, and a
+  **session history file** per session — the document's edit history, kept so
+  you can recover an earlier version if a shared document is damaged
+  (**Recover Previous Version**). History files live beside the recovery
+  journals, are readable only on your device, and are deleted automatically
+  after 30 days (or delete them yourself any time — the
+  **Open Crash‑Recovery Journals Folder** command shows you where they are).
 
 **Retention:** this data stays on your device until *you* delete it (delete the
-file, clear the item, or uninstall the app). We can't reach it and we don't
+file, clear the item, or uninstall the app — session history files also expire
+on their own after 30 days). We can't reach it and we don't
 retain a copy. Anyone with access to your computer or account may be able to
 read it, so protect your device as you would any folder of personal files.
 
