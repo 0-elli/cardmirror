@@ -563,7 +563,8 @@ function sessionCallbacks(deps: CollabUiDeps, getSess: () => ActiveSession | nul
       const wasHost = sess.session.role === 'host';
       const wasChip = isChipSession(sess.ownerUid);
       void teardownSession(sess);
-      if (wasChip) updateChip(null);
+      void wasChip;
+      refreshChipForFocus(); // repaint from live truth — a stale wasChip snapshot left ghost chips (field find, 2026-08-12)
       // Rebuild the OWNER doc's plugin stack — refreshing the focused view
       // left an unfocused owner pane holding dead session plugins (audit
       // find, 2026-07-10).
@@ -588,7 +589,8 @@ function sessionCallbacks(deps: CollabUiDeps, getSess: () => ActiveSession | nul
       // someone leaves.
       const wasChip = isChipSession(sess.ownerUid);
       void teardownSession(sess, /* keepRecord */ true);
-      if (wasChip) updateChip(null);
+      void wasChip;
+      refreshChipForFocus(); // repaint from live truth — a stale wasChip snapshot left ghost chips (field find, 2026-08-12)
       if (deps.refreshPluginsForUid) deps.refreshPluginsForUid(sess.ownerUid);
       else deps.refreshPlugins();
       showToast(
@@ -695,35 +697,41 @@ async function startSessionFlowInner(
   try {
     // Host on the CURRENT (focused) doc — no doc swap, so its uid is the owner.
     let sessRef: ActiveSession | null = null;
-    // host() seeds the ENTIRE doc into the CRDT synchronously — tell
-    // the user the app is working, not hung.
+    // host() seeds the ENTIRE doc into the CRDT synchronously, and the
+    // binding's init (a setTimeout(0) inside the sync plugin) then does
+    // its own synchronous pass — the veil must outlive BOTH, or it
+    // vanishes while the editor is still frozen (field find, 2026-08-12
+    // three-pane test). Hence the flush yields before prepDone().
     const prepDone = await sessionPrepOverlay(
       'Preparing collaboration session — a large document can take a moment…',
     );
-    let hosted: { session: CollabSession; shareCode: string };
+    let session: CollabSession;
+    let shareCode: string;
+    let sess: ActiveSession;
     try {
-      hosted = await CollabSession.host({
+      ({ session, shareCode } = await CollabSession.host({
         pmDoc: view.state.doc,
         client,
         callbacks: sessionCallbacks(deps, () => sessRef),
-      });
+      }));
+      // ownerUid captured at flow start (line ~427), under the doc that was
+      // focused when Start was chosen — host() shared THAT doc's content, so
+      // the seams must bind to it even if focus has since moved.
+      sess = installSeams(session, deps, shareCode, ownerUid);
+      sessRef = sess;
+      // Seed before start(): the first flush then carries the host's
+      // existing comment threads alongside the seeded doc — and the doc
+      // title, so joiners can name their unsaved copy.
+      sess.commentsSync.seedFromView(view);
+      session.loroDoc.getMap('meta').set('title', sessionDocTitle(ownerUid));
+      session.loroDoc.commit({ origin: META_COMMIT_ORIGIN });
+      deps.refreshPlugins();
+      session.start();
+      // Let the deferred binding init fire (and freeze) under the veil.
+      for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
     } finally {
       prepDone();
     }
-    const { session, shareCode } = hosted;
-    // ownerUid captured at flow start (line ~427), under the doc that was
-    // focused when Start was chosen — host() shared THAT doc's content, so the
-    // seams must bind to it even if focus has since moved.
-    const sess = installSeams(session, deps, shareCode, ownerUid);
-    sessRef = sess;
-    // Seed before start(): the first flush then carries the host's
-    // existing comment threads alongside the seeded doc — and the doc
-    // title, so joiners can name their unsaved copy.
-    sess.commentsSync.seedFromView(view);
-    session.loroDoc.getMap('meta').set('title', sessionDocTitle(ownerUid));
-    session.loroDoc.commit({ origin: META_COMMIT_ORIGIN });
-    deps.refreshPlugins();
-    session.start();
     sess.lastStatus = { connected: true, queuedUpdates: 0 };
     updateChip({ connected: true, queuedUpdates: 0 });
     const copied = await navigator.clipboard?.writeText(shareCode).then(
@@ -844,22 +852,25 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
     // uid NOW, before any later focus change, so the seams bind into it.
     const ownerUid = deps.getOwnerUid?.() ?? '';
     sessRef = installSeams(session, deps, code.trim(), ownerUid);
-    // Add the binding to the fresh doc's view — its init replaces the empty
-    // content with the session's CRDT state, synchronously (~10s on a
-    // tournament-master-sized doc); veil it so it reads as working.
+    // Add the binding to the fresh doc's view — its init replaces the
+    // empty content with the session's CRDT state synchronously (~10s
+    // on a tournament-master-sized doc), but only after a setTimeout(0)
+    // deferral inside the sync plugin: the veil must outlive the flush
+    // yields or it vanishes before the freeze even starts.
     const prepDone = await sessionPrepOverlay(
       'Opening the shared document — a large document can take a moment…',
     );
     try {
       deps.refreshPlugins();
+      // The join snapshot already carries the host's thread map — land it
+      // in the fresh pane's plugin state; same for the published title.
+      sessRef.commentsSync.pull();
+      adoptSharedTitle(deps, session);
+      session.start();
+      for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
     } finally {
       prepDone();
     }
-    // The join snapshot already carries the host's thread map — land it
-    // in the fresh pane's plugin state; same for the published title.
-    sessRef.commentsSync.pull();
-    adoptSharedTitle(deps, session);
-    session.start();
     sessRef.lastStatus = { connected: !joinedOffline, queuedUpdates: 0 };
     updateChip({ connected: !joinedOffline, queuedUpdates: 0 });
     // Only NOW is the seed spent — the join is committed (for the offline
@@ -1152,7 +1163,8 @@ async function endOrLeaveSession(sess: ActiveSession): Promise<boolean> {
   // Registry drop before the record delete, so a late stream frame's
   // onEnded no-ops.
   const cleared = teardownSession(sess);
-  if (wasChip) updateChip(null);
+  void wasChip;
+      refreshChipForFocus(); // repaint from live truth — a stale wasChip snapshot left ghost chips (field find, 2026-08-12)
   await cleared; // record actually gone before we return
   return true;
 }
@@ -1177,7 +1189,8 @@ async function closeKeepResumableSession(uid: string): Promise<boolean> {
     return false;
   }
   void teardownSession(sess, /* keepRecord */ true);
-  if (wasChip) updateChip(null);
+  void wasChip;
+      refreshChipForFocus(); // repaint from live truth — a stale wasChip snapshot left ghost chips (field find, 2026-08-12)
   return true;
 }
 
