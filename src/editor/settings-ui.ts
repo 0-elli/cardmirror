@@ -2433,9 +2433,10 @@ function buildReadersEditor(): HTMLElement {
   return wrap;
 }
 
-/** Blog-account row: OPTIONAL account linking — while the relay runs
- *  ungated (the beta), an entitlement gates nothing and every message
- *  here must say so. Paste-a-connect-code UI with the seat-limit
+/** Blog-account row: account linking. While the relay runs ungated an
+ *  entitlement gates nothing, but enforcement is an imminent
+ *  server-side flip — the copy says "soon required" without promising
+ *  a date. Paste-a-connect-code UI with the seat-limit
  *  confirm flow: a 409 names the oldest seat and carries a fresh
  *  retryCode (codes are single-use), so the confirm retry never bounces
  *  the user back to the blog page. The row waits for the main process
@@ -2453,7 +2454,8 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   const helper = document.createElement('div');
   helper.className = 'pmd-pairing-account-status';
   helper.textContent =
-    'Not linked — and nothing requires it during the beta; every feature works without an account.';
+    'Not linked. Collaboration features on the official relay will soon require a linked ' +
+    'membership; everything else works without one.';
   wrap.appendChild(helper);
 
   // Real link (external browser on desktop) — nobody should have to
@@ -2505,7 +2507,7 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   lapseNotice.hidden = true;
   lapseNotice.textContent =
     '⚠ Debate Decoded reports this membership inactive, so the link will pause soon. ' +
-    '(Features are unaffected during the beta.)';
+    'Renew on Debate Decoded to keep it.';
   wrap.appendChild(lapseNotice);
 
   function renderStatus(st: {
@@ -2543,7 +2545,7 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   const ERROR_TEXT: Record<string, string> = {
     badCode: 'That code is invalid or expired — generate a fresh one on the blog page.',
     subscription:
-      'Your membership isn\u2019t active. (Linking is optional during the beta \u2014 nothing in CardMirror requires it.)',
+      'Your membership isn\u2019t active \u2014 renew it on Debate Decoded to link this machine.',
     evicted: 'Another machine took this seat. Generate a new code to re-link.',
     unsupported: 'The relay doesn\u2019t support accounts.',
     network: 'Couldn\u2019t reach the relay.',

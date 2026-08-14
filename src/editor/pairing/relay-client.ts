@@ -28,7 +28,7 @@ export interface SendResult {
   /** Recipients that failed (network / relay error). */
   fail: number;
   /** How many of `fail` were credential DECLINES (401/403) rather than
-   *  outages. Zero while the official relay runs ungated (the beta). */
+   *  outages. Zero while the official relay runs ungated. */
   authFail: number;
 }
 

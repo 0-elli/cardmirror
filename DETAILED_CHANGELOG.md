@@ -5,7 +5,50 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 0.1.0-beta.32 — 2026-08-12
+## 1.0.0 — 2026-08-13
+
+### Changed: movable-list co-editing rooms (per-room format, no flag day)
+
+New sessions seeded by a 1.0 host store top-level children in a
+movable-list CRDT container instead of a plain list. Moves are now
+first-class operations that preserve card identity, which fixes the
+one concurrency corner beta.32's rotation diff could not: two peers
+concurrently moving the *same* card could merge to a visible
+duplicate (never a loss). Movable rooms are strict exactly-once under
+the same 150-seed fuzz. Comments, marks, and any state keyed to a
+card's container identity also survive moves instead of being
+silently re-created.
+
+The room format is fixed at seeding and inherited by every container
+created later in that room, so rooms are homogeneous forever — a 1.0
+client joining an old room writes old-format containers, and there is
+no flag day. Old builds cannot read movable containers at all, so
+invites to movable rooms carry a `1.0.0` compatibility floor and
+pre-1.0 builds decline cleanly. Old rooms keep working for everyone
+and age out on the relay's 7-day idle sweep.
+
+### Changed: X-CardMirror-Routing header (entitlement machine binding)
+
+Requests whose bearer is a Debate Decoded entitlement now carry the
+machine's routing code (the public sha256 of its pairing key) in an
+`X-CardMirror-Routing` header, on both relay surfaces: card sharing
+(main process `authHeaders()`) and co-editing rooms (renderer;
+`host:collab-relay-defaults` hands the routing code over exactly when
+the token it returns is an entitlement). The relay can then verify the
+token's `rc` claim names the requesting machine — entitlements are
+otherwise freely-copyable bearer tokens. The header is omitted for
+shared-token and self-hosted-relay requests: there is no claim to
+match, and a strict self-hosted CORS setup shouldn't need to allow
+it. Server-side enforcement is a dormant admin-console toggle, to be
+flipped only alongside a ≥ 1.0.0 minimum-version floor.
+
+### Version 1.0.0
+
+The version bump itself activates two dormant mechanisms shipped
+earlier: movable-room seeding + invite floors (above), and the
+relay-side minimum-version gate's ability to distinguish 1.0 builds
+(the version header shipped in beta.32; the floor remains off until
+flipped server-side).
 
 ### Added: Recover Previous Version (session history files)
 

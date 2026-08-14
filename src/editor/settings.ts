@@ -1442,8 +1442,7 @@ export interface Settings {
   /** Pairing: display mirror of the blog-account entitlement expiry
    *  (epoch ms; 0 = not connected). The entitlement itself lives in
    *  Electron main; this mirror only drives the settings row's status
-   *  line. Linking is optional while the relay runs ungated (the beta)
-   *  — it gates nothing. */
+   *  line. Linking gates nothing while the relay runs ungated. */
   pairingConnectedUntil: number;
   /** Pairing: this machine's own shareable code — its relay address.
    *  Generated once (lazily on first enable) and shown in settings with
@@ -3456,13 +3455,13 @@ export const SETTING_METADATA: SettingMeta[] = [
   },
   {
     key: 'pairingConnectedUntil',
-    label: 'Debate Decoded account (optional in beta)',
+    label: 'Debate Decoded account',
     description:
-      'Optional while CardMirror is in beta, will be required for collaboration features in ' +
-      'v1.0. Linking this machine allows you to access collaboration features seamlessly when ' +
-      'the application exits beta. To link, open debate-decoded.ghost.io/cardmirror-connect, ' +
-      'sign in, and paste the code it shows you here. Each membership covers two machines; ' +
-      'linking a third asks before unlinking the oldest.',
+      'Links this machine to your Debate Decoded membership, which collaboration features on ' +
+      'the official relay will soon require. To link, open ' +
+      'debate-decoded.ghost.io/cardmirror-connect, sign in, and paste the code it shows you ' +
+      'here. Each membership covers two machines; linking a third asks before unlinking the ' +
+      'oldest.',
     kind: 'pairingAccount',
     category: 'pairing',
     electronOnly: true,

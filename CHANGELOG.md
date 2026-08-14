@@ -5,7 +5,30 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## 0.1.0-beta.32 — 2026-08-12
+## 1.0.0 — 2026-08-13
+
+CardMirror 1.0. Thank you to everyone who used the editor through the
+beta — it is what it is because of you.
+
+### Changed
+
+- **Co-editing sessions started on 1.0 use a new, sturdier document
+  format.** Cards now keep their identity when moved, which closes the
+  last known concurrent-reordering gap: in beta.32 two people moving
+  the *same card* at the same moment could still leave a duplicate
+  behind; in new sessions every card lands exactly once, no matter how
+  simultaneously people reorder. Long drags also sync with far less
+  data. Sessions started before updating keep working for everyone
+  exactly as before — nothing to migrate. Because older builds can't
+  read the new format, invites to 1.0 sessions ask participants on old
+  versions to update instead of joining; updating everyone in your
+  group together is the smoothest path.
+
+- **Machines linked to a Debate Decoded account now identify
+  themselves to the relay on each request.** This underpins upcoming
+  account-security improvements (a linked account can be limited to
+  the machines it was actually connected on). No visible change, and
+  nothing changes for unlinked machines or self-hosted relays.
 
 ### Added
 

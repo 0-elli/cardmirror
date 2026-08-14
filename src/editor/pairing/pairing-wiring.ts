@@ -109,8 +109,8 @@ export function initPairingWiring(): void {
       if (st.evicted) {
         showToast(
           'This machine was unlinked from your Debate Decoded account ' +
-            '(another machine took the seat). Re-link from the connect page — ' +
-            'or not: during the beta nothing requires the link.',
+            '(another machine took the seat). Re-link from the connect page ' +
+            'to keep using collaboration features here.',
         );
       }
     });
