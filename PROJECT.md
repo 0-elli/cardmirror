@@ -41,7 +41,7 @@ New contributor: read this file, then `ARCHITECTURE.md`.
 
 ## Status
 
-CardMirror is a beta. The schema, importer, exporter, editor, and
+CardMirror is at 1.0. The schema, importer, exporter, editor, and
 multi-doc workspace are built and used daily; the round-trip is the
 project's dominant correctness criterion and is tested against real
 `.docx` files.

@@ -8,9 +8,8 @@ application and the optional server features we operate (together, the
 "Service"). **By using CardMirror, you agree to these Terms. If you do not agree,
 do not use it.**
 
-CardMirror is a **beta preview**. Please read Section 7 (Availability and
-backups) and Section 9 (Disclaimers) carefully — they affect how you should rely
-on it.
+Please read Section 7 (Availability and backups) and Section 9 (Disclaimers)
+carefully — they affect how you should rely on CardMirror.
 
 ---
 
@@ -84,7 +83,7 @@ incorporated into these Terms by reference. Please review it.
 
 ## 7. Availability and backups
 
-CardMirror is provided as a **beta preview**. We may change, suspend, limit, or
+We may change, suspend, limit, or
 discontinue any part of the Service — including the relay — at any time, with or
 without notice. Shared messages and co-editing sessions are stored only briefly
 and then deleted (see the Privacy Policy). **You are responsible for keeping your

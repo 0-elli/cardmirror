@@ -125,9 +125,8 @@ export function initPairingWiring(): void {
     electron.onPairingUnauthorized(() => {
       showToast(
         'Card sharing: the relay rejected your credentials. In Settings → ' +
-          'Collaboration, connect your Debate Decoded account or set up your own relay. ' +
-          '(During the beta the official relay requires no account, so this usually ' +
-          'means a self-hosted relay token is wrong or the app needs an update.)',
+          'Collaboration, connect your Debate Decoded account or check your ' +
+          'self-hosted relay token. An outdated app can also cause this.',
       );
     });
   }

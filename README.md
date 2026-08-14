@@ -20,9 +20,9 @@ or locked-down school machine.
 
 **▶ Try the live web preview: <https://cardmirror.app/>**
 
-> **🚧 Beta preview.** Expect rough edges, missing features, and the
-> occasional bug. Keep a Verbatim copy of anything important — not
-> recommended for tournament-day use yet.
+> **Keep backups.** CardMirror is stable and used daily, but no
+> editor is bug-free — keep a copy of anything critical in a second
+> format.
 >
 > **Desktop builds are unsigned**, so Windows and macOS warn you the
 > first time you launch. The one-time workaround for each is in the

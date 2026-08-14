@@ -21,9 +21,9 @@ feature sends, what (if anything) is stored, and for how long.
 
 - **No CardMirror accounts, and none required.** You don't sign up, create a
   password, or need any account to use CardMirror — every feature works
-  without one. The one exception is **optional**: you can link CardMirror to
-  an existing Debate Decoded membership (see §9), which is required for
-  nothing during the beta.
+  without one. The one exception: you can link CardMirror to an existing
+  Debate Decoded membership (see §9), which collaboration features on the
+  official relay will soon require. Everything else works without it.
 - **No tracking or analytics.** CardMirror contains no analytics SDKs, no
   advertising trackers, and no usage telemetry. We do not build a profile of
   you or sell, rent, or trade anyone's data. We never have.
@@ -206,11 +206,11 @@ official relay.
 
 ### Optional account link (Debate Decoded)
 
-You can optionally link CardMirror to a **Debate Decoded membership**
-(Settings → Collaboration). **During the beta this is required for nothing** —
-card sharing, co‑editing, and every other feature work identically without it,
-and self‑hosted relays never involve it. It exists so this machine is ready if
-the hosted relay asks for membership after the beta.
+You can link CardMirror to a **Debate Decoded membership**
+(Settings → Collaboration). Collaboration features on the **hosted relay will
+soon require** a linked membership; self‑hosted relays never involve it, and
+every other feature works identically without one. Linking now means this
+machine keeps collaborating without interruption when that begins.
 
 If you choose to link:
 
