@@ -4,11 +4,10 @@
  * Session history + Recover Previous Version (collab-history.ts).
  *
  * The load-bearing claim: a version chosen from the derived list —
- * frontier computed from the change graph alone, checked out on a
- * scratch doc built from the file's snapshot — reproduces the document
- * EXACTLY as it stood, marks and attrs included. Everything else
- * (grouping, local-time bookkeeping, retention-on-dispose) supports
- * that claim.
+ * frontier computed from the change graph alone, rebuilt on a scratch
+ * doc from the file's snapshot — reproduces the document EXACTLY as it
+ * stood, marks and attrs included. Everything else (grouping,
+ * local-time bookkeeping, retention-on-dispose) supports that claim.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -118,6 +117,33 @@ describe('round-trip: derived frontier → checkout → materialize', () => {
     expect(final.eq(a.view.state.doc)).toBe(true);
     peers.forEach((p) => p.destroy());
   }, 120_000);
+
+  it('never calls checkout() — the hang class is structurally excluded', async () => {
+    // Loro's checkout() spun unboundedly (100% CPU, no return) on a
+    // real movable-room history, 2026-08-13, hanging Recover on every
+    // machine in the session. materializeVersion now rebuilds state by
+    // importing the update log up to the row's version instead. Pin
+    // that: with checkout() booby-trapped, materialization must still
+    // succeed — so no future edit can quietly reintroduce the call.
+    const peers = await createLoroPeers(seed(), 1);
+    const a = peers[0]!;
+    const snapshot = a.exportAll();
+    const scratch = new LoroDoc();
+    scratch.import(snapshot);
+    const rows = deriveVersionRows(scratch, []);
+    const proto = LoroDoc.prototype as unknown as { checkout: (...args: never[]) => unknown };
+    const original = proto.checkout;
+    proto.checkout = () => {
+      throw new Error('materializeVersion must not use checkout()');
+    };
+    try {
+      const node = materializeVersion(snapshot, rows[Math.floor(rows.length / 2)]!.frontier);
+      expect(node.type.name).toBe('doc');
+    } finally {
+      proto.checkout = original;
+    }
+    peers.forEach((p) => p.destroy());
+  }, 120_000);
 });
 
 describe('seeding', () => {
@@ -136,8 +162,9 @@ describe('seeding', () => {
     expect(rows.length, 'seeding splits into multiple changes').toBeGreaterThan(1);
 
     // EVERY cut materializes — including mid-seed cuts that land inside
-    // a half-built node (the binding reader creates missing containers,
-    // which needs detached editing enabled on the scratch doc).
+    // a half-built node (the binding reader creates missing containers;
+    // the prefix-built scratch doc is attached, so those writes are
+    // ordinary edits).
     for (const [i, row] of rows.entries()) {
       const node = materializeVersion(snapshot, row.frontier);
       expect(node.type.name, `row ${i} materializes`).toBe('doc');

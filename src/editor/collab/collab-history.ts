@@ -331,21 +331,29 @@ export function groupVersionRows(
 // ── Reconstruction ──────────────────────────────────────────────────
 
 /** Materialize the document as of `frontier`, from a history file's
- *  snapshot. Always a scratch doc — the live session never checks out. */
+ *  snapshot. Always a scratch doc — the live session never checks out.
+ *
+ *  Deliberately does NOT use `checkout()`: Loro's checkout can spin
+ *  unboundedly on large concurrent movable-list histories (observed
+ *  live 2026-08-13 — 100% CPU, no return, on a real session's history;
+ *  the same rows rebuild in seconds this way). Instead the update log
+ *  is cut at the row's version (a frontier's causal closure) and
+ *  imported into a fresh doc — the identical document state, and the
+ *  scratch doc stays ATTACHED, so the binding reader's
+ *  getOrCreateContainer writes (a cut landing mid-node leaves a map
+ *  missing its children/attributes container) are ordinary edits
+ *  rather than readonly-checkout violations. */
 export function materializeVersion(
   snapshot: Uint8Array,
   frontier: VersionRow['frontier'],
 ): PMNode {
+  const source = new LoroDoc();
+  source.import(snapshot);
+  const vv = source.frontiersToVV(frontier);
+  const prefix = source.exportJsonUpdates(undefined, vv);
   const ldoc = new LoroDoc();
   configTextStyle(ldoc);
-  ldoc.import(snapshot);
-  // The binding's reader uses getOrCreateContainer — a WRITE when a cut
-  // lands mid-node and a map lacks its children/attributes container.
-  // A checked-out doc is readonly by default and would throw; this is a
-  // throwaway scratch doc, so detached edits are harmless (the created
-  // empty container just lets the partial node heal or drop normally).
-  ldoc.setDetachedEditing(true);
-  ldoc.checkout(frontier);
+  ldoc.importJsonUpdates(prefix);
   return createNodeFromLoroObj(schema, ldoc.getMap('doc') as never, new Map()) as PMNode;
 }
 
