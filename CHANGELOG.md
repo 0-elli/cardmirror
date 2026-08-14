@@ -17,8 +17,7 @@ beta — it is what it is because of you.
   last known concurrent-reordering gap: in beta.32 two people moving
   the *same card* at the same moment could still leave a duplicate
   behind; in new sessions every card lands exactly once, no matter how
-  simultaneously people reorder. Long drags also sync with far less
-  data. Sessions started before updating keep working for everyone
+  simultaneously people reorder. Sessions started before updating keep working for everyone
   exactly as before — nothing to migrate. Because older builds can't
   read the new format, invites to 1.0 sessions ask participants on old
   versions to update instead of joining; updating everyone in your
