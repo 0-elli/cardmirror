@@ -1,5 +1,5 @@
 diff --git a/node_modules/loro-prosemirror/dist/index.cjs b/node_modules/loro-prosemirror/dist/index.cjs
-index 74c4b30..e7936bb 100644
+index 74c4b30..1c2f757 100644
 --- a/node_modules/loro-prosemirror/dist/index.cjs
 +++ b/node_modules/loro-prosemirror/dist/index.cjs
 @@ -28,6 +28,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
@@ -77,7 +77,7 @@ index 74c4b30..e7936bb 100644
  		}
  	} else if (obj instanceof loro_crdt.LoroText) {
  		retval = [];
-@@ -83,19 +142,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
+@@ -83,23 +142,82 @@ function createLoroText(parentList, pos, nodes, mapping) {
  function updateLoroText(obj, nodes, mapping) {
  	mapping.set(obj.id, nodes);
  	let str = obj.toString();
@@ -139,7 +139,11 @@ index 74c4b30..e7936bb 100644
 +			for (const key of keys) {
 +				const oldV = seg.attributes[key] ?? null;
 +				const newV = run.attributes[key] ?? null;
-+				if (JSON.stringify(oldV) !== JSON.stringify(newV)) diff[key] = newV;
++				// PATCHED (cardmirror): canonical comparison. JSON.stringify
++				// was key-order-sensitive, and the wasm round-trip reorders
++				// keys — every null-default-carrying mark re-emitted on every
++				// pass (the 2026-08-14 mass-highlight burst).
++				if (!cardmirrorCanonicalAttrsEqual(oldV, newV)) diff[key] = newV;
 +			}
 +			if (Object.keys(diff).length === 0) pending += seg.len;
 +			else {
@@ -156,7 +160,140 @@ index 74c4b30..e7936bb 100644
  }
  function nodeMarksToAttributes(marks) {
  	const pattrs = {};
-@@ -156,6 +266,11 @@ function eqMappedNode(mapped, node) {
+-	for (const mark of marks) pattrs[mark.type.name] = mark.attrs;
++	// PATCHED (cardmirror): canonical writes — nullish attr keys dropped
++	// (schema defaults reconstruct them on read), so stored values stop
++	// carrying representational variance forward. Existing stored values
++	// are handled by canonical COMPARISON; they are never migrated.
++	for (const mark of marks) pattrs[mark.type.name] = cardmirrorCanonicalizeAttrs(mark.attrs);
+ 	return pattrs;
+ }
+ function valueToAttrs(value) {
+@@ -107,11 +225,52 @@ function valueToAttrs(value) {
+ 	return null;
+ }
+ function eqLoroTextNodes(obj, nodes) {
++	// PATCHED (cardmirror): segmentation-insensitive. Peritext leaves
++	// permanent split points behind mark-boundary history (verified:
++	// mark+unmark fragments "ccccdddd" into "cccc","dddd" with equal
++	// attributes), while PM normalizes adjacent identical runs — so the
++	// old delta.length === nodes.length precondition false-negatived
++	// FOREVER on any text that ever had a mark edited, sending
++	// unchanged texts into updateLoroText on every reconciliation walk.
++	// Compare flattened content + canonical attrs at every offset
++	// instead; segmentation differences no longer matter.
+ 	const delta = obj.toDelta();
+-	return delta.length === nodes.length && delta.every((delta, i) => delta.insert === nodes[i].text && Object.keys(delta.attributes || {}).length === nodes[i].marks.length && nodes[i].marks.every((mark) => {
+-		const attrs = valueToAttrs((delta.attributes || {})[mark.type.name]);
+-		return attrs != null && eqAttrs(attrs, mark.attrs);
+-	}));
++	let di = 0;
++	let dOff = 0;
++	for (const node of nodes) {
++		const text = node.text ?? "";
++		const nAttrs = nodeMarksToAttributes(node.marks);
++		let remaining = text.length;
++		let tOff = 0;
++		while (remaining > 0) {
++			if (di >= delta.length) return false;
++			const seg = delta[di];
++			const segText = seg.insert ?? "";
++			const avail = segText.length - dOff;
++			if (avail <= 0) {
++				di++;
++				dOff = 0;
++				continue;
++			}
++			const take = Math.min(avail, remaining);
++			if (segText.slice(dOff, dOff + take) !== text.slice(tOff, tOff + take)) return false;
++			if (!cardmirrorCanonicalAttrsEqual(seg.attributes ?? {}, nAttrs)) return false;
++			remaining -= take;
++			tOff += take;
++			dOff += take;
++			if (dOff >= segText.length) {
++				di++;
++				dOff = 0;
++			}
++		}
++	}
++	// Any leftover NON-EMPTY delta content means loro has more text.
++	while (di < delta.length) {
++		if (((delta[di].insert ?? "").length - dOff) > 0) return false;
++		di++;
++		dOff = 0;
++	}
++	return true;
+ }
+ /**
+ * Whether the loro object is equal to the node.
+@@ -125,16 +284,57 @@ function eqLoroObjNode(obj, node) {
+ 	}
+ 	return obj instanceof loro_crdt.LoroText && Array.isArray(node) && eqLoroTextNodes(obj, node);
+ }
+-function eqAttrs(attrs1, attrs2) {
+-	const keys = Object.keys(attrs1).filter((key) => attrs1[key] !== null);
+-	let eq = keys.length === Object.keys(attrs2).filter((key) => attrs2[key] !== null).length;
+-	for (let i = 0; eq && i < keys.length; i++) {
+-		const key = keys[i];
+-		const l = attrs1[key];
+-		const r = attrs2[key];
+-		eq = l === r || typeof l === "object" && l !== null && typeof r === "object" && r !== null && eqAttrs(l, r);
++/**
++ * CardMirror patch: canonical mark/attr equality.
++ *
++ * The wasm round-trip does not preserve JS object key order (verified:
++ * {halfPoints,origin} in -> {origin,halfPoints} out), and null-valued
++ * attr keys are semantically identical to absent ones (schema defaults
++ * reconstruct them; updateLoroMapAttributes already DELETES null attrs
++ * on the map path). Any representation-sensitive comparison over these
++ * values therefore false-negatives forever — and every comparison in
++ * this file feeds a WRITE path, so a false negative doesn't waste
++ * cycles, it emits real ops that LWW-stomp concurrent peers (observed
++ * live 2026-08-14: a doc-wide re-emission painted 74% of a session's
++ * document yellow). Canonical rules: key order irrelevant; null and
++ * undefined values count as absent; arrays ordered; primitives strict.
++ *
++ * Companion commitment: compare canonically, WRITE canonically
++ * (nodeMarksToAttributes drops nullish keys), but NEVER migrate stored
++ * legacy representations — a normalize-on-read pass would be an op
++ * storm into old rooms and would fight unfixed clients forever.
++ */
++function cardmirrorCanonicalAttrsEqual(a, b) {
++	const av = a ?? null;
++	const bv = b ?? null;
++	if (av === bv) return true;
++	if (av === null || bv === null) return false;
++	if (typeof av !== "object" || typeof bv !== "object") return false;
++	const aArr = Array.isArray(av);
++	if (aArr !== Array.isArray(bv)) return false;
++	if (aArr) {
++		if (av.length !== bv.length) return false;
++		for (let i = 0; i < av.length; i++) if (!cardmirrorCanonicalAttrsEqual(av[i], bv[i])) return false;
++		return true;
++	}
++	const keys = new Set([...Object.keys(av), ...Object.keys(bv)]);
++	for (const key of keys) {
++		if (!cardmirrorCanonicalAttrsEqual(av[key] ?? null, bv[key] ?? null)) return false;
++	}
++	return true;
++}
++function cardmirrorCanonicalizeAttrs(attrs) {
++	const out = {};
++	for (const key of Object.keys(attrs ?? {})) {
++		const v = attrs[key];
++		if (v !== null && v !== undefined) out[key] = v;
+ 	}
+-	return eq;
++	return out;
++}
++// PATCHED (cardmirror): canonical equality — the old form counted
++// undefined-valued keys and was shape-sensitive for nested values.
++function eqAttrs(attrs1, attrs2) {
++	return cardmirrorCanonicalAttrsEqual(attrs1 ?? {}, attrs2 ?? {});
+ }
+ function eqNodeName(obj, node) {
+ 	return !Array.isArray(node) && obj.get("nodeName") === node.type.name;
+@@ -156,6 +356,11 @@ function eqMappedNode(mapped, node) {
  	return false;
  }
  function normalizeNodeContent(node) {
@@ -168,7 +305,7 @@ index 74c4b30..e7936bb 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -226,13 +341,218 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -226,13 +431,218 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!(0, lib0_function.equalityDeep)(attrs.get(key), value)) attrs.set(key, value);
@@ -390,7 +527,7 @@ index 74c4b30..e7936bb 100644
  }
  function updateLoroMapChildren(obj, node, mapping) {
  	const loroChildren = getLoroMapChildren(obj);
-@@ -258,6 +578,24 @@ function updateLoroMapChildren(obj, node, mapping) {
+@@ -258,6 +668,24 @@ function updateLoroMapChildren(obj, node, mapping) {
  			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
  		} else break;
  	}
@@ -415,7 +552,7 @@ index 74c4b30..e7936bb 100644
  	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
  		const leftLoro = loroChildren.get(left);
  		const leftNode = nodeChildren[left];
-@@ -422,27 +760,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -422,27 +850,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -464,7 +601,7 @@ index 74c4b30..e7936bb 100644
  	}
  	return prosemirror_view.DecorationSet.create(state.doc, d);
  }
-@@ -506,7 +846,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+@@ -506,7 +936,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
  	}
  	while (loroNode != null) {
  		const children = loroNode.get(CHILDREN_KEY);
@@ -473,7 +610,7 @@ index 74c4b30..e7936bb 100644
  			const childIds = children.toArray();
  			for (const iter of childIds) {
  				if (iter.id === targetChildId) break;
-@@ -587,6 +927,23 @@ const LoroSyncPlugin = (props) => {
+@@ -587,6 +1017,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -497,7 +634,7 @@ index 74c4b30..e7936bb 100644
  				return state;
  			}
  		},
-@@ -650,14 +1007,63 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -650,14 +1097,63 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
@@ -568,7 +705,7 @@ index 74c4b30..e7936bb 100644
  /**
  * Update ProseMirror selection based on the given Loro cursors.
 diff --git a/node_modules/loro-prosemirror/dist/index.js b/node_modules/loro-prosemirror/dist/index.js
-index e41095d..1b581cb 100644
+index e41095d..069f105 100644
 --- a/node_modules/loro-prosemirror/dist/index.js
 +++ b/node_modules/loro-prosemirror/dist/index.js
 @@ -1,6 +1,185 @@
@@ -833,7 +970,7 @@ index e41095d..1b581cb 100644
  		}
  	} else if (obj instanceof LoroText) {
  		retval = [];
-@@ -82,19 +320,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
+@@ -82,23 +320,82 @@ function createLoroText(parentList, pos, nodes, mapping) {
  function updateLoroText(obj, nodes, mapping) {
  	mapping.set(obj.id, nodes);
  	let str = obj.toString();
@@ -894,7 +1031,11 @@ index e41095d..1b581cb 100644
 +			for (const key of keys) {
 +				const oldV = seg.attributes[key] ?? null;
 +				const newV = run.attributes[key] ?? null;
-+				if (JSON.stringify(oldV) !== JSON.stringify(newV)) diff[key] = newV;
++				// PATCHED (cardmirror): canonical comparison. JSON.stringify
++				// was key-order-sensitive, and the wasm round-trip reorders
++				// keys — every null-default-carrying mark re-emitted on every
++				// pass (the 2026-08-14 mass-highlight burst).
++				if (!cardmirrorCanonicalAttrsEqual(oldV, newV)) diff[key] = newV;
 +			}
 +			if (Object.keys(diff).length === 0) pending += seg.len;
 +			else {
@@ -911,7 +1052,140 @@ index e41095d..1b581cb 100644
  }
  function nodeMarksToAttributes(marks) {
  	const pattrs = {};
-@@ -155,6 +444,11 @@ function eqMappedNode(mapped, node) {
+-	for (const mark of marks) pattrs[mark.type.name] = mark.attrs;
++	// PATCHED (cardmirror): canonical writes — nullish attr keys dropped
++	// (schema defaults reconstruct them on read), so stored values stop
++	// carrying representational variance forward. Existing stored values
++	// are handled by canonical COMPARISON; they are never migrated.
++	for (const mark of marks) pattrs[mark.type.name] = cardmirrorCanonicalizeAttrs(mark.attrs);
+ 	return pattrs;
+ }
+ function valueToAttrs(value) {
+@@ -106,11 +403,52 @@ function valueToAttrs(value) {
+ 	return null;
+ }
+ function eqLoroTextNodes(obj, nodes) {
++	// PATCHED (cardmirror): segmentation-insensitive. Peritext leaves
++	// permanent split points behind mark-boundary history (verified:
++	// mark+unmark fragments "ccccdddd" into "cccc","dddd" with equal
++	// attributes), while PM normalizes adjacent identical runs — so the
++	// old delta.length === nodes.length precondition false-negatived
++	// FOREVER on any text that ever had a mark edited, sending
++	// unchanged texts into updateLoroText on every reconciliation walk.
++	// Compare flattened content + canonical attrs at every offset
++	// instead; segmentation differences no longer matter.
+ 	const delta = obj.toDelta();
+-	return delta.length === nodes.length && delta.every((delta, i) => delta.insert === nodes[i].text && Object.keys(delta.attributes || {}).length === nodes[i].marks.length && nodes[i].marks.every((mark) => {
+-		const attrs = valueToAttrs((delta.attributes || {})[mark.type.name]);
+-		return attrs != null && eqAttrs(attrs, mark.attrs);
+-	}));
++	let di = 0;
++	let dOff = 0;
++	for (const node of nodes) {
++		const text = node.text ?? "";
++		const nAttrs = nodeMarksToAttributes(node.marks);
++		let remaining = text.length;
++		let tOff = 0;
++		while (remaining > 0) {
++			if (di >= delta.length) return false;
++			const seg = delta[di];
++			const segText = seg.insert ?? "";
++			const avail = segText.length - dOff;
++			if (avail <= 0) {
++				di++;
++				dOff = 0;
++				continue;
++			}
++			const take = Math.min(avail, remaining);
++			if (segText.slice(dOff, dOff + take) !== text.slice(tOff, tOff + take)) return false;
++			if (!cardmirrorCanonicalAttrsEqual(seg.attributes ?? {}, nAttrs)) return false;
++			remaining -= take;
++			tOff += take;
++			dOff += take;
++			if (dOff >= segText.length) {
++				di++;
++				dOff = 0;
++			}
++		}
++	}
++	// Any leftover NON-EMPTY delta content means loro has more text.
++	while (di < delta.length) {
++		if (((delta[di].insert ?? "").length - dOff) > 0) return false;
++		di++;
++		dOff = 0;
++	}
++	return true;
+ }
+ /**
+ * Whether the loro object is equal to the node.
+@@ -124,16 +462,57 @@ function eqLoroObjNode(obj, node) {
+ 	}
+ 	return obj instanceof LoroText && Array.isArray(node) && eqLoroTextNodes(obj, node);
+ }
+-function eqAttrs(attrs1, attrs2) {
+-	const keys = Object.keys(attrs1).filter((key) => attrs1[key] !== null);
+-	let eq = keys.length === Object.keys(attrs2).filter((key) => attrs2[key] !== null).length;
+-	for (let i = 0; eq && i < keys.length; i++) {
+-		const key = keys[i];
+-		const l = attrs1[key];
+-		const r = attrs2[key];
+-		eq = l === r || typeof l === "object" && l !== null && typeof r === "object" && r !== null && eqAttrs(l, r);
++/**
++ * CardMirror patch: canonical mark/attr equality.
++ *
++ * The wasm round-trip does not preserve JS object key order (verified:
++ * {halfPoints,origin} in -> {origin,halfPoints} out), and null-valued
++ * attr keys are semantically identical to absent ones (schema defaults
++ * reconstruct them; updateLoroMapAttributes already DELETES null attrs
++ * on the map path). Any representation-sensitive comparison over these
++ * values therefore false-negatives forever — and every comparison in
++ * this file feeds a WRITE path, so a false negative doesn't waste
++ * cycles, it emits real ops that LWW-stomp concurrent peers (observed
++ * live 2026-08-14: a doc-wide re-emission painted 74% of a session's
++ * document yellow). Canonical rules: key order irrelevant; null and
++ * undefined values count as absent; arrays ordered; primitives strict.
++ *
++ * Companion commitment: compare canonically, WRITE canonically
++ * (nodeMarksToAttributes drops nullish keys), but NEVER migrate stored
++ * legacy representations — a normalize-on-read pass would be an op
++ * storm into old rooms and would fight unfixed clients forever.
++ */
++function cardmirrorCanonicalAttrsEqual(a, b) {
++	const av = a ?? null;
++	const bv = b ?? null;
++	if (av === bv) return true;
++	if (av === null || bv === null) return false;
++	if (typeof av !== "object" || typeof bv !== "object") return false;
++	const aArr = Array.isArray(av);
++	if (aArr !== Array.isArray(bv)) return false;
++	if (aArr) {
++		if (av.length !== bv.length) return false;
++		for (let i = 0; i < av.length; i++) if (!cardmirrorCanonicalAttrsEqual(av[i], bv[i])) return false;
++		return true;
++	}
++	const keys = new Set([...Object.keys(av), ...Object.keys(bv)]);
++	for (const key of keys) {
++		if (!cardmirrorCanonicalAttrsEqual(av[key] ?? null, bv[key] ?? null)) return false;
+ 	}
+-	return eq;
++	return true;
++}
++function cardmirrorCanonicalizeAttrs(attrs) {
++	const out = {};
++	for (const key of Object.keys(attrs ?? {})) {
++		const v = attrs[key];
++		if (v !== null && v !== undefined) out[key] = v;
++	}
++	return out;
++}
++// PATCHED (cardmirror): canonical equality — the old form counted
++// undefined-valued keys and was shape-sensitive for nested values.
++function eqAttrs(attrs1, attrs2) {
++	return cardmirrorCanonicalAttrsEqual(attrs1 ?? {}, attrs2 ?? {});
+ }
+ function eqNodeName(obj, node) {
+ 	return !Array.isArray(node) && obj.get("nodeName") === node.type.name;
+@@ -155,6 +534,11 @@ function eqMappedNode(mapped, node) {
  	return false;
  }
  function normalizeNodeContent(node) {
@@ -923,7 +1197,7 @@ index e41095d..1b581cb 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -225,13 +519,40 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -225,13 +609,40 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!equalityDeep(attrs.get(key), value)) attrs.set(key, value);
@@ -967,7 +1241,7 @@ index e41095d..1b581cb 100644
  }
  function updateLoroMapChildren(obj, node, mapping) {
  	const loroChildren = getLoroMapChildren(obj);
-@@ -257,6 +578,24 @@ function updateLoroMapChildren(obj, node, mapping) {
+@@ -257,6 +668,24 @@ function updateLoroMapChildren(obj, node, mapping) {
  			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
  		} else break;
  	}
@@ -992,7 +1266,7 @@ index e41095d..1b581cb 100644
  	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
  		const leftLoro = loroChildren.get(left);
  		const leftNode = nodeChildren[left];
-@@ -421,27 +760,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -421,27 +850,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -1041,7 +1315,7 @@ index e41095d..1b581cb 100644
  	}
  	return DecorationSet.create(state.doc, d);
  }
-@@ -505,7 +846,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+@@ -505,7 +936,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
  	}
  	while (loroNode != null) {
  		const children = loroNode.get(CHILDREN_KEY);
@@ -1050,7 +1324,7 @@ index e41095d..1b581cb 100644
  			const childIds = children.toArray();
  			for (const iter of childIds) {
  				if (iter.id === targetChildId) break;
-@@ -586,6 +927,23 @@ const LoroSyncPlugin = (props) => {
+@@ -586,6 +1017,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -1074,7 +1348,7 @@ index e41095d..1b581cb 100644
  				return state;
  			}
  		},
-@@ -649,14 +1007,72 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -649,14 +1097,72 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
