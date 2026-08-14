@@ -29,6 +29,22 @@ beta — it is what it is because of you.
   the machines it was actually connected on). No visible change, and
   nothing changes for unlinked machines or self-hosted relays.
 
+### Fixed
+
+- **Dragging a section header (with everything under it) during a
+  co-editing session now merges cleanly when others reorder at the
+  same time.** Previously two people dragging sections simultaneously
+  could garble a nearby card's text and leave a duplicate copy of the
+  dragged section. In sessions started before updating, the same fix
+  prevents cards from being lost or garbled in that situation; a
+  simultaneous drag of the *same* section can still leave a visible
+  duplicate there — new sessions don't even have that.
+
+- **Recover Previous Version no longer hangs opening a version of a
+  large, heavily edited session.** Versions are rebuilt by replaying
+  the session's history rather than the previous method, which could
+  spin forever on big documents.
+
 ## 0.1.0-beta.32 — 2026-08-12
 
 ### Added

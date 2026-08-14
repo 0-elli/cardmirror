@@ -42,6 +42,37 @@ match, and a strict self-hosted CORS setup shouldn't need to allow
 it. Server-side enforcement is a dormant admin-console toggle, to be
 flipped only alongside a ≥ 1.0.0 minimum-version floor.
 
+### Fixed: reorders emit real move ops (span-drag fusion)
+
+The movable migration shipped the container format but the binding
+still delete-and-recreated on reorder — the first real movable-room
+session's history contains zero move ops. A nav-pane section drag
+relocates a SPAN of flat siblings, a shape the single-rotation
+detector didn't cover, so concurrent span drags fell through to
+upstream's index-aligned rewrite: both peers rewrote the same
+surviving text containers (concurrent same-position inserts both
+survive — doubled tag text, observed live) and both recreated the
+dragged block (twins). A general pure-permutation detector now serves
+both list kinds: movable rooms apply real `move()` ops
+(identity-preserving, exactly-once under any concurrency — 150-seed
+span fuzz), pre-1.0 list rooms rebuild only the dragged children
+(nothing lost; same-card contention still twins, visibly). Child
+identity is weak-map-first with content-equality residue matching, so
+a remote recreation's PM-node reuse can't stale the detector into
+the upstream path.
+
+### Fixed: Recover Previous Version hang (checkout-free rebuild)
+
+Loro's `checkout()` spun unboundedly (100% CPU, 10+ minutes, no
+return) materializing versions of a real movable room's history —
+every machine that opened Recover on that session hung. Recover never
+needed checkout: `materializeVersion` now cuts the update log at the
+row's version (`frontiersToVV` → `exportJsonUpdates` prefix) and
+imports it into a fresh doc — identical state, seconds (the hanging
+session's own rows rebuild in 1.6–5s), and the scratch doc stays
+attached so mid-node cuts need no detached editing. A regression test
+booby-traps `checkout()` to keep it out.
+
 ### Version 1.0.0
 
 The version bump itself activates two dormant mechanisms shipped
