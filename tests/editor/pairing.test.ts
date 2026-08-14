@@ -261,6 +261,17 @@ describe('room-invite items', async () => {
     expect(parseRoomInvite({ type: item.type, sliceJson: item.sliceJson })?.title).toBe('');
   });
 
+  it('classifies v2 (versioned-room) codes as invites too', () => {
+    // A v1-only check here demoted every movable-room invite to a
+    // generic "Item" row with no Join button (live find, 2026-08-14).
+    const item = buildRoomInviteItem({
+      shareCode: `cmshare2.${'a'.repeat(32)}.key456.1.0.0`,
+      title: 'Aff Updates',
+    });
+    const parsed = parseRoomInvite({ type: item.type, sliceJson: item.sliceJson });
+    expect(parsed?.shareCode).toBe(`cmshare2.${'a'.repeat(32)}.key456.1.0.0`);
+  });
+
   it('rejects non-invite and malformed items', () => {
     expect(parseRoomInvite({ type: 'card', sliceJson: { shareCode: 'cmshare1.a.b' } })).toBeNull();
     expect(parseRoomInvite({ type: ROOM_INVITE_ITEM_TYPE, sliceJson: null })).toBeNull();

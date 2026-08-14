@@ -36,7 +36,8 @@ export function roomInviteFloor(format: 'movable' | 'list'): string {
 }
 
 export interface RoomInvitePayload {
-  /** `cmshare1.<roomId>.<key>` — everything a client needs to join. */
+  /** `cmshare1.<roomId>.<key>` (or `cmshare2.….<minVersion>` for
+   *  versioned rooms) — everything a client needs to join. */
   shareCode: string;
   /** Host's doc title at invite time, for the pill row ('' if unknown). */
   title: string;
@@ -57,7 +58,11 @@ export function parseRoomInvite(item: Pick<InboxItem, 'type' | 'sliceJson'>): Ro
   const p = item.sliceJson;
   if (!p || typeof p !== 'object') return null;
   const shareCode = (p as Record<string, unknown>)['shareCode'];
-  if (typeof shareCode !== 'string' || !shareCode.startsWith('cmshare1.')) return null;
+  // Both code generations classify as invites. v1-only here demoted
+  // every movable-room invite to a generic "Item" row with no Join
+  // button (live find, 2026-08-14) — the minReceiverVersion floor on
+  // the envelope, not this parse, is what keeps old builds out.
+  if (typeof shareCode !== 'string' || !/^cmshare[12]\./.test(shareCode)) return null;
   const title = (p as Record<string, unknown>)['title'];
   return { shareCode, title: typeof title === 'string' ? title : '' };
 }

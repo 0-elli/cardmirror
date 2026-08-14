@@ -752,7 +752,7 @@ export async function joinSessionFlow(deps: CollabUiDeps): Promise<void> {
   if (!collabEnabled()) return;
   const code = await promptForText({
     message: 'Paste the share code from your partner',
-    placeholder: 'cmshare1.…',
+    placeholder: 'cmshare…',
     okLabel: 'Join',
   });
   if (!code) return;
