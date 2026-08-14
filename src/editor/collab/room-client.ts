@@ -19,7 +19,7 @@
 
 import { base64ToBytes } from './collab-crypto.js';
 import { appVersion } from '../install-info.js';
-import { RELAY_CLIENT_VERSION_HEADER } from '../relay-protocol.js';
+import { RELAY_CLIENT_ROUTING_HEADER, RELAY_CLIENT_VERSION_HEADER } from '../relay-protocol.js';
 
 export type RoomsFetch = typeof fetch;
 
@@ -64,6 +64,10 @@ export interface RoomsClientOptions {
   baseUrl: () => string;
   /** Bearer token, re-read per request (entitlement swap seam). */
   token: () => string;
+  /** This machine's routing code, sent as X-CardMirror-Routing when the
+   *  bearer is an entitlement (machine binding). ''/absent = omit the
+   *  header (shared-token or self-hosted relay — nothing to bind). */
+  routingCode?: () => string;
   fetchImpl?: RoomsFetch;
 }
 
@@ -76,9 +80,11 @@ export class RoomsClient {
   }
 
   private headers(extra?: Record<string, string>): Record<string, string> {
+    const routing = this.opts.routingCode?.() ?? '';
     return {
       Authorization: `Bearer ${this.opts.token()}`,
       [RELAY_CLIENT_VERSION_HEADER]: appVersion,
+      ...(routing ? { [RELAY_CLIENT_ROUTING_HEADER]: routing } : {}),
       ...extra,
     };
   }
@@ -228,6 +234,8 @@ export interface RoomStreamCallbacks {
 export interface RoomStreamOptions {
   baseUrl: () => string;
   token: () => string;
+  /** See RoomsClientOptions.routingCode. */
+  routingCode?: () => string;
   roomId: string;
   /** Opaque per-session nonce identifying THIS client's stream to the
    *  server, so presence posts carrying the same value as `from` are
@@ -366,12 +374,14 @@ export class RoomStream {
     const fetchImpl = this.opts.fetchImpl ?? boundFetch;
     try {
       const sidQ = this.opts.sid ? `?sid=${encodeURIComponent(this.opts.sid)}` : '';
+      const routing = this.opts.routingCode?.() ?? '';
       const res = await fetchImpl(`${this.opts.baseUrl()}/rooms/${this.opts.roomId}/stream${sidQ}`, {
         method: 'GET',
         headers: {
           Accept: 'text/event-stream',
           Authorization: `Bearer ${this.opts.token()}`,
           [RELAY_CLIENT_VERSION_HEADER]: appVersion,
+          ...(routing ? { [RELAY_CLIENT_ROUTING_HEADER]: routing } : {}),
         },
         signal: this.controller.signal,
       });

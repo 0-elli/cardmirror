@@ -13,15 +13,18 @@ import { RoomsClient, RoomsError } from './room-client.js';
 
 /** Baked relay endpoint from the desktop main process — resolved once,
  *  used as the LAST fallback so packaged builds work with zero setup.
- *  '' fields mean web edition / old preload / nothing baked. */
-let bakedRelay: { url: string; token: string } | null = null;
+ *  '' fields mean web edition / old preload / nothing baked.
+ *  `routingCode` is non-'' only when the baked token is an entitlement
+ *  (machine binding — see relay-protocol.ts). */
+let bakedRelay: { url: string; token: string; routingCode: string } | null = null;
 
 export async function ensureBakedRelay(): Promise<void> {
   if (bakedRelay) return;
   try {
-    bakedRelay = (await getElectronHost()?.collabRelayDefaults()) ?? { url: '', token: '' };
+    const got = await getElectronHost()?.collabRelayDefaults();
+    bakedRelay = { url: got?.url ?? '', token: got?.token ?? '', routingCode: got?.routingCode ?? '' };
   } catch {
-    bakedRelay = { url: '', token: '' };
+    bakedRelay = { url: '', token: '', routingCode: '' };
   }
 }
 
@@ -33,9 +36,14 @@ export function relayClient(): RoomsClient | null {
     bakedRelay?.url ||
     ''
   ).replace(/\/+$/, '');
-  const token = settings.get('pairingRelayToken').trim() || dev?.token || bakedRelay?.token || '';
+  const customToken = settings.get('pairingRelayToken').trim() || dev?.token || '';
+  const token = customToken || bakedRelay?.token || '';
+  // The routing code is bound to the ENTITLEMENT the main process handed
+  // us alongside it; a settings/dev token override is never one, so the
+  // header must not ride along there.
+  const routingCode = customToken ? '' : (bakedRelay?.routingCode ?? '');
   if (!url || !token) return null;
-  return new RoomsClient({ baseUrl: () => url, token: () => token });
+  return new RoomsClient({ baseUrl: () => url, token: () => token, routingCode: () => routingCode });
 }
 
 /** Tombstone a room on the relay — the home-screen Sessions list's host-side

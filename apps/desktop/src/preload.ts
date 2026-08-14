@@ -701,7 +701,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pairingInboxClear: () => ipcRenderer.invoke('host:pairing-inbox-clear'),
   pairingInboxMarkAllRead: () => ipcRenderer.invoke('host:pairing-inbox-mark-read'),
   collabRelayDefaults: () =>
-    ipcRenderer.invoke('host:collab-relay-defaults') as Promise<{ url: string; token: string }>,
+    ipcRenderer.invoke('host:collab-relay-defaults') as Promise<{
+      url: string;
+      token: string;
+      routingCode: string;
+    }>,
   toggleDevTools: () => ipcRenderer.invoke('host:toggle-devtools') as Promise<void>,
   onPowerResumed: (handler: () => void) => {
     const listener = () => handler();
@@ -732,7 +736,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('pairing:unauthorized', listener);
     return () => ipcRenderer.removeListener('pairing:unauthorized', listener);
   },
-  /** Blog-account entitlement (optional during the beta — gates nothing). */
+  /** Blog-account entitlement (gates nothing until relay-side enforcement). */
   pairingConnectAccount: (payload: { connectCode: string; confirmEvict?: boolean }) =>
     ipcRenderer.invoke('host:pairing-connect-account', payload) as Promise<PairingConnectResultIpc>,
   pairingAccountStatus: () =>

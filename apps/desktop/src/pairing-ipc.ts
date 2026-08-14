@@ -56,6 +56,7 @@ import {
 // from there breaks the desktop build (type-only imports are fine; see
 // file-index-core.ts). Parity is pinned by relay-version-header.test.ts.
 const RELAY_CLIENT_VERSION_HEADER = 'X-CardMirror-Version';
+const RELAY_CLIENT_ROUTING_HEADER = 'X-CardMirror-Routing';
 
 /** Relay endpoint defaults. Resolution order (see relayUrl()/relayToken()):
  *  user settings (self-hosted relay) → env override → baked default. Env
@@ -104,8 +105,8 @@ export function relayUrl(): string {
  *  account-entitlement flow — everything (POST, GET, DELETE, stream)
  *  routes its Authorization through here. A valid stored entitlement is
  *  preferred for the OFFICIAL relay (which accepts it alongside the
- *  shared token while it runs ungated — linking an account is optional
- *  during the beta and gates nothing); custom self-hosted relays always
+ *  shared token while it runs ungated — linking gates nothing until
+ *  relay-side enforcement flips); custom self-hosted relays always
  *  use their own token, never entitlements. */
 function relayToken(): string {
   const custom = config.relayToken.trim();
@@ -190,7 +191,7 @@ function ks(): PairingKeystore {
   return keystore;
 }
 
-// ── Blog-account entitlement (persisted; optional during the beta) ────
+// ── Blog-account entitlement (persisted; unenforced until gating) ─────
 
 let entitlementState: EntitlementState | null = null;
 let entitlementLoaded = false;
@@ -446,9 +447,16 @@ function compareVersions(a: string, b: string): number {
 // ── Relay HTTP ───────────────────────────────────────────────────────
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  // Machine binding: when the bearer is our entitlement, name the
+  // machine it was minted for. Never sent with the shared token or a
+  // self-hosted relay's token — there is no `rc` claim to match, and a
+  // strict self-hosted CORS setup shouldn't have to allow the header.
+  const ent = validEntitlement();
+  const usingEntitlement = ent !== null && relayToken() === ent.entitlement;
   return {
     Authorization: `Bearer ${relayToken()}`,
     [RELAY_CLIENT_VERSION_HEADER]: app.getVersion(),
+    ...(usingEntitlement ? { [RELAY_CLIENT_ROUTING_HEADER]: ks().ownRoutingId() } : {}),
     ...extra,
   };
 }
@@ -687,9 +695,24 @@ export function registerPairingIpc(): void {
   // as the LAST fallback after settings/dev-env. The rooms transport is
   // E2E encrypted, so the renderer holding the shared bearer token is
   // equivalent exposure to the web edition.
-  ipcMain.handle('host:collab-relay-defaults', (): { url: string; token: string } => {
-    return { url: relayUrl(), token: relayToken() };
-  });
+  ipcMain.handle(
+    'host:collab-relay-defaults',
+    async (): Promise<{ url: string; token: string; routingCode: string }> => {
+      // Await the entitlement load so the FIRST rooms fetch after launch
+      // already carries the entitlement (and its routing code) instead of
+      // racing the lazy file read and falling back to the shared token.
+      await ensureEntitlementLoaded();
+      const token = relayToken();
+      const ent = validEntitlement();
+      // routingCode only when the token IS the entitlement: it names the
+      // machine for the relay's machine-binding check. ks() is only
+      // touched in that case — an entitlement implies the keypair already
+      // exists, so this never materializes a key file on an install that
+      // never enabled sharing.
+      const routingCode = ent !== null && token === ent.entitlement ? ks().ownRoutingId() : '';
+      return { url: relayUrl(), token, routingCode };
+    },
+  );
 
   ipcMain.handle('host:pairing-regenerate-key', (): { ownCode: string } => {
     const ownCode = ks().regenerate();
@@ -706,8 +729,8 @@ export function registerPairingIpc(): void {
     return { ownCode };
   });
 
-  // Blog-account entitlement surface. Optional during the beta — an
-  // entitlement gates nothing while the relay runs ungated.
+  // Blog-account entitlement surface. An entitlement gates nothing
+  // while the relay runs ungated; enforcement is a server-side flip.
   ipcMain.handle(
     'host:pairing-connect-account',
     async (_e, payload: { connectCode: string; confirmEvict?: boolean }) => {

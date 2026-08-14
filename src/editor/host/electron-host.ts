@@ -332,8 +332,11 @@ interface ElectronAPI {
   /** Baked relay endpoint from the main process (same base + shared
    *  token card sharing uses) — the renderer-side rooms client falls
    *  back to this when no settings/dev override is present. Optional so
-   *  an older preload degrades to settings-only resolution. */
-  collabRelayDefaults?(): Promise<{ url: string; token: string }>;
+   *  an older preload degrades to settings-only resolution.
+   *  `routingCode` (absent on older preloads) is '' unless the token is
+   *  an entitlement — then it names this machine for the relay's
+   *  machine-binding check. */
+  collabRelayDefaults?(): Promise<{ url: string; token: string; routingCode?: string }>;
   /** Toggle Chromium DevTools on this window (packaged builds have no
    *  menu accelerators for it on Windows/Linux). */
   toggleDevTools?(): Promise<void>;
@@ -1053,8 +1056,8 @@ export class ElectronHost implements Host {
     await api().pairingInboxMarkAllRead?.();
   }
 
-  async collabRelayDefaults(): Promise<{ url: string; token: string }> {
-    return (await api().collabRelayDefaults?.()) ?? { url: '', token: '' };
+  async collabRelayDefaults(): Promise<{ url: string; token: string; routingCode?: string }> {
+    return (await api().collabRelayDefaults?.()) ?? { url: '', token: '', routingCode: '' };
   }
 
   async toggleDevTools(): Promise<void> {

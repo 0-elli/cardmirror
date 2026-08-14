@@ -26,6 +26,20 @@
 export const RELAY_CLIENT_VERSION_HEADER = 'X-CardMirror-Version';
 
 /**
+ * Header carrying this machine's routing code (the public sha256 hash of
+ * its pairing key) on relay requests authenticated with an ENTITLEMENT.
+ *
+ * Entitlement JWTs are bearer tokens minted per machine (`/connect`
+ * binds them to a routing code in their `rc` claim), but nothing at
+ * request time proved the presenter WAS that machine — a copied token
+ * file worked from anywhere. When the relay's machine-binding toggle is
+ * on, gated requests must carry this header matching the token's claim.
+ * Sent only when the effective bearer is an entitlement: shared-token
+ * and self-hosted requests have no `rc` to match and omit it.
+ */
+export const RELAY_CLIENT_ROUTING_HEADER = 'X-CardMirror-Routing';
+
+/**
  * First app version that seeds co-editing rooms with movable-list
  * children (identity-preserving moves; strict exactly-once under
  * concurrent same-card moves — fuzz-proven). The binding's per-room
