@@ -53,6 +53,12 @@ beta — it is what it is because of you.
   pill gains a matching **"Join session"** button at the bottom of its
   popup — always available, since joining needs nothing but a code.
 
+- **Read mode shows highlighted text inside cites.** Underlining or
+  emphasizing part of a cite blocks the cite style on that run, so
+  highlighting it still left it hidden in read mode. Cite paragraphs
+  now keep anything cite-styled *or* highlighted, in single-pane and
+  three-pane alike; unmarked cite filler stays hidden.
+
 - **Windows: the window and taskbar icon renders fully again.** The
   packaged icon had degraded to a single oversized layer that Windows
   could only draw as a thin sliver; the app now ships a properly

@@ -7,7 +7,7 @@
  *
  * The decision is made per text node based on its parent paragraph and
  * its marks:
- *   - In `cite_paragraph`: keep iff carrying `cite_mark`.
+ *   - In `cite_paragraph`: keep iff carrying `cite_mark` OR `highlight`.
  *   - In `card_body` / `paragraph` / `undertag`: keep iff carrying `highlight`.
  *   - Elsewhere (heading paragraphs etc.): no decoration — block-level
  *     CSS handles whether they show.
@@ -211,10 +211,10 @@ export const readModeAwareRedo: Command = (state, dispatch, view) => {
 /** Read mode keeps a text node visible iff it carries the paragraph's
  *  read-aloud mark — or is a red reading-position marker (so the marker
  *  you drop while reading actually shows). */
-function isReadKept(child: PMNode, markName: string): boolean {
+function isReadKept(child: PMNode, markNames: readonly string[]): boolean {
   return child.marks.some(
     (m) =>
-      m.type.name === markName ||
+      markNames.includes(m.type.name) ||
       (m.type.name === 'font_color' && isReadingMarkerColor(m.attrs['color'] as string)),
   );
 }
@@ -227,14 +227,20 @@ function computeFullSet(doc: PMNode): DecorationSet {
  *  labels — no rm-keep/hide decoration; block-level CSS shows them). */
 const READ_MODE_HEADING_BLOCKS = new Set(['tag', 'analytic', 'pocket', 'hat', 'block']);
 
-/** The read-aloud mark a textblock is filtered by, `'heading'` if its
+/** Marks whose text a cite paragraph reads aloud: the cite mark, and —
+ *  since 1.0 — highlights too, so a highlighted phrase inside a cite no
+ *  longer vanishes in read mode (field find, 2026-08-14). */
+const CITE_KEPT_MARKS: readonly string[] = ['cite_mark', 'highlight'];
+const BODY_KEPT_MARKS: readonly string[] = ['highlight'];
+
+/** The read-aloud marks a textblock is filtered by, `'heading'` if its
  *  text is always shown, or null if it isn't read-mode content. Mirrors
  *  computeDecorationsInRange's per-node decision. */
-function readKeptKind(nodeName: string): string | 'heading' | null {
+function readKeptKind(nodeName: string): readonly string[] | 'heading' | null {
   if (READ_MODE_HEADING_BLOCKS.has(nodeName)) return 'heading';
-  if (nodeName === 'cite_paragraph') return 'cite_mark';
+  if (nodeName === 'cite_paragraph') return CITE_KEPT_MARKS;
   if (nodeName === 'card_body' || nodeName === 'paragraph' || nodeName === 'undertag') {
-    return 'highlight';
+    return BODY_KEPT_MARKS;
   }
   return null;
 }
@@ -341,14 +347,9 @@ export function firstReadKeptPos(doc: PMNode, from: number, to: number): number 
 function computeDecorationsInRange(doc: PMNode, from: number, to: number): Decoration[] {
   const decos: Decoration[] = [];
   doc.nodesBetween(from, to, (node, pos) => {
-    const name = node.type.name;
-    let markName: string | null = null;
-    if (name === 'cite_paragraph') markName = 'cite_mark';
-    else if (name === 'card_body' || name === 'paragraph' || name === 'undertag') {
-      markName = 'highlight';
-    }
-    if (markName) {
-      decorateParagraph(node, pos, markName, decos);
+    const kind = readKeptKind(node.type.name);
+    if (kind !== null && kind !== 'heading') {
+      decorateParagraph(node, pos, kind, decos);
       // We've already walked this paragraph's inline children; don't
       // recurse into them again from the outer nodesBetween.
       return false;
@@ -379,14 +380,14 @@ function makeRunSeparator(): HTMLElement {
 function decorateParagraph(
   para: PMNode,
   paraPos: number,
-  markName: string,
+  markNames: readonly string[],
   decos: Decoration[],
 ): void {
   interface Item { pos: number; nodeSize: number; keep: boolean }
   const items: Item[] = [];
   para.forEach((child, offset) => {
     if (!child.isText || !child.text) return;
-    const keep = isReadKept(child, markName);
+    const keep = isReadKept(child, markNames);
     items.push({ pos: paraPos + 1 + offset, nodeSize: child.nodeSize, keep });
   });
   for (let i = 0; i < items.length; i++) {
