@@ -2621,6 +2621,35 @@ itself is turned away and CardMirror tells you to update it. Like
 Verbatim Flow, this section works regardless of the Enable plugins
 switch.
 
+**Connecting Ebb.** [Ebb](https://github.com/shreerammodi/ebb) is a
+flowing app with a two-way CardMirror integration: send what you're
+reading onto your flow, and jump from a flow cell back to the passage
+it came from. To set it up:
+
+1. Install and open Ebb itself at least once (its own releases page
+   has installers; CardMirror and Ebb must run on the same computer).
+2. In CardMirror, turn on **Enable plugins** in Settings → **Plugins**
+   (takes effect on the next launch), then paste
+   `shreerammodi/cardmirror-ebb-plugin` into the install field and
+   accept the consent prompt.
+3. The first time Ebb selects something in CardMirror (see below),
+   the standard External apps prompt asks whether to allow it —
+   choose **Always Allow** to set it up once.
+
+The plugin adds its commands to the command palette (rebindable like
+any command, and bindable to custom ribbon buttons): **Send to Flow**
+pushes the current card or selection into the active Ebb sheet, with
+variants for one-cell-per-line or everything-in-one-cell; **Reveal in
+Flow** selects the Ebb cell that came from the current passage,
+cycling through matches; **Choose Flow App** picks the target when
+more than one flow app is available. The plugin's gear icon holds its
+two settings — the default send layout, and how many empty cells to
+leave after each send.
+
+Everything travels over a local connection between the two apps on
+your computer; nothing about your flows or documents goes online.
+Requires an Ebb build newer than 0.6.1.
+
 **Verbatim Flow.** On Windows, the **"Keep a Verbatim Flow connection
 warm"** toggle sits at the bottom of this tab. It's a bundled
 integration rather than an installable plugin, so it works regardless
