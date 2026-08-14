@@ -45,6 +45,17 @@ beta — it is what it is because of you.
   the session's history rather than the previous method, which could
   spin forever on big documents.
 
+- **The Send pill knows when you're already in a session.** With a
+  live session on the document you're looking at, its "Start session"
+  action becomes **"Copy session code"** — clicking copies the code
+  for a teammate instead of dead-ending. It switches back the moment
+  you focus a session-less document or the session ends.
+
+- **Windows: the window and taskbar icon renders fully again.** The
+  packaged icon had degraded to a single oversized layer that Windows
+  could only draw as a thin sliver; the app now ships a properly
+  layered icon (16–256 px).
+
 - **Joining a new-format session by pasted share code on an old build
   now fails cleanly instead of joining and crashing.** Invites already
   told old versions to update, but a pasted code slipped past that

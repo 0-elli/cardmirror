@@ -25,7 +25,11 @@ import { settings, type PairingGroup } from '../settings.js';
 import { showToast } from '../toast.js';
 import { relayClient, sendOutcomeToast, type SendItem } from './relay-client.js';
 import { collabEnabled } from '../collab/collab-gate.js';
-import { collabInviter, collabSessionStarter } from '../collab/collab-hooks.js';
+import {
+  collabActiveShareCode,
+  collabInviter,
+  collabSessionStarter,
+} from '../collab/collab-hooks.js';
 import { promptForText } from '../text-prompt.js';
 import { normalizePairingCode, looksLikePairingCode } from './pairing-ids.js';
 import { recentSenders } from './inbox-store.js';
@@ -411,12 +415,40 @@ export class SendPillController {
       'Start a collaboration session on this document',
       () => {
         this.collapse();
+        // Decided at CLICK time, matching whatever the label showed:
+        // a live session on the focused doc means the useful action is
+        // handing out its code, not a "this doc is already in a
+        // session" dead end.
+        const live = collabActiveShareCode();
+        if (live !== null) {
+          void navigator.clipboard?.writeText(live).then(
+            () => showToast('Session code copied — paste it to a teammate'),
+            () => showToast('Could not copy the session code'),
+          );
+          return;
+        }
         collabSessionStarter()?.();
       },
     );
     this.startSessionEl.classList.toggle('pmd-send-action-collab-hidden', !canInvite);
+    this.refreshSessionAction();
     actions.appendChild(this.startSessionEl);
     this.panel.appendChild(actions);
+  }
+
+  /** Label the session action for the CURRENT focus: "Copy session
+   *  code" when the focused doc has a live session, "Start session"
+   *  otherwise. Called at build, click-open, and drag-end — the only
+   *  moments the button is (about to be) visible. */
+  private refreshSessionAction(): void {
+    if (!this.startSessionEl) return;
+    const live = collabActiveShareCode() !== null;
+    (this.startSessionEl.lastChild as HTMLElement).textContent = live
+      ? 'Copy session code'
+      : 'Start session';
+    this.startSessionEl.title = live
+      ? 'Copy this session’s share code for a teammate to join'
+      : 'Start a collaboration session on this document';
   }
 
   /** One action-row entry: icon + label. Click behavior is live only in
@@ -605,12 +637,13 @@ export class SendPillController {
         : 'Add a contact by pairing code';
     }
     if (this.startSessionEl) {
-      (this.startSessionEl.lastChild as HTMLElement).textContent = drag
-        ? 'Recent senders'
-        : 'Start session';
-      this.startSessionEl.title = drag
-        ? 'Hover to pick someone who recently sent to you'
-        : 'Start a collaboration session on this document';
+      if (drag) {
+        (this.startSessionEl.lastChild as HTMLElement).textContent = 'Recent senders';
+        this.startSessionEl.title = 'Hover to pick someone who recently sent to you';
+      } else {
+        // Restore the session-aware label, not a hardcoded one.
+        this.refreshSessionAction();
+      }
       const icon = this.startSessionEl.firstChild as HTMLElement;
       icon.innerHTML = drag ? RECENT_ICON : COLLAB_INVITE_ICON;
     }

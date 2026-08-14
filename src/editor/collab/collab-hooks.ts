@@ -132,6 +132,21 @@ export function collabSessionStarter(): (() => void) | null {
   return sessionStarter;
 }
 
+/** Focused doc's live session share code, or null. Registered by
+ *  collab-ui at module load — before that no session can exist, so
+ *  null (= "Start session") is always right. The Send pill uses this
+ *  to swap its action to "Copy session code" when the doc you're
+ *  looking at is already in a session. */
+let shareCodeGetter: (() => string | null) | null = null;
+
+export function setCollabShareCodeGetter(fn: (() => string | null) | null): void {
+  shareCodeGetter = fn;
+}
+
+export function collabActiveShareCode(): string | null {
+  return shareCodeGetter?.() ?? null;
+}
+
 /** Live copresence for one open doc's session — connection status + who's here —
  *  read by the multi-pane shell to paint each slot's footer with ITS visible
  *  doc's session state. Provided by the lazily-loaded collab-ui once it's up;

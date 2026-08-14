@@ -20,8 +20,12 @@ import { SendPillController, bundleSendItems } from '../../src/editor/pairing/se
 import { Slice, Fragment } from 'prosemirror-model';
 import { schema, newHeadingId } from '../../src/schema/index.js';
 import { settings } from '../../src/editor/settings.js';
-import { setCollabSessionStarter } from '../../src/editor/collab/collab-hooks.js';
+import {
+  setCollabSessionStarter,
+  setCollabShareCodeGetter,
+} from '../../src/editor/collab/collab-hooks.js';
 import { showToast } from '../../src/editor/toast.js';
+import * as collabGate from '../../src/editor/collab/collab-gate.js';
 
 function mountPill(): { pill: SendPillController; root: HTMLElement } {
   const parent = document.createElement('div');
@@ -46,6 +50,8 @@ afterEach(() => {
   settings.set('pairingPartners', []);
   settings.set('pairingEnabled', false);
   setCollabSessionStarter(null);
+  setCollabShareCodeGetter(null);
+  vi.restoreAllMocks();
 });
 
 describe('send pill actions row + hidden recipients', () => {
@@ -78,6 +84,37 @@ describe('send pill actions row + hidden recipients', () => {
     expect(actions[0]!.textContent).toContain('Add contact');
     // No collab starter registered (gate closed) → hidden by class.
     expect(actions[1]!.classList.contains('pmd-send-action-collab-hidden')).toBe(true);
+  });
+
+  it('session action toggles: Copy session code with a live session, Start session without', () => {
+    vi.spyOn(collabGate, 'collabEnabled').mockReturnValue(true);
+    const starter = vi.fn();
+    setCollabSessionStarter(starter);
+    const CODE = `cmshare2.${'a'.repeat(32)}.key456.1.0.0`;
+    setCollabShareCodeGetter(() => CODE);
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const { root } = mountPill();
+    (root.querySelector('.pmd-send-bar') as HTMLElement).click();
+    const btn = root.querySelectorAll('.pmd-send-action')[1] as HTMLElement;
+    expect(btn.classList.contains('pmd-send-action-collab-hidden')).toBe(false);
+    expect(btn.textContent).toContain('Copy session code');
+    btn.click();
+    expect(writeText).toHaveBeenCalledWith(CODE);
+    expect(starter).not.toHaveBeenCalled();
+
+    // Session gone (ended, or focus moved to a session-less doc): the
+    // next open shows Start session again and the click starts one.
+    setCollabShareCodeGetter(() => null);
+    (root.querySelector('.pmd-send-bar') as HTMLElement).click();
+    expect(btn.textContent).toContain('Start session');
+    btn.click();
+    expect(starter).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledTimes(1); // no second copy
   });
 
   it('hidden flag survives the settings sanitize round-trip', () => {

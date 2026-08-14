@@ -33,6 +33,7 @@ import {
   setCollabSessionCountProvider,
   setCollabLiveRoomProbe,
   setCollabFocusChangeHandler,
+  setCollabShareCodeGetter,
   collabRoomClaimKey,
 } from './collab-hooks.js';
 import { RoomsError } from './room-client.js';
@@ -245,6 +246,11 @@ function actionSession(): ActiveSession | null {
   if (focused != null) return sessionFor(focused);
   return sessions.size === 1 ? [...sessions.values()][0]! : null;
 }
+
+// The Send pill's session action ("Start session" vs "Copy session
+// code") keys off the FOCUSED doc's live session — an action, so it
+// uses actionSession(), never the display fallback (see above).
+setCollabShareCodeGetter(() => actionSession()?.shareCode ?? null);
 
 function chipEl(): HTMLElement | null {
   return document.getElementById('collab-chip');
