@@ -59,6 +59,8 @@ import { resetSessionCommentIds } from '../comments-plugin.js';
 import { collabEnabled } from './collab-gate.js';
 import { decodeShareCode } from './collab-crypto.js';
 import { CollabSession } from './collab-session.js';
+import { compareAppVersions } from '../relay-protocol.js';
+import { appVersion } from '../install-info.js';
 
 export interface CollabUiDeps {
   getView(): EditorView | null;
@@ -790,6 +792,15 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
   const decoded = decodeShareCode(code);
   if (!decoded) {
     showToast('That does not look like a share code');
+    return false;
+  }
+  // v2 codes carry the room's compatibility floor. (Old builds never
+  // get this far — the v2 format fails their parser above — this check
+  // is for FUTURE floors above the running version.)
+  if (decoded.minVersion && compareAppVersions(appVersion, decoded.minVersion) < 0) {
+    showToast(
+      `This session needs CardMirror ${decoded.minVersion} or newer — update to join.`,
+    );
     return false;
   }
   // A resumable record for this room means WE'VE been in it before — resume

@@ -20,11 +20,15 @@ import { loadPrefetch, savePrefetch } from './collab-store.js';
  *  means less to sync after an offline join. */
 const STALE_MS = 60 * 60 * 1000;
 
-/** Room id straight off a share code (`cmshare1.<roomId>.<key>`) — a
- *  string split, so light consumers don't need the crypto module. */
+/** Room id straight off a share code (`cmshare1.<roomId>.<key>` or
+ *  `cmshare2.<roomId>.<key>.<minVersion>`) — a string split, so light
+ *  consumers don't need the crypto module. */
 export function roomIdFromShareCode(code: string): string | null {
   const parts = code.trim().split('.');
-  return parts.length === 3 && parts[0] === 'cmshare1' && parts[1] ? parts[1] : null;
+  if (parts.length === 3 && parts[0] === 'cmshare1' && parts[1]) return parts[1];
+  // v2 floors contain dots ("1.0.0"), so 4+ parts.
+  if (parts.length >= 4 && parts[0] === 'cmshare2' && parts[1]) return parts[1];
+  return null;
 }
 
 const inFlight = new Set<string>();

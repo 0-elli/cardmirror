@@ -19,6 +19,7 @@
 export const ROOM_KEY_BYTES = 32;
 
 const SHARE_CODE_PREFIX = 'cmshare1';
+const SHARE_CODE_PREFIX_V2 = 'cmshare2';
 
 export function generateRoomKeyBytes(): Uint8Array {
   const key = new Uint8Array(ROOM_KEY_BYTES);
@@ -87,22 +88,44 @@ function fromBase64Url(s: string): Uint8Array {
 
 // --- share codes ---
 
-/** `cmshare1.<roomId>.<base64url room key>` — the out-of-band invite
- *  fallback for non-partners (paste or QR). Possession of the code IS
- *  the capability to join. */
-export function encodeShareCode(roomId: string, keyBytes: Uint8Array): string {
+/** v1: `cmshare1.<roomId>.<base64url room key>` — the out-of-band
+ *  invite fallback for non-partners (paste or QR). Possession of the
+ *  code IS the capability to join.
+ *
+ *  v2: `cmshare2.<roomId>.<key>.<minVersion>` — rooms with a
+ *  compatibility floor (movable rooms, >= 1.0.0). The format change is
+ *  itself the fence: every pre-1.0 parser requires exactly THREE
+ *  dot-parts with the literal `cmshare1` prefix, so a v2 code fails
+ *  cleanly there ("that does not look like a share code") instead of
+ *  joining a room whose containers the build cannot read — join-by-code
+ *  bypasses the invite path's minReceiverVersion floor entirely, and an
+ *  old build that slipped through crashed on the first move op
+ *  (found live, 2026-08-14). Old builds cannot be taught a better
+ *  message; new builds read the floor and say "update". List rooms keep
+ *  minting v1 codes so old builds can still join them. */
+export function encodeShareCode(roomId: string, keyBytes: Uint8Array, minVersion?: string): string {
+  if (minVersion) {
+    return `${SHARE_CODE_PREFIX_V2}.${roomId}.${toBase64Url(keyBytes)}.${minVersion}`;
+  }
   return `${SHARE_CODE_PREFIX}.${roomId}.${toBase64Url(keyBytes)}`;
 }
 
-export function decodeShareCode(code: string): { roomId: string; keyBytes: Uint8Array } | null {
+export function decodeShareCode(
+  code: string,
+): { roomId: string; keyBytes: Uint8Array; minVersion?: string } | null {
   const parts = code.trim().split('.');
-  if (parts.length !== 3 || parts[0] !== SHARE_CODE_PREFIX) return null;
+  // The version itself contains dots ("1.0.0"), so a v2 code splits
+  // into 4+ parts: everything past the key is the floor, rejoined.
+  const v2 = parts.length >= 4 && parts[0] === SHARE_CODE_PREFIX_V2;
+  if (!v2 && (parts.length !== 3 || parts[0] !== SHARE_CODE_PREFIX)) return null;
   const roomId = parts[1]!;
   if (!/^[0-9a-f]{16,64}$/.test(roomId)) return null;
+  const minVersion = v2 ? parts.slice(3).join('.') : undefined;
+  if (v2 && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(minVersion!)) return null;
   try {
     const keyBytes = fromBase64Url(parts[2]!);
     if (keyBytes.byteLength !== ROOM_KEY_BYTES) return null;
-    return { roomId, keyBytes };
+    return v2 ? { roomId, keyBytes, minVersion } : { roomId, keyBytes };
   } catch {
     return null;
   }

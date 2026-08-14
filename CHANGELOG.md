@@ -45,6 +45,15 @@ beta — it is what it is because of you.
   the session's history rather than the previous method, which could
   spin forever on big documents.
 
+- **Joining a new-format session by pasted share code on an old build
+  now fails cleanly instead of joining and crashing.** Invites already
+  told old versions to update, but a pasted code slipped past that
+  check — the old build joined a session it couldn't read and hit
+  errors on the first reorder. New sessions now use a share-code
+  format old builds don't recognize (they see "that does not look like
+  a share code"), and current builds show a proper "update to join"
+  message for any future floors.
+
 ## 0.1.0-beta.32 — 2026-08-12
 
 ### Added

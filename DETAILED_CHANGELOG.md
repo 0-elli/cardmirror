@@ -73,6 +73,23 @@ session's own rows rebuild in 1.6–5s), and the scratch doc stays
 attached so mid-node cuts need no detached editing. A regression test
 booby-traps `checkout()` to keep it out.
 
+### Fixed: join-by-code fence for versioned rooms (cmshare2)
+
+The invite path enforces `minReceiverVersion`, but "Join Collaboration
+Session" with a pasted share code bypassed it entirely: a pre-1.0
+build joined a movable room and crashed on the first arriving move op
+(wasm "Unreachable code" — found in live testing). Old builds cannot
+be patched, so the fence is the code format itself: movable rooms mint
+`cmshare2.<roomId>.<key>.<minVersion>`, which every parser shipped
+since co-editing's debut (beta.10 — verified byte-identical through
+beta.32) rejects with its existing "does not look like a share code"
+message. Current builds read the embedded floor and show "update to
+join" for any future floor above the running version; list rooms keep
+minting v1 codes so old builds can still join them. Remaining join
+surfaces audited: invites (floor-gated since beta.8), resume (own
+records only — unreachable for movable rooms once the code fence
+exists), no deep-link handlers, web edition cannot join.
+
 ### Version 1.0.0
 
 The version bump itself activates two dormant mechanisms shipped

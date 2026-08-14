@@ -311,7 +311,13 @@ export class CollabSession {
     session.lastSeq = seq;
     session.lastSentVersion = loroDoc.version();
     session.ackedVersion = session.lastSentVersion; // seed delivery succeeded
-    return { session, shareCode: encodeShareCode(roomId, keyBytes) };
+    // Movable rooms mint a v2 share code carrying the compatibility
+    // floor — its FORMAT is what fences pre-1.0 builds out of the
+    // join-by-code path (see encodeShareCode). List rooms stay v1 so
+    // old builds can keep joining them.
+    const floor =
+      session.childrenFormat() === 'movable' ? MOVABLE_ROOMS_MIN_VERSION : undefined;
+    return { session, shareCode: encodeShareCode(roomId, keyBytes, floor) };
   }
 
   /** Join an existing session; resolves once the backlog (seed + tail)

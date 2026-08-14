@@ -140,7 +140,10 @@ describe('collab UI flows through the editor seams', () => {
     const chip = document.getElementById('collab-chip')!;
     expect(chip.hidden).toBe(false);
     expect(chip.textContent).toContain('Session');
-    expect(shareCode.startsWith('cmshare1.')).toBe(true);
+    // Movable rooms (ambient at >= 1.0.0) mint v2 codes whose format
+    // fences pre-1.0 parsers out of the join-by-code path.
+    expect(shareCode.startsWith('cmshare2.')).toBe(true);
+    expect(decodeShareCode(shareCode)?.minVersion).toBe('1.0.0');
 
     // A partner joins with the share code (session layer directly — the
     // join *flow* differs only by the paste dialog).
