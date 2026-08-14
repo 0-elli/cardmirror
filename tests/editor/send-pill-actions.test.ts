@@ -86,7 +86,7 @@ describe('send pill actions row + hidden recipients', () => {
     expect(actions[1]!.classList.contains('pmd-send-action-collab-hidden')).toBe(true);
   });
 
-  it('session action toggles: Copy session code with a live session, Start session without', () => {
+  it('session action toggles: Copy code with a live session, Start session without', () => {
     vi.spyOn(collabGate, 'collabEnabled').mockReturnValue(true);
     const starter = vi.fn();
     setCollabSessionStarter(starter);
@@ -102,7 +102,7 @@ describe('send pill actions row + hidden recipients', () => {
     (root.querySelector('.pmd-send-bar') as HTMLElement).click();
     const btn = root.querySelectorAll('.pmd-send-action')[1] as HTMLElement;
     expect(btn.classList.contains('pmd-send-action-collab-hidden')).toBe(false);
-    expect(btn.textContent).toContain('Copy session code');
+    expect(btn.textContent).toContain('Copy code');
     btn.click();
     expect(writeText).toHaveBeenCalledWith(CODE);
     expect(starter).not.toHaveBeenCalled();

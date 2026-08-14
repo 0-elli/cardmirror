@@ -24,7 +24,7 @@ import { insertReceivedItem, RECEIVE_NEEDS_DOC_MESSAGE } from './inbox-insert.js
 import { showToast } from '../toast.js';
 import { parseRoomInvite } from './room-invite.js';
 import { collabEnabled } from '../collab/collab-gate.js';
-import { collabInviteJoiner } from '../collab/collab-hooks.js';
+import { collabInviteJoiner, collabSessionJoinPrompt } from '../collab/collab-hooks.js';
 import { deletePrefetch } from '../collab/collab-store.js';
 import { checkedSliceFromJSON } from '../../schema/slice-check.js';
 
@@ -40,6 +40,8 @@ export class ReceivePillController {
   private root!: HTMLDivElement;
   private bar!: HTMLDivElement;
   private listEl!: HTMLUListElement;
+  private joinSessionEl: HTMLButtonElement | null = null;
+  private actionsLi: HTMLLIElement | null = null;
   private badge!: HTMLSpanElement;
   private getFocusedView: () => EditorView | null = () => null;
   private items: InboxItem[] = [];
@@ -77,6 +79,28 @@ export class ReceivePillController {
     this.listEl = document.createElement('ul');
     this.listEl.className = 'pmd-receive-list';
     this.root.appendChild(this.listEl);
+
+    // Footer action inside the popup list: join a session by pasted
+    // code. Unconditional (no session state to depend on — joining is
+    // always possible); hidden only where collab itself is (web
+    // edition / joiner not wired). Built once; render() re-appends it
+    // after clearing the list, so listeners survive.
+    this.actionsLi = document.createElement('li');
+    this.actionsLi.className = 'pmd-receive-actions';
+    this.joinSessionEl = document.createElement('button');
+    this.joinSessionEl.type = 'button';
+    this.joinSessionEl.className = 'pmd-receive-action';
+    this.joinSessionEl.innerHTML =
+      '<span class="pmd-send-action-icon" aria-hidden="true">' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>' +
+      '</span><span>Join session</span>';
+    this.joinSessionEl.title = 'Join a collaboration session with a pasted share code';
+    this.joinSessionEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.setOpen(false);
+      collabSessionJoinPrompt()?.();
+    });
+    this.actionsLi.appendChild(this.joinSessionEl);
 
     this.bar = document.createElement('div');
     this.bar.className = 'pmd-pill-bar pmd-receive-bar';
@@ -237,10 +261,14 @@ export class ReceivePillController {
       empty.className = 'pmd-receive-empty';
       empty.textContent = "You haven't received anything yet.";
       this.listEl.appendChild(empty);
-      return;
+    } else {
+      for (const item of [...this.items].reverse()) {
+        this.listEl.appendChild(this.renderRow(item));
+      }
     }
-    for (const item of [...this.items].reverse()) {
-      this.listEl.appendChild(this.renderRow(item));
+    if (this.actionsLi) {
+      this.actionsLi.hidden = !(collabEnabled() && collabSessionJoinPrompt() !== null);
+      this.listEl.appendChild(this.actionsLi);
     }
   }
 

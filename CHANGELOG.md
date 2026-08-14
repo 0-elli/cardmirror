@@ -47,9 +47,11 @@ beta — it is what it is because of you.
 
 - **The Send pill knows when you're already in a session.** With a
   live session on the document you're looking at, its "Start session"
-  action becomes **"Copy session code"** — clicking copies the code
+  action becomes **"Copy code"** — clicking copies the session code
   for a teammate instead of dead-ending. It switches back the moment
-  you focus a session-less document or the session ends.
+  you focus a session-less document or the session ends. The Receive
+  pill gains a matching **"Join session"** button at the bottom of its
+  popup — always available, since joining needs nothing but a code.
 
 - **Windows: the window and taskbar icon renders fully again.** The
   packaged icon had degraded to a single oversized layer that Windows

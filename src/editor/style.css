@@ -14170,14 +14170,20 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
 /* Send pill bottom actions row: two equal buttons on a click-open, and
    the SAME two footprints as drop zones during a drag (send-by-code /
    recent-senders) — the geometry is shared so the modalities agree. */
-.pmd-send-actions {
+.pmd-send-actions,
+.pmd-receive-actions {
   display: flex;
   gap: 4px;
   margin-top: 4px;
   padding-top: 4px;
   border-top: 1px solid var(--pmd-c-border-soft);
 }
-.pmd-send-action {
+/* display:flex would defeat the hidden attribute (collab gate closed). */
+.pmd-receive-actions[hidden] {
+  display: none;
+}
+.pmd-send-action,
+.pmd-receive-action {
   flex: 1 1 0;
   display: flex;
   align-items: center;
@@ -14194,6 +14200,7 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
   overflow: hidden;
 }
 .pmd-send-action:hover,
+.pmd-receive-action:hover,
 .pmd-send-action.pmd-send-action-hot {
   border-color: var(--pmd-c-accent);
   color: var(--pmd-c-accent);

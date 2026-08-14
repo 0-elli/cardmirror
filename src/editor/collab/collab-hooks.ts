@@ -132,11 +132,24 @@ export function collabSessionStarter(): (() => void) | null {
   return sessionStarter;
 }
 
+/** Join-session seam: the Receive pill's footer button triggers the
+ *  same prompt-for-a-code flow as the Join Collaboration Session
+ *  command. Null until the editor wires it at startup. */
+let sessionJoinPrompt: (() => void) | null = null;
+
+export function setCollabSessionJoinPrompt(fn: (() => void) | null): void {
+  sessionJoinPrompt = fn;
+}
+
+export function collabSessionJoinPrompt(): (() => void) | null {
+  return sessionJoinPrompt;
+}
+
 /** Focused doc's live session share code, or null. Registered by
  *  collab-ui at module load — before that no session can exist, so
  *  null (= "Start session") is always right. The Send pill uses this
- *  to swap its action to "Copy session code" when the doc you're
- *  looking at is already in a session. */
+ *  to swap its action to "Copy code" when the doc you're looking at
+ *  is already in a session. */
 let shareCodeGetter: (() => string | null) | null = null;
 
 export function setCollabShareCodeGetter(fn: (() => string | null) | null): void {

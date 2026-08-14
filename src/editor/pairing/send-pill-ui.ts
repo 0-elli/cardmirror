@@ -444,7 +444,7 @@ export class SendPillController {
     if (!this.startSessionEl) return;
     const live = collabActiveShareCode() !== null;
     (this.startSessionEl.lastChild as HTMLElement).textContent = live
-      ? 'Copy session code'
+      ? 'Copy code'
       : 'Start session';
     this.startSessionEl.title = live
       ? 'Copy this session’s share code for a teammate to join'

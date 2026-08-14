@@ -180,6 +180,7 @@ import { rememberLinkedCopy, clearLinkedCopy } from './clipboard-link-cache.js';
 import { makeTransclusionDivergencePlugin, transclusionDivergenceKey } from './transclusion-divergence-plugin.js';
 import {
   setCollabSessionStarter,
+  setCollabSessionJoinPrompt,
   tagCollabTransaction,
   collabPluginSourceFor,
   collabPluginsFor,
@@ -1290,6 +1291,14 @@ setCollabInviter((target) => {
 // confirm, orphaned from every pane footer (field find, 2026-08-12).
 setCollabSessionStarter(() => {
   void loadCollabUi().then((m) => m.startSessionFlow(collabDeps));
+});
+// The Receive pill's Join button — same flow (and same deps choice) as
+// the Join Collaboration Session command: multi-pane joins into a
+// user-picked slot; single-pane in place.
+setCollabSessionJoinPrompt(() => {
+  void loadCollabUi().then((m) =>
+    m.joinSessionFlow(multiDocActive ? makeMultiPaneSessionDeps() : collabDeps),
+  );
 });
 // Per-doc comment-id allocation: a comment gets a random (collision-safe) id
 // only when the doc it's created in is itself co-edited. Comment creation always
