@@ -8,6 +8,8 @@
  *       · All text inside an `analytic` paragraph
  *       · Text carrying the `cite_mark` mark (typically inside
  *         `cite_paragraph`)
+ *       (Highlighted non-shaded text inside a cite counts as `body`,
+ *        not `other` — see readAloudBucket.)
  *   - `body` — the highlighted read:
  *       · Text in body-level paragraphs (`card_body` / `paragraph` /
  *         `undertag`) iff carrying the `highlight` mark AND NOT the
@@ -76,6 +78,17 @@ export function totalWords(counts: ReadAloudCounts): number {
 function readAloudBucket(node: PMNode, parent: PMNode): 'body' | 'other' | null {
   const parentType = parent.type.name;
   if (parentType === 'tag' || parentType === 'analytic') return 'other';
+  if (parentType === 'cite_paragraph') {
+    // Highlighted (non-shaded) text in a cite reads at BODY speed —
+    // it's evidence the reader delivers in full, and read mode shows
+    // it (underline/emphasis exclude cite_mark in the schema, so such
+    // runs can never carry the cite style). Cite-styled runs stay at
+    // tag speed; unmarked filler isn't read at all.
+    const hasHighlight = node.marks.some((m) => m.type.name === 'highlight');
+    const hasShading = node.marks.some((m) => m.type.name === 'shading');
+    if (hasHighlight && !hasShading) return 'body';
+    return node.marks.some((m) => m.type.name === 'cite_mark') ? 'other' : null;
+  }
   if (node.marks.some((m) => m.type.name === 'cite_mark')) return 'other';
   if (parentType === 'card_body' || parentType === 'paragraph' || parentType === 'undertag') {
     const hasHighlight = node.marks.some((m) => m.type.name === 'highlight');

@@ -31,7 +31,16 @@ function fixtureDoc(): PMNode {
       // cite paragraph is silent.
       n['cite_paragraph']!.create(null, [
         schema.text('Brooks 24', [m['cite_mark']!.create()]),
-        schema.text(' — professor of things, quals quals quals'),
+        schema.text(' — professor of things, quals quals quals '),
+        // 3 highlighted words INSIDE the cite: read at BODY speed (they
+        // can't carry cite_mark — underline excludes it — and read mode
+        // shows them, so the clock must count them at full rate).
+        schema.text('quote inside quals', [
+          m['underline_mark']!.create(),
+          m['highlight']!.create(),
+        ]),
+        // Shading still silences, cites included.
+        schema.text(' shaded cite skip', [m['highlight']!.create(), m['shading']!.create()]),
       ]),
       n['card_body']!.create(null, [
         // 4 highlighted words at the body rate.
@@ -48,11 +57,12 @@ function fixtureDoc(): PMNode {
 }
 
 describe('countReadAloudSplit', () => {
-  it('buckets tags, analytics, and cites as `other`; highlighted body as `body`', () => {
+  it('buckets tags, analytics, and cites as `other`; highlighted text as `body`', () => {
     const counts = countReadAloudSplit(fixtureDoc());
-    expect(counts).toEqual({ body: 4, other: 10 }); // 3 tag + 2 cite + 5 analytic
-    expect(totalWords(counts)).toBe(14);
-    expect(countReadAloudWords(fixtureDoc())).toBe(14); // total wrapper agrees
+    // body: 4 highlighted body words + 3 highlighted-in-cite words.
+    expect(counts).toEqual({ body: 7, other: 10 }); // other: 3 tag + 2 cite + 5 analytic
+    expect(totalWords(counts)).toBe(17);
+    expect(countReadAloudWords(fixtureDoc())).toBe(17); // total wrapper agrees
   });
 
   it('empty range counts nothing', () => {

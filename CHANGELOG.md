@@ -57,7 +57,9 @@ beta — it is what it is because of you.
   emphasizing part of a cite blocks the cite style on that run, so
   highlighting it still left it hidden in read mode. Cite paragraphs
   now keep anything cite-styled *or* highlighted, in single-pane and
-  three-pane alike; unmarked cite filler stays hidden.
+  three-pane alike; unmarked cite filler stays hidden. Word counts and
+  read-time estimates agree: highlighted cite text counts at the full
+  body reading rate, not the tag/cite rate.
 
 - **Windows: the window and taskbar icon renders fully again.** The
   packaged icon had degraded to a single oversized layer that Windows
