@@ -167,6 +167,109 @@ describe('move wire cost', () => {
   }, 120_000);
 });
 
+/** Move a contiguous run of `count` children — the nav-pane section
+ *  drag (header + subtree in the flat indent model). */
+function moveSpan(
+  peer: LoroPeer,
+  fromIndex: number,
+  count: number,
+  toIndex: number,
+  patched: boolean,
+): void {
+  const view = peer.view;
+  const doc = view.state.doc;
+  let fromPos = 0;
+  for (let i = 0; i < fromIndex; i++) fromPos += doc.child(i).nodeSize;
+  let endPos = fromPos;
+  for (let i = fromIndex; i < fromIndex + count; i++) endPos += doc.child(i).nodeSize;
+  const slice = doc.slice(fromPos, endPos);
+  let tr = view.state.tr.delete(fromPos, endPos);
+  let toPos = 0;
+  for (let i = 0; i < toIndex; i++) toPos += tr.doc.child(i).nodeSize;
+  tr = tr.insert(toPos, slice.content);
+  globalThis.__CM_DISABLE_MOVE_DIFF__ = !patched;
+  try {
+    view.dispatch(tr);
+  } finally {
+    globalThis.__CM_DISABLE_MOVE_DIFF__ = undefined;
+  }
+  peer.ldoc.commit();
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __CM_MOVABLE_LIST__: boolean | undefined;
+}
+
+/** The 2026-08-13 live corruption, reconstructed: two partitioned
+ *  peers drag SPANS concurrently. Upstream's index-aligned rewrite
+ *  merged this as doubled text inside surviving cards ("Turns
+ *  EconTurns Econ---2NC") plus a twinned copy of the dragged block —
+ *  confirmed op-by-op from the session's history file. The reorder
+ *  detector must make these merge clean. */
+describe('concurrent span drags', () => {
+  async function spanScenario(
+    movable: boolean,
+    patched: boolean,
+    drags: [af: number, ac: number, at: number, bf: number, bc: number, bt: number],
+  ): Promise<{ lost: number; duplicated: number; diverged: boolean }> {
+    globalThis.__CM_MOVABLE_LIST__ = movable;
+    try {
+      const peers = await createLoroPeers(seed(), 2);
+      const [a, b] = peers as [LoroPeer, LoroPeer];
+      const [af, ac, at, bf, bc, bt] = drags;
+      moveSpan(a, af, ac, at, patched);
+      moveSpan(b, bf, bc, bt, patched);
+      await settle();
+      await syncAll(peers);
+      const t0 = docText(a.doc());
+      const diverged = t0 !== docText(b.doc());
+      let lost = 0;
+      let duplicated = 0;
+      for (const n of anchorCounts(t0)) {
+        if (n === 0) lost++;
+        if (n > 1) duplicated += n - 1;
+      }
+      peers.forEach((p) => p.destroy());
+      return { lost, duplicated, diverged };
+    } finally {
+      globalThis.__CM_MOVABLE_LIST__ = undefined;
+    }
+  }
+
+  it('movable rooms: the SAME span dragged to two places merges exactly-once', async () => {
+    const r = await spanScenario(true, true, [10, 3, 40, 10, 3, 2]);
+    expect(r.diverged).toBe(false);
+    expect(r.lost, 'cards lost').toBe(0);
+    expect(r.duplicated, 'cards duplicated (incl. text fusion doubling)').toBe(0);
+  }, 120_000);
+
+  it('movable rooms: crossing span drags merge exactly-once', async () => {
+    const r = await spanScenario(true, true, [5, 4, 50, 45, 3, 8]);
+    expect(r.diverged).toBe(false);
+    expect(r.lost).toBe(0);
+    expect(r.duplicated).toBe(0);
+  }, 120_000);
+
+  it('list rooms: the same scenarios lose nothing (same-span twins allowed)', async () => {
+    const r1 = await spanScenario(false, true, [10, 3, 40, 10, 3, 2]);
+    const r2 = await spanScenario(false, true, [5, 4, 50, 45, 3, 8]);
+    expect(r1.diverged || r2.diverged).toBe(false);
+    expect(r1.lost + r2.lost, 'cards lost in list rooms').toBe(0);
+    console.log(
+      `[move-diff] list-room span drags: duplicated same-span=${r1.duplicated} crossing=${r2.duplicated}`,
+    );
+  }, 120_000);
+
+  it('canary: upstream still corrupts the live scenario (harness stays sighted)', async () => {
+    const r = await spanScenario(true, false, [10, 3, 40, 10, 3, 2]);
+    expect(r.diverged).toBe(false);
+    // Twins and/or fused doubled text — the live failure signature.
+    expect(r.lost + r.duplicated, 'upstream corrupts concurrent span drags').toBeGreaterThan(0);
+    console.log(`[move-diff] span canary: lost=${r.lost} duplicated=${r.duplicated}`);
+  }, 120_000);
+});
+
 describe('undo across a move', () => {
   it('undo restores the order, redo reapplies it, and a peer converges', async () => {
     const peers = await createLoroPeers(seed(), 2, (ldoc) => [

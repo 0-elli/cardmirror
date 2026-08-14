@@ -42,6 +42,13 @@ import {
 } from './_loro-helpers.js';
 
 const SEEDS = Number(process.env['FUZZ_SEEDS'] ?? 20);
+
+/** Prefix-free anchor labels. Plain `ANCHOR1` is a PREFIX of
+ *  `ANCHOR14`, and once span moves shuffle document order, findText
+ *  aimed at card 1 can land inside card 14's text and edit it — which
+ *  then reads as a phantom "loss" when the counting token gets split.
+ *  Cost us a false alarm at seed 110; fixed-width labels close it. */
+const anchorLabel = (i: number): string => `ANCHOR${String(i).padStart(3, '0')}`;
 const CARDS = 24;
 const ROUNDS = 4;
 
@@ -65,22 +72,27 @@ function card(label: string): PMNode {
 const seedDoc = (): PMNode =>
   schema.nodes['doc']!.createChecked(
     null,
-    Array.from({ length: CARDS }, (_, i) => card(`ANCHOR${i}`)),
+    Array.from({ length: CARDS }, (_, i) => card(anchorLabel(i))),
   );
 
-/** The drag-controller's move shape: delete the child, reinsert its
- *  slice at the mapped target. */
-function moveChild(peer: LoroPeer, fromIndex: number, toIndex: number): void {
+/** The drag-controller's move shape: delete a contiguous run of
+ *  `count` children, reinsert the slice at the mapped target. count=1
+ *  is a card drag; count>1 is a nav-pane section drag (header +
+ *  everything under it in the flat indent model) — the shape whose
+ *  absence from this fuzzer let the 2026-08-13 span-drag fusion ship. */
+function moveChildren(peer: LoroPeer, fromIndex: number, count: number, toIndex: number): void {
   const view = peer.view;
   const doc = view.state.doc;
   if (doc.childCount < 2) return;
   const f = fromIndex % doc.childCount;
-  const node = doc.child(f);
+  const k = Math.max(1, Math.min(count, doc.childCount - f));
   let fromPos = 0;
   for (let i = 0; i < f; i++) fromPos += doc.child(i).nodeSize;
-  const slice = doc.slice(fromPos, fromPos + node.nodeSize);
-  let tr = view.state.tr.delete(fromPos, fromPos + node.nodeSize);
-  const t = toIndex % Math.max(tr.doc.childCount, 1);
+  let endPos = fromPos;
+  for (let i = f; i < f + k; i++) endPos += doc.child(i).nodeSize;
+  const slice = doc.slice(fromPos, endPos);
+  let tr = view.state.tr.delete(fromPos, endPos);
+  const t = toIndex % Math.max(tr.doc.childCount + 1, 1);
   let toPos = 0;
   for (let i = 0; i < t; i++) toPos += tr.doc.child(i).nodeSize;
   tr = tr.insert(toPos, slice.content);
@@ -93,16 +105,18 @@ function randomOp(rnd: () => number, peer: LoroPeer, peerIdx: number, opN: numbe
   const roll = rnd();
   try {
     if (roll < 0.45) {
-      // Moves dominate — they are what this fuzzer exists for.
-      moveChild(peer, Math.floor(rnd() * CARDS * 2), Math.floor(rnd() * CARDS * 2));
+      // Moves dominate — they are what this fuzzer exists for. Half are
+      // span drags (2-4 children), the nav-pane section-drag shape.
+      const span = rnd() < 0.5 ? 1 : 2 + Math.floor(rnd() * 3);
+      moveChildren(peer, Math.floor(rnd() * CARDS * 2), span, Math.floor(rnd() * CARDS * 2));
     } else if (roll < 0.7) {
       // Type into a random existing card body.
-      const anchor = `ANCHOR${Math.floor(rnd() * CARDS)}`;
+      const anchor = anchorLabel(Math.floor(rnd() * CARDS));
       const r = findText(view.state.doc, anchor);
       view.dispatch(view.state.tr.insertText(`+${peerIdx}`, r.to));
     } else if (roll < 0.9) {
       // Mark a random span.
-      const anchor = `ANCHOR${Math.floor(rnd() * CARDS)}`;
+      const anchor = anchorLabel(Math.floor(rnd() * CARDS));
       const r = findText(view.state.doc, anchor);
       view.dispatch(
         view.state.tr.addMark(
@@ -115,7 +129,7 @@ function randomOp(rnd: () => number, peer: LoroPeer, peerIdx: number, opN: numbe
       );
     } else {
       // Insert a fresh card (unique anchor, so exactly-once still holds).
-      const anchor = `NEWP${peerIdx}N${opN}`;
+      const anchor = `NEWP${peerIdx}N${String(opN).padStart(3, '0')}`;
       view.dispatch(view.state.tr.insert(view.state.doc.content.size, card(anchor)));
       return anchor;
     }
@@ -132,7 +146,7 @@ async function fuzzRun(strictExactlyOnce: boolean): Promise<number> {
     const peers = await createLoroPeers(seedDoc(), 3);
     let opN = 0;
     const expectedAnchors = new Set<string>(
-      Array.from({ length: CARDS }, (_, i) => `ANCHOR${i}`),
+      Array.from({ length: CARDS }, (_, i) => anchorLabel(i)),
     );
     for (let round = 0; round < ROUNDS; round++) {
       for (const [pi, p] of peers.entries()) {

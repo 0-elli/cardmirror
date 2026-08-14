@@ -1,5 +1,5 @@
 diff --git a/node_modules/loro-prosemirror/dist/index.cjs b/node_modules/loro-prosemirror/dist/index.cjs
-index 74c4b30..1fcad6b 100644
+index 74c4b30..e7936bb 100644
 --- a/node_modules/loro-prosemirror/dist/index.cjs
 +++ b/node_modules/loro-prosemirror/dist/index.cjs
 @@ -28,6 +28,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
@@ -168,7 +168,7 @@ index 74c4b30..1fcad6b 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -226,13 +341,89 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -226,13 +341,218 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!(0, lib0_function.equalityDeep)(attrs.get(key), value)) attrs.set(key, value);
@@ -185,50 +185,179 @@ index 74c4b30..1fcad6b 100644
 + * CardMirror patch: move-aware child diffing.
 + *
 + * `updateLoroMapChildren` skips a matching prefix and suffix, then
-+ * delete-and-recreates every misaligned pair in between. Relocating one
-+ * child past N siblings misaligns the whole span, so all N are destroyed
-+ * and rebuilt — ~0.65 KiB of permanent oplog per position traversed, a
-+ * fresh container identity for every card passed over, and (measured)
-+ * silent loss of cards under concurrent partitioned moves.
-+ *
-+ * After prefix/suffix trimming a pure relocation can only look like a
-+ * rotation of the remaining span: [A,B,…,Z] → [B,…,Z,A] (moved right) or
-+ * [B,…,Z,A] → [A,B,…,Z] (moved left). Identity is checked through the
-+ * existing container→node `mapping`, so this recognizes only genuine
-+ * relocations of untouched nodes; anything edited in the same
-+ * transaction fails the check and falls through to the original path.
++ * delete-and-recreates every misaligned pair in between. Relocating
++ * children past N siblings misaligns the whole span, so all N are
++ * destroyed and rebuilt — ~0.65 KiB of permanent oplog per position
++ * traversed, a fresh container identity for every card passed over,
++ * and (measured) silent loss / text fusion / twins under concurrent
++ * partitioned moves. cardmirrorDetectReorder below intercepts pure
++ * permutations before that path can run.
 + *
 + * `globalThis.__CM_DISABLE_MOVE_DIFF__` restores upstream behaviour
 + * (used by the regression harness to demonstrate the failure mode).
 + */
-+function cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroLen, nodeLen, mapping) {
++/**
++ * CardMirror patch: general reorder detection (both list kinds).
++ *
++ * Upstream reconciles a reordered children list by index-aligned
++ * delete-and-recreate: every misaligned child is destroyed and
++ * rebuilt, so relocating children rewrites innocent neighbors. Under
++ * CONCURRENT reorders that merges catastrophically — both peers
++ * rewrite the same surviving text containers (concurrent
++ * same-position inserts BOTH survive = doubled text) and both
++ * recreate the relocated child (= twins/loss). Observed live
++ * 2026-08-13 on the first real movable-room session: a nav-pane drag
++ * of a section header relocates a SPAN of siblings (header +
++ * everything under it in the flat indent model), a shape the earlier
++ * single-rotation detector (which this replaces) did not cover.
++ *
++ * This detector recognizes ANY pure permutation of untouched children
++ * (identity through the container→node mapping) and turns it into
++ * per-child relocations of exactly the DRAGGED children (see the
++ * emission comment inside). Every step is simulated first and the
++ * result must equal the target order, or the detection returns null
++ * and the caller falls through — a wrong answer degrades to upstream
++ * behaviour, never corrupts.
++ *
++ * The caller applies each relocation as:
++ *  - MovableList: a real move() — identity-preserving, no content
++ *    ops, so concurrent same-child moves resolve position by LWW and
++ *    neither fusion nor twins is expressible.
++ *  - Plain list (rooms seeded before v1.0): delete+recreate of ONLY
++ *    the moved child — passed-over neighbors keep their containers,
++ *    which is what prevents the concurrent rewrite fusion; same-child
++ *    contention can still leave a visible duplicate (both
++ *    recreations survive), the documented list-room semantics.
++ */
++function cardmirrorDetectReorder(loroChildren, nodeChildren, left, right, loroLen, nodeLen, mapping) {
 +	if (loroLen !== nodeLen) return null;
 +	const span = loroLen - left - right;
 +	if (span < 2) return null;
-+	const loroMid = [];
++	// Identify each PM child's Loro container. PRIMARY: the weak
++	// node→container-id map, which rides the PM node object itself and
++	// survives the sync-plugin's mapping-table invalidation (a remote
++	// update clears `mapping` for changed subtrees; a drag dispatched
++	// right after then failed the old object-identity check here and
++	// fell through to the upstream rewrite — seed 25 of the span fuzz
++	// caught the resulting concurrent loss). FALLBACK: the mapping
++	// table, for nodes the weak map has not seen.
++	const idToOld = new Map();
++	const objToOld = new Map();
 +	for (let i = 0; i < span; i++) {
 +		const child = loroChildren.get(left + i);
 +		if (!loro_crdt.isContainer(child)) return null;
++		const id = String(child.id);
++		if (idToOld.has(id)) return null;
++		idToOld.set(id, i);
 +		const mapped = mapping.get(child.id);
-+		// Text children map to arrays of PM nodes; only whole-node moves qualify.
-+		if (mapped == null || Array.isArray(mapped)) return null;
-+		loroMid.push(mapped);
++		if (mapped != null && !Array.isArray(mapped) && !objToOld.has(mapped)) objToOld.set(mapped, i);
 +	}
 +	const nodeMid = nodeChildren.slice(left, left + span);
-+	for (const n of nodeMid) if (n == null || Array.isArray(n)) return null;
-+	// Moved right: the first child now sits last.
-+	let rotated = nodeMid[span - 1] === loroMid[0];
-+	if (rotated) {
-+		for (let i = 1; i < span; i++) if (nodeMid[i - 1] !== loroMid[i]) { rotated = false; break; }
-+		if (rotated) return { from: left, to: left + span - 1 };
++	const oldIdx = new Array(span).fill(-1);
++	const used = new Set();
++	const unmatched = [];
++	for (let j = 0; j < span; j++) {
++		const n = nodeMid[j];
++		if (n == null || Array.isArray(n)) return null;
++		const wid = WEAK_NODE_TO_LORO_CONTAINER_MAPPING.get(n);
++		let i = wid != null ? idToOld.get(String(wid)) : undefined;
++		if (i === undefined) i = objToOld.get(n);
++		if (i !== undefined) {
++			if (used.has(i)) return null;
++			used.add(i);
++			oldIdx[j] = i;
++		} else unmatched.push(j);
 +	}
-+	// Moved left: the last child now sits first.
-+	rotated = nodeMid[0] === loroMid[span - 1];
-+	if (rotated) {
-+		for (let i = 0; i < span - 1; i++) if (nodeMid[i + 1] !== loroMid[i]) { rotated = false; break; }
-+		if (rotated) return { from: left + span - 1, to: left };
++	// Residue: a container recreated by a REMOTE peer's list-mode move
++	// gets its PM node object REUSED by the Loro→PM diff, leaving both
++	// identity channels stale (weak map → the dead container; mapping
++	// table → a discarded node object). Seed 25 of the span fuzz: the
++	// resulting fall-through to the upstream rewrite, concurrent with
++	// other peers' moves, silently lost a card. Match the residue by
++	// CONTENT equality — an ambiguous residue (two identical unmatched
++	// cards) means we cannot know which moved, so bail to upstream.
++	// Each match repairs the weak map for the next dispatch.
++	for (const j of unmatched) {
++		const n = nodeMid[j];
++		let found = -1;
++		for (let i = 0; i < span; i++) {
++			if (used.has(i)) continue;
++			if (eqLoroObjNode(loroChildren.get(left + i), n)) {
++				if (found !== -1) return null;
++				found = i;
++			}
++		}
++		if (found === -1) return null;
++		used.add(found);
++		oldIdx[j] = found;
++		WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(n, loroChildren.get(left + found).id);
 +	}
-+	return null;
++	let identical = true;
++	for (let j = 0; j < span; j++) if (oldIdx[j] !== j) { identical = false; break; }
++	if (identical) return null;
++	// MINIMAL emission: children on a longest increasing subsequence of
++	// the permutation stay put; each remaining child gets ONE move,
++	// processed in ascending target order and inserted directly AFTER
++	// its final left-hand neighbor (which, having a smaller target, is
++	// already positioned). This keeps the dragged children — not their
++	// neighbors — as the moved elements, so concurrent drags of the
++	// SAME child contend on the same element (position LWW, exactly
++	// once), and a classic long drag stays ONE op. Every step is
++	// simulated with move()'s delete-then-insert index semantics over
++	// old-index tokens; if the result does not reproduce the target
++	// order, the greedy settle-the-prefix scheme below is used instead
++	// — provably correct, at worst span-1 moves. Only if BOTH disagree
++	// (impossible, but this code must never corrupt) does the caller
++	// fall through to upstream.
++	const lisPrev = new Array(span).fill(-1);
++	const lisLen = new Array(span).fill(1);
++	let bestEnd = 0;
++	for (let j = 1; j < span; j++) {
++		for (let i = 0; i < j; i++) {
++			if (oldIdx[i] < oldIdx[j] && lisLen[i] + 1 > lisLen[j]) {
++				lisLen[j] = lisLen[i] + 1;
++				lisPrev[j] = i;
++			}
++		}
++		if (lisLen[j] > lisLen[bestEnd]) bestEnd = j;
++	}
++	const kept = new Array(span).fill(false);
++	for (let j = bestEnd; j >= 0; j = lisPrev[j]) {
++		kept[j] = true;
++		if (lisPrev[j] === -1) break;
++	}
++	{
++		const cur = Array.from({ length: span }, (_, i) => i);
++		const moves = [];
++		for (let j = 0; j < span; j++) {
++			if (kept[j]) continue;
++			const want = oldIdx[j];
++			const k = cur.indexOf(want);
++			if (k < 0) return null;
++			cur.splice(k, 1);
++			const ins = j === 0 ? 0 : cur.indexOf(oldIdx[j - 1]) + 1;
++			moves.push({ from: left + k, to: left + ins, node: nodeMid[j] });
++			cur.splice(ins, 0, want);
++		}
++		let ok = true;
++		for (let j = 0; j < span; j++) if (cur[j] !== oldIdx[j]) { ok = false; break; }
++		if (ok) return moves;
++	}
++	{
++		const cur = Array.from({ length: span }, (_, i) => i);
++		const moves = [];
++		for (let j = 0; j < span; j++) {
++			const want = oldIdx[j];
++			if (cur[j] === want) continue;
++			const k = cur.indexOf(want, j + 1);
++			if (k < 0) return null;
++			moves.push({ from: left + k, to: left + j, node: nodeMid[j] });
++			cur.splice(k, 1);
++			cur.splice(j, 0, want);
++		}
++		for (let j = 0; j < span; j++) if (cur[j] !== oldIdx[j]) return null;
++		return moves;
++	}
  }
  function getLoroMapChildren(obj) {
 -	return obj.getOrCreateContainer(CHILDREN_KEY, new loro_crdt.LoroList());
@@ -261,26 +390,24 @@ index 74c4b30..1fcad6b 100644
  }
  function updateLoroMapChildren(obj, node, mapping) {
  	const loroChildren = getLoroMapChildren(obj);
-@@ -258,6 +449,26 @@ function updateLoroMapChildren(obj, node, mapping) {
+@@ -258,6 +578,24 @@ function updateLoroMapChildren(obj, node, mapping) {
  			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
  		} else break;
  	}
-+	// CardMirror patch: a pure relocation is one op, not a span rewrite.
++	// CardMirror patch: a pure relocation is per-child moves, never a
++	// span rewrite (see cardmirrorDetectReorder).
 +	if (!globalThis.__CM_DISABLE_MOVE_DIFF__) {
-+		const rot = cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroChildLength, nodeChildLength, mapping);
-+		if (rot != null) {
-+			if (typeof loroChildren.move === "function") {
-+				// Movable list (v1.0, flag-gated): identity-preserving, O(1).
-+				loroChildren.move(rot.from, rot.to);
-+			} else {
-+				// Plain list: one card's worth instead of the whole span. The
-+				// moved child is rebuilt, so it gets a new identity — the
++		const moves = cardmirrorDetectReorder(loroChildren, nodeChildren, left, right, loroChildLength, nodeChildLength, mapping);
++		if (moves != null) {
++			const movable = typeof loroChildren.move === "function";
++			for (const m of moves) if (movable) loroChildren.move(m.from, m.to);
++			else {
++				// Plain list: rebuild ONLY the moved child (new identity);
 +				// passed-over children keep theirs, which is the loss fix.
-+				const moving = nodeChildren[rot.to];
-+				const doomed = loroChildren.get(rot.from);
++				const doomed = loroChildren.get(m.from);
 +				if (loro_crdt.isContainer(doomed)) mapping.delete(doomed.id);
-+				loroChildren.delete(rot.from, 1);
-+				createLoroChild(loroChildren, rot.to, moving, mapping);
++				loroChildren.delete(m.from, 1);
++				createLoroChild(loroChildren, m.to, m.node, mapping);
 +			}
 +			return;
 +		}
@@ -288,7 +415,7 @@ index 74c4b30..1fcad6b 100644
  	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
  		const leftLoro = loroChildren.get(left);
  		const leftNode = nodeChildren[left];
-@@ -422,27 +633,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -422,27 +760,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -337,7 +464,7 @@ index 74c4b30..1fcad6b 100644
  	}
  	return prosemirror_view.DecorationSet.create(state.doc, d);
  }
-@@ -506,7 +719,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+@@ -506,7 +846,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
  	}
  	while (loroNode != null) {
  		const children = loroNode.get(CHILDREN_KEY);
@@ -346,7 +473,7 @@ index 74c4b30..1fcad6b 100644
  			const childIds = children.toArray();
  			for (const iter of childIds) {
  				if (iter.id === targetChildId) break;
-@@ -587,6 +800,23 @@ const LoroSyncPlugin = (props) => {
+@@ -587,6 +927,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -370,7 +497,7 @@ index 74c4b30..1fcad6b 100644
  				return state;
  			}
  		},
-@@ -650,14 +880,63 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -650,14 +1007,63 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
@@ -441,10 +568,10 @@ index 74c4b30..1fcad6b 100644
  /**
  * Update ProseMirror selection based on the given Loro cursors.
 diff --git a/node_modules/loro-prosemirror/dist/index.js b/node_modules/loro-prosemirror/dist/index.js
-index e41095d..0261794 100644
+index e41095d..1b581cb 100644
 --- a/node_modules/loro-prosemirror/dist/index.js
 +++ b/node_modules/loro-prosemirror/dist/index.js
-@@ -1,6 +1,56 @@
+@@ -1,6 +1,185 @@
  import { Fragment, Node, Schema, Slice } from "prosemirror-model";
  import { EditorState, Plugin, PluginKey, Selection, TextSelection } from "prosemirror-state";
 -import { Awareness, Cursor, EphemeralStore, LoroDoc, LoroList, LoroMap, LoroText, LoroTree, UndoManager, isContainer } from "loro-crdt";
@@ -454,55 +581,184 @@ index e41095d..0261794 100644
 + * CardMirror patch: move-aware child diffing.
 + *
 + * `updateLoroMapChildren` skips a matching prefix and suffix, then
-+ * delete-and-recreates every misaligned pair in between. Relocating one
-+ * child past N siblings misaligns the whole span, so all N are destroyed
-+ * and rebuilt — ~0.65 KiB of permanent oplog per position traversed, a
-+ * fresh container identity for every card passed over, and (measured)
-+ * silent loss of cards under concurrent partitioned moves.
-+ *
-+ * After prefix/suffix trimming a pure relocation can only look like a
-+ * rotation of the remaining span: [A,B,…,Z] → [B,…,Z,A] (moved right) or
-+ * [B,…,Z,A] → [A,B,…,Z] (moved left). Identity is checked through the
-+ * existing container→node `mapping`, so this recognizes only genuine
-+ * relocations of untouched nodes; anything edited in the same
-+ * transaction fails the check and falls through to the original path.
++ * delete-and-recreates every misaligned pair in between. Relocating
++ * children past N siblings misaligns the whole span, so all N are
++ * destroyed and rebuilt — ~0.65 KiB of permanent oplog per position
++ * traversed, a fresh container identity for every card passed over,
++ * and (measured) silent loss / text fusion / twins under concurrent
++ * partitioned moves. cardmirrorDetectReorder below intercepts pure
++ * permutations before that path can run.
 + *
 + * `globalThis.__CM_DISABLE_MOVE_DIFF__` restores upstream behaviour
 + * (used by the regression harness to demonstrate the failure mode).
 + */
-+function cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroLen, nodeLen, mapping) {
++/**
++ * CardMirror patch: general reorder detection (both list kinds).
++ *
++ * Upstream reconciles a reordered children list by index-aligned
++ * delete-and-recreate: every misaligned child is destroyed and
++ * rebuilt, so relocating children rewrites innocent neighbors. Under
++ * CONCURRENT reorders that merges catastrophically — both peers
++ * rewrite the same surviving text containers (concurrent
++ * same-position inserts BOTH survive = doubled text) and both
++ * recreate the relocated child (= twins/loss). Observed live
++ * 2026-08-13 on the first real movable-room session: a nav-pane drag
++ * of a section header relocates a SPAN of siblings (header +
++ * everything under it in the flat indent model), a shape the earlier
++ * single-rotation detector (which this replaces) did not cover.
++ *
++ * This detector recognizes ANY pure permutation of untouched children
++ * (identity through the container→node mapping) and turns it into
++ * per-child relocations of exactly the DRAGGED children (see the
++ * emission comment inside). Every step is simulated first and the
++ * result must equal the target order, or the detection returns null
++ * and the caller falls through — a wrong answer degrades to upstream
++ * behaviour, never corrupts.
++ *
++ * The caller applies each relocation as:
++ *  - MovableList: a real move() — identity-preserving, no content
++ *    ops, so concurrent same-child moves resolve position by LWW and
++ *    neither fusion nor twins is expressible.
++ *  - Plain list (rooms seeded before v1.0): delete+recreate of ONLY
++ *    the moved child — passed-over neighbors keep their containers,
++ *    which is what prevents the concurrent rewrite fusion; same-child
++ *    contention can still leave a visible duplicate (both
++ *    recreations survive), the documented list-room semantics.
++ */
++function cardmirrorDetectReorder(loroChildren, nodeChildren, left, right, loroLen, nodeLen, mapping) {
 +	if (loroLen !== nodeLen) return null;
 +	const span = loroLen - left - right;
 +	if (span < 2) return null;
-+	const loroMid = [];
++	// Identify each PM child's Loro container. PRIMARY: the weak
++	// node→container-id map, which rides the PM node object itself and
++	// survives the sync-plugin's mapping-table invalidation (a remote
++	// update clears `mapping` for changed subtrees; a drag dispatched
++	// right after then failed the old object-identity check here and
++	// fell through to the upstream rewrite — seed 25 of the span fuzz
++	// caught the resulting concurrent loss). FALLBACK: the mapping
++	// table, for nodes the weak map has not seen.
++	const idToOld = new Map();
++	const objToOld = new Map();
 +	for (let i = 0; i < span; i++) {
 +		const child = loroChildren.get(left + i);
 +		if (!isContainer(child)) return null;
++		const id = String(child.id);
++		if (idToOld.has(id)) return null;
++		idToOld.set(id, i);
 +		const mapped = mapping.get(child.id);
-+		// Text children map to arrays of PM nodes; only whole-node moves qualify.
-+		if (mapped == null || Array.isArray(mapped)) return null;
-+		loroMid.push(mapped);
++		if (mapped != null && !Array.isArray(mapped) && !objToOld.has(mapped)) objToOld.set(mapped, i);
 +	}
 +	const nodeMid = nodeChildren.slice(left, left + span);
-+	for (const n of nodeMid) if (n == null || Array.isArray(n)) return null;
-+	// Moved right: the first child now sits last.
-+	let rotated = nodeMid[span - 1] === loroMid[0];
-+	if (rotated) {
-+		for (let i = 1; i < span; i++) if (nodeMid[i - 1] !== loroMid[i]) { rotated = false; break; }
-+		if (rotated) return { from: left, to: left + span - 1 };
++	const oldIdx = new Array(span).fill(-1);
++	const used = new Set();
++	const unmatched = [];
++	for (let j = 0; j < span; j++) {
++		const n = nodeMid[j];
++		if (n == null || Array.isArray(n)) return null;
++		const wid = WEAK_NODE_TO_LORO_CONTAINER_MAPPING.get(n);
++		let i = wid != null ? idToOld.get(String(wid)) : undefined;
++		if (i === undefined) i = objToOld.get(n);
++		if (i !== undefined) {
++			if (used.has(i)) return null;
++			used.add(i);
++			oldIdx[j] = i;
++		} else unmatched.push(j);
 +	}
-+	// Moved left: the last child now sits first.
-+	rotated = nodeMid[0] === loroMid[span - 1];
-+	if (rotated) {
-+		for (let i = 0; i < span - 1; i++) if (nodeMid[i + 1] !== loroMid[i]) { rotated = false; break; }
-+		if (rotated) return { from: left + span - 1, to: left };
++	// Residue: a container recreated by a REMOTE peer's list-mode move
++	// gets its PM node object REUSED by the Loro→PM diff, leaving both
++	// identity channels stale (weak map → the dead container; mapping
++	// table → a discarded node object). Seed 25 of the span fuzz: the
++	// resulting fall-through to the upstream rewrite, concurrent with
++	// other peers' moves, silently lost a card. Match the residue by
++	// CONTENT equality — an ambiguous residue (two identical unmatched
++	// cards) means we cannot know which moved, so bail to upstream.
++	// Each match repairs the weak map for the next dispatch.
++	for (const j of unmatched) {
++		const n = nodeMid[j];
++		let found = -1;
++		for (let i = 0; i < span; i++) {
++			if (used.has(i)) continue;
++			if (eqLoroObjNode(loroChildren.get(left + i), n)) {
++				if (found !== -1) return null;
++				found = i;
++			}
++		}
++		if (found === -1) return null;
++		used.add(found);
++		oldIdx[j] = found;
++		WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(n, loroChildren.get(left + found).id);
 +	}
-+	return null;
++	let identical = true;
++	for (let j = 0; j < span; j++) if (oldIdx[j] !== j) { identical = false; break; }
++	if (identical) return null;
++	// MINIMAL emission: children on a longest increasing subsequence of
++	// the permutation stay put; each remaining child gets ONE move,
++	// processed in ascending target order and inserted directly AFTER
++	// its final left-hand neighbor (which, having a smaller target, is
++	// already positioned). This keeps the dragged children — not their
++	// neighbors — as the moved elements, so concurrent drags of the
++	// SAME child contend on the same element (position LWW, exactly
++	// once), and a classic long drag stays ONE op. Every step is
++	// simulated with move()'s delete-then-insert index semantics over
++	// old-index tokens; if the result does not reproduce the target
++	// order, the greedy settle-the-prefix scheme below is used instead
++	// — provably correct, at worst span-1 moves. Only if BOTH disagree
++	// (impossible, but this code must never corrupt) does the caller
++	// fall through to upstream.
++	const lisPrev = new Array(span).fill(-1);
++	const lisLen = new Array(span).fill(1);
++	let bestEnd = 0;
++	for (let j = 1; j < span; j++) {
++		for (let i = 0; i < j; i++) {
++			if (oldIdx[i] < oldIdx[j] && lisLen[i] + 1 > lisLen[j]) {
++				lisLen[j] = lisLen[i] + 1;
++				lisPrev[j] = i;
++			}
++		}
++		if (lisLen[j] > lisLen[bestEnd]) bestEnd = j;
++	}
++	const kept = new Array(span).fill(false);
++	for (let j = bestEnd; j >= 0; j = lisPrev[j]) {
++		kept[j] = true;
++		if (lisPrev[j] === -1) break;
++	}
++	{
++		const cur = Array.from({ length: span }, (_, i) => i);
++		const moves = [];
++		for (let j = 0; j < span; j++) {
++			if (kept[j]) continue;
++			const want = oldIdx[j];
++			const k = cur.indexOf(want);
++			if (k < 0) return null;
++			cur.splice(k, 1);
++			const ins = j === 0 ? 0 : cur.indexOf(oldIdx[j - 1]) + 1;
++			moves.push({ from: left + k, to: left + ins, node: nodeMid[j] });
++			cur.splice(ins, 0, want);
++		}
++		let ok = true;
++		for (let j = 0; j < span; j++) if (cur[j] !== oldIdx[j]) { ok = false; break; }
++		if (ok) return moves;
++	}
++	{
++		const cur = Array.from({ length: span }, (_, i) => i);
++		const moves = [];
++		for (let j = 0; j < span; j++) {
++			const want = oldIdx[j];
++			if (cur[j] === want) continue;
++			const k = cur.indexOf(want, j + 1);
++			if (k < 0) return null;
++			moves.push({ from: left + k, to: left + j, node: nodeMid[j] });
++			cur.splice(k, 1);
++			cur.splice(j, 0, want);
++		}
++		for (let j = 0; j < span; j++) if (cur[j] !== oldIdx[j]) return null;
++		return moves;
++	}
 +}
  import { Decoration, DecorationSet, EditorView } from "prosemirror-view";
  import { simpleDiff } from "lib0/diff";
  import { equalityDeep } from "lib0/function";
-@@ -27,6 +77,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
+@@ -27,6 +206,63 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
  	if (isInit) doc.commit({ origin: "sys:init" });
  	else doc.commit({ origin: "loroSyncPlugin" });
  }
@@ -566,7 +822,7 @@ index e41095d..0261794 100644
  function createNodeFromLoroObj(schema, obj, mapping) {
  	let retval = mapping.get(obj.id) ?? null;
  	if (retval != null) return retval;
-@@ -40,7 +147,9 @@ function createNodeFromLoroObj(schema, obj, mapping) {
+@@ -40,7 +276,9 @@ function createNodeFromLoroObj(schema, obj, mapping) {
  			retval = schema.node(nodeName, attributes.toJSON(), mappedChildren);
  			WEAK_NODE_TO_LORO_CONTAINER_MAPPING.set(retval, obj.id);
  		} catch (e) {
@@ -577,7 +833,7 @@ index e41095d..0261794 100644
  		}
  	} else if (obj instanceof LoroText) {
  		retval = [];
-@@ -82,19 +191,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
+@@ -82,19 +320,70 @@ function createLoroText(parentList, pos, nodes, mapping) {
  function updateLoroText(obj, nodes, mapping) {
  	mapping.set(obj.id, nodes);
  	let str = obj.toString();
@@ -655,7 +911,7 @@ index e41095d..0261794 100644
  }
  function nodeMarksToAttributes(marks) {
  	const pattrs = {};
-@@ -155,6 +315,11 @@ function eqMappedNode(mapped, node) {
+@@ -155,6 +444,11 @@ function eqMappedNode(mapped, node) {
  	return false;
  }
  function normalizeNodeContent(node) {
@@ -667,7 +923,7 @@ index e41095d..0261794 100644
  	const res = [];
  	let textNodes = null;
  	node.content.forEach((node, _offset, _i) => {
-@@ -225,13 +390,40 @@ function updateLoroMapAttributes(obj, node, _mapping) {
+@@ -225,13 +519,40 @@ function updateLoroMapAttributes(obj, node, _mapping) {
  	for (const [key, value] of Object.entries(pAttrs)) {
  		if (value !== null) {
  			if (!equalityDeep(attrs.get(key), value)) attrs.set(key, value);
@@ -711,26 +967,24 @@ index e41095d..0261794 100644
  }
  function updateLoroMapChildren(obj, node, mapping) {
  	const loroChildren = getLoroMapChildren(obj);
-@@ -257,6 +449,26 @@ function updateLoroMapChildren(obj, node, mapping) {
+@@ -257,6 +578,24 @@ function updateLoroMapChildren(obj, node, mapping) {
  			if (!Array.isArray(rightNode)) updateLoroMap(rightLoro, rightNode, mapping);
  		} else break;
  	}
-+	// CardMirror patch: a pure relocation is one op, not a span rewrite.
++	// CardMirror patch: a pure relocation is per-child moves, never a
++	// span rewrite (see cardmirrorDetectReorder).
 +	if (!globalThis.__CM_DISABLE_MOVE_DIFF__) {
-+		const rot = cardmirrorDetectRotation(loroChildren, nodeChildren, left, right, loroChildLength, nodeChildLength, mapping);
-+		if (rot != null) {
-+			if (typeof loroChildren.move === "function") {
-+				// Movable list (v1.0, flag-gated): identity-preserving, O(1).
-+				loroChildren.move(rot.from, rot.to);
-+			} else {
-+				// Plain list: one card's worth instead of the whole span. The
-+				// moved child is rebuilt, so it gets a new identity — the
++		const moves = cardmirrorDetectReorder(loroChildren, nodeChildren, left, right, loroChildLength, nodeChildLength, mapping);
++		if (moves != null) {
++			const movable = typeof loroChildren.move === "function";
++			for (const m of moves) if (movable) loroChildren.move(m.from, m.to);
++			else {
++				// Plain list: rebuild ONLY the moved child (new identity);
 +				// passed-over children keep theirs, which is the loss fix.
-+				const moving = nodeChildren[rot.to];
-+				const doomed = loroChildren.get(rot.from);
++				const doomed = loroChildren.get(m.from);
 +				if (isContainer(doomed)) mapping.delete(doomed.id);
-+				loroChildren.delete(rot.from, 1);
-+				createLoroChild(loroChildren, rot.to, moving, mapping);
++				loroChildren.delete(m.from, 1);
++				createLoroChild(loroChildren, m.to, m.node, mapping);
 +			}
 +			return;
 +		}
@@ -738,7 +992,7 @@ index e41095d..0261794 100644
  	while (loroChildLength - left - right > 0 && nodeChildLength - left - right > 0) {
  		const leftLoro = loroChildren.get(left);
  		const leftNode = nodeChildren[left];
-@@ -421,27 +633,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -421,27 +760,29 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
@@ -787,7 +1041,7 @@ index e41095d..0261794 100644
  	}
  	return DecorationSet.create(state.doc, d);
  }
-@@ -505,7 +719,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
+@@ -505,7 +846,7 @@ function cursorToAbsolutePosition(cursor, doc, mapping) {
  	}
  	while (loroNode != null) {
  		const children = loroNode.get(CHILDREN_KEY);
@@ -796,7 +1050,7 @@ index e41095d..0261794 100644
  			const childIds = children.toArray();
  			for (const iter of childIds) {
  				if (iter.id === targetChildId) break;
-@@ -586,6 +800,23 @@ const LoroSyncPlugin = (props) => {
+@@ -586,6 +927,23 @@ const LoroSyncPlugin = (props) => {
  						break;
  					default: break;
  				}
@@ -820,7 +1074,7 @@ index e41095d..0261794 100644
  				return state;
  			}
  		},
-@@ -649,14 +880,72 @@ function updateNodeOnLoroEvent(view, event) {
+@@ -649,14 +1007,72 @@ function updateNodeOnLoroEvent(view, event) {
  	const mapping = state.mapping;
  	clearChangedNodes(state.doc, event, mapping);
  	const node = createNodeFromLoroObj(view.state.schema, state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY), mapping);
