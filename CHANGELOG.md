@@ -29,6 +29,8 @@ beta — it is what it is because of you.
   the machines it was actually connected on). No visible change, and
   nothing changes for unlinked machines or self-hosted relays.
 
+## 0.1.0-beta.32 — 2026-08-12
+
 ### Added
 
 - **Recover Previous Version — get back what a bad co-editing session

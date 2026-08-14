@@ -50,6 +50,8 @@ relay-side minimum-version gate's ability to distinguish 1.0 builds
 (the version header shipped in beta.32; the floor remains off until
 flipped server-side).
 
+## 0.1.0-beta.32 — 2026-08-12
+
 ### Added: Recover Previous Version (session history files)
 
 Co-editing gives each participant undo over only their own changes, so
