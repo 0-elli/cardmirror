@@ -236,6 +236,7 @@ import { setRePickOpener, setOpenSourceOpener } from './transclusion-actions.js'
 import { isTransclusionNode, fragmentHasZone } from './transclusion.js';
 import { showConfirm } from './confirm-dialog.js';
 import { linkContextMenuPlugin } from './link-context-menu-plugin.js';
+import { textContextMenuPlugin } from './text-context-menu-plugin.js';
 import { wordSelectionPlugin } from './word-selection-plugin.js';
 import { typeOverBoundaryPlugin } from './type-over-boundary.js';
 import { smartQuotesPlugin } from './smart-quotes-plugin.js';
@@ -5364,6 +5365,10 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
   // Editor spellcheck — viewport-scoped custom checker, gated internally
   // on the `editorSpellcheck` setting (does nothing when off).
   plugins.push(viewportSpellcheckPlugin());
+  // Fallback Cut/Copy/Paste context menu. MUST register after the
+  // image, link, and spellcheck menus — it claims every right-click
+  // that reaches it, and handleDOMEvents run in registration order.
+  plugins.push(textContextMenuPlugin);
   // Voice control (SPEC-voice.md §12 item 3): plugin state (mode, pen,
   // utterance atomicity). Desktop-only at runtime; the plugin itself is
   // inert without a session. The session toggle is bound through the

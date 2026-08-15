@@ -145,6 +145,10 @@ export interface BulkCompressProgress extends BulkCompressSummary {
  *  doesn't take a build-time dependency on Electron-specific code. */
 interface ElectronAPI {
   clipboardReadText(): Promise<string>;
+  /** Main-process read of the html + plain clipboard flavors.
+   *  Optional so a renderer against an older packaged shell falls
+   *  back to text-only paste via clipboardReadText. */
+  clipboardReadHtml?(): Promise<{ html?: unknown; text?: unknown }>;
   /** Main-process clipboard write (html + plain). Optional so a
    *  renderer against an older packaged shell falls back to the
    *  renderer clipboard. */
@@ -537,6 +541,16 @@ export class ElectronHost implements Host {
 
   async clipboardReadText(): Promise<string> {
     return api().clipboardReadText();
+  }
+
+  async clipboardReadHtml(): Promise<{ html: string; text: string } | null> {
+    const fn = api().clipboardReadHtml;
+    if (!fn) return null; // older shell — caller falls back to text
+    const r = await fn.call(api());
+    return {
+      html: typeof r?.html === 'string' ? r.html : '',
+      text: typeof r?.text === 'string' ? r.text : '',
+    };
   }
 
   async clipboardWriteHtml(html: string, text: string): Promise<boolean> {

@@ -553,6 +553,13 @@ function bytesToBuffer(bytes: unknown): Buffer {
  *  its arm-then-paste flow because navigator.clipboard.readText
  *  needs a per-press permission grant under Chromium's web policy. */
 ipcMain.handle('host:clipboard-read-text', () => clipboard.readText());
+/** Editor context-menu Paste: both flavors in one read so the
+ *  renderer can prefer rich html and fall back to plain text
+ *  without a second IPC round trip racing the clipboard. */
+ipcMain.handle('host:clipboard-read-html', () => ({
+  html: clipboard.readHTML(),
+  text: clipboard.readText(),
+}));
 ipcMain.handle(
   'host:clipboard-write-html',
   (_evt, payload?: { html?: unknown; text?: unknown }) => {
