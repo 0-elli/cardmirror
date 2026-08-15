@@ -5,6 +5,70 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 1.0.1 — 2026-08-15
+
+### Added: editor text context menu (Cut / Copy / Paste)
+
+Right-click on editor text opens a fallback menu wherever the image,
+link, and spellcheck menus don't claim the click. Cut and Copy
+serialize the live selection through the editor's own clipboard
+serialization (so custom copy hooks apply exactly as a keyboard copy
+would) and the shared main-process-first clipboard-write ladder; Cut
+deletes only after the write reports success, so a busy Win32
+clipboard can never eat text. Paste reads both html and plain flavors
+in a single main-process IPC on desktop — no permission UI, rich
+flavor preserved; older packaged shells fall back to text-only, and
+the web edition asks the async clipboard API, surfacing a
+press-the-shortcut toast if the browser blocks it. Cut/Copy disable
+with no selection; Cut/Paste disable in read-only views.
+
+### Fixed: paintbrush stroke-gesture guard
+
+The sticky paintbrush applied its color on ANY mouseup over a live
+selection — no button filter, no tie to how the selection was made.
+The field failure: with the brush armed, select-all followed by a
+right-click (a context-menu attempt; the browser preserves the
+selection for it) painted 74% of a shared document in one event.
+Painting now requires the full gesture: a primary-button mousedown
+inside the same editor pane, released with real pointer travel or as
+a double/triple-click select. Shift-click extends are excluded
+(that's the select-to-copy gesture); genuine drags and double-click
+word selects behave exactly as before, including the strip-pen
+modifier.
+
+### Fixed: concurrent table edits (ragged-table detonation)
+
+Concurrent "add row" + "add column" merge to a table whose rows have
+unequal widths — legal, since schema content expressions cannot
+constrain widths. prosemirror-tables' TableMap misbehaves on that
+shape: addRowAfter from a short-row cell nested an empty row INSIDE
+the trailing row, ProseMirror's replace fitter accepted the invalid
+document, and the sync layer faithfully replicated it — remote peers
+dropped the whole damaged row while the originator kept it,
+permanently splitting what each participant saw. Three independent
+layers now cover the sequence: structural table commands normalize
+the table in the same transaction before running (one undo step);
+the repair pass straightens already-damaged tables instead of
+crashing on them (hoisting real cells, dropping the empty artifact),
+on every peer since only the originator's document holds the damage;
+and the CRDT materializer salvages a damaged row's legal cells for
+remote peers instead of discarding the row. Fuzzed to 2,700 seeds
+across three fuzzers and both room formats with zero convergence,
+validity, or loss failures.
+
+### Fixed: canonical mark equality in the sync binding
+
+The binding compared text formatting with JSON string equality, but
+the CRDT round-trip reorders attribute keys and null-valued keys are
+semantically identical to absent ones — so unchanged formatting near
+minimized (8pt) runs re-diffed on every pass and could ride along as
+redundant mark operations wherever nearby text was genuinely
+formatted, last-writer-wins stomping a partner's concurrent
+formatting edits on the same range. Equality is now canonical
+(key-order-insensitive, null ≡ absent, segmentation-insensitive), and
+stored values are never migrated — old and new sessions interoperate
+unchanged.
+
 ## 1.0.0 — 2026-08-13
 
 ### Changed: movable-list co-editing rooms (per-room format, no flag day)

@@ -5,6 +5,40 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 1.0.1 — 2026-08-15
+
+### Added
+
+- **Right-click menu in the editor.** Right-clicking text now offers
+  Cut, Copy, and Paste, with the usual shortcuts listed alongside.
+  Links, images, and spelling suggestions keep their own menus. Cut
+  never deletes anything unless the copy actually reached the
+  clipboard, and a failed copy says so instead of failing silently.
+
+### Fixed
+
+- **The sticky highlighter pen only paints real strokes now.** With
+  the pen armed, releasing any click over selected text used to apply
+  the color — including a right-click, so select-all followed by a
+  right-click could highlight an entire document in one accidental
+  gesture, live in a shared session. Painting now requires a genuine
+  stroke: a mouse drag (or a double/triple-click word select) made in
+  the editor itself.
+
+- **Tables no longer corrupt when co-editors change rows and columns
+  at the same time.** Two people simultaneously adding a row and a
+  column could leave a table with uneven rows, after which the next
+  "Add Row" could corrupt the document — and leave participants
+  permanently seeing different tables. Table commands now straighten
+  the table out first, previously-damaged tables repair themselves
+  automatically, and everyone else in the session keeps the affected
+  row's contents intact.
+
+- **Formatting syncs more cleanly in co-editing sessions.** Editing
+  text near minimized runs no longer re-sends formatting that didn't
+  change — redundant updates that could overwrite a partner's
+  concurrent formatting edits on the same text.
+
 ## 1.0.0 — 2026-08-13
 
 CardMirror 1.0. Thank you to everyone who used the editor through the
