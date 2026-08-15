@@ -5,6 +5,8 @@
  * convergence, schema validity, and repair-pass idempotence. The
  * promoted form of the bake-off fuzzer (which ran 150 seeds against
  * this same binding with zero failures); trimmed for CI budget.
+ * Crank locally with FUZZ_SEEDS=150 (same knob as move-fuzz) for a
+ * release-confidence soak.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -98,9 +100,14 @@ function randomOp(rnd: () => number, p: LoroPeer): void {
   }
 }
 
+const SEEDS = Number(process.env['FUZZ_SEEDS'] ?? 15);
+// First seed to run (soak-failure triage: rerun one seed in isolation
+// with FUZZ_SEED_START=51 FUZZ_SEEDS=51).
+const SEED_START = Number(process.env['FUZZ_SEED_START'] ?? 1);
+
 describe('loro CRDT fuzz (3 peers, offline partitions)', () => {
-  it('converges valid across 15 seeds', { timeout: 60_000 }, async () => {
-    for (let seed = 1; seed <= 15; seed++) {
+  it(`converges valid across seeds ${SEED_START}..${SEEDS}`, { timeout: 8_000 * (SEEDS - SEED_START + 1) }, async () => {
+    for (let seed = SEED_START; seed <= SEEDS; seed++) {
       const rnd = mulberry32(seed);
       const peers = await createLoroPeers(mixedDoc(), 3);
       for (let round = 0; round < 4; round++) {
@@ -122,7 +129,21 @@ describe('loro CRDT fuzz (3 peers, offline partitions)', () => {
       await syncAll(peers);
       await syncAll(peers);
       const docs = peers.map((p) => p.doc());
-      for (const d of docs) {
+      for (const [i, d] of docs.entries()) {
+        // On divergence, dump the first differing region before the
+        // assertion kills the run — soak failures (e.g. seed 51,
+        // 2026-08-15) are undiagnosable from a bare eq:false.
+        if (!d.eq(docs[0]!)) {
+          const a = JSON.stringify(docs[0]!.toJSON());
+          const b = JSON.stringify(d.toJSON());
+          let at = 0;
+          while (at < Math.min(a.length, b.length) && a[at] === b[at]) at++;
+          console.log(
+            `[loro-fuzz] seed ${seed} peer 0 vs peer ${i} first diff @${at}:\n` +
+              `  peer0: …${a.slice(Math.max(0, at - 60), at + 120)}…\n` +
+              `  peer${i}: …${b.slice(Math.max(0, at - 60), at + 120)}…`,
+          );
+        }
         expect(d.eq(docs[0]!), `seed ${seed} convergence`).toBe(true);
         expect(() => d.check(), `seed ${seed} validity`).not.toThrow();
       }
