@@ -97,12 +97,103 @@ function canonicalizeHealSentinels(tr: Transaction): void {
   });
 }
 
-/** The all-peer repair half: exclusive-marks resolution + heal-sentinel
- *  canonicalization — both deterministic and convergent under
- *  concurrent application, unlike the structural table/head insertions
- *  in `buildDocRepairTr`, which stay leader-gated (see collab-repair). */
+/** Structural table normalization — the post-detonation heal for the
+ *  ragged-table command bug (seed-51 soak find, 2026-08-15): a client
+ *  without the table-guard runs `addRowAfter` from a short-row cell of
+ *  a RAGGED table (the shape concurrent row+column inserts merge to)
+ *  and prosemirror-tables nests an empty table_row INSIDE the trailing
+ *  row — and ProseMirror's replace fitter ACCEPTS the schema-invalid
+ *  doc. `fixTables` then throws on that state, so this pass must run
+ *  before it (and the fixTables call stays guarded regardless).
+ *
+ *  Deterministic rules: a nested row carrying cells is hoisted to a
+ *  sibling row after its container (nothing the user typed is lost);
+ *  an EMPTY nested row is dropped — it is the detonation artifact, the
+ *  user's intended row is its container; any other illegal child of a
+ *  row or table is dropped; a table left with no rows is removed
+ *  (its content expression requires one). */
+function normalizeTableStructure(tr: Transaction): void {
+  const rowType = schema.nodes['table_row']!;
+  const isCell = (n: PMNode): boolean =>
+    n.type.name === 'table_cell' || n.type.name === 'table_header';
+  const targets: Array<{ pos: number; node: PMNode }> = [];
+  tr.doc.descendants((node, pos) => {
+    if (node.type.name !== 'table') return true;
+    let dirty = false;
+    node.forEach((row) => {
+      if (row.type !== rowType) dirty = true;
+      row.forEach((c) => {
+        if (!isCell(c)) dirty = true;
+      });
+    });
+    if (dirty) targets.push({ pos, node });
+    return false;
+  });
+  // replaceWith shifts positions — apply bottom-up.
+  for (const { pos, node } of targets.reverse()) {
+    const rows: PMNode[] = [];
+    const pushRow = (row: PMNode): void => {
+      const cells: PMNode[] = [];
+      const nested: PMNode[] = [];
+      row.forEach((c) => {
+        if (isCell(c)) cells.push(c);
+        else if (c.type === rowType) nested.push(c);
+        // anything else: dropped
+      });
+      if (cells.length) rows.push(rowType.createChecked(row.attrs, cells));
+      for (const n of nested) pushRow(n);
+    };
+    node.forEach((row) => {
+      if (row.type === rowType) pushRow(row);
+      // non-row child of table: dropped
+    });
+    if (rows.length) {
+      tr.replaceWith(
+        pos,
+        pos + node.nodeSize,
+        schema.nodes['table']!.createChecked(node.attrs, rows),
+      );
+    } else {
+      tr.delete(pos, pos + node.nodeSize);
+    }
+  }
+}
+
+/** `fixTables`, but never allowed to take the repair pass down with it:
+ *  it throws on structurally-invalid tables (row nested inside row).
+ *  With `normalizeTableStructure` running first that state is gone,
+ *  but an unforeseen invalid shape must degrade to "tables unpadded
+ *  this pass", not "no repair at all". */
+function safeFixTables(state: EditorState, oldState?: EditorState): Transaction | null {
+  try {
+    return fixTables(state, oldState) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The all-peer repair half: table-structure normalization +
+ *  exclusive-marks resolution + heal-sentinel canonicalization — all
+ *  deterministic, unlike the structural table/head insertions in
+ *  `buildDocRepairTr`, which stay leader-gated (see collab-repair).
+ *
+ *  Table normalization runs on EVERY peer for the same reason the
+ *  heal sentinels do: the invalid table lives ONLY in the PM doc of
+ *  the peer whose command created it — the materializer salvages it
+ *  away on everyone else — so a leader-gated pass would never reach
+ *  it unless that peer happened to be leader. The pass is a no-op for
+ *  every other peer, and self-extinguishing: the write-back heals the
+ *  CRDT, after which no peer's doc is dirty. (Two peers concurrently
+ *  holding invalid copies of the SAME table could merge duplicate
+ *  rows — visible, user-fixable, and requires two simultaneous
+ *  detonations of one table; accepted, same as the multi-head merge
+ *  corner above.) */
 export function buildMarkRepairTr(state: EditorState): Transaction | null {
   const tr = state.tr;
+  // Order matters: normalization uses replaceWith (position-shifting),
+  // and the two sweeps below walk the CURRENT tr.doc, so they must
+  // come after it.
+  normalizeTableStructure(tr);
   sweepExclusiveMarks(tr);
   canonicalizeHealSentinels(tr);
   return tr.steps.length ? tr : null;
@@ -122,7 +213,20 @@ export function buildMarkRepairTr(state: EditorState): Transaction | null {
  *  no oldState and keep the full scan, which also remains the backstop
  *  for anything a bounded session pass could ever leave behind. */
 export function buildDocRepairTr(state: EditorState, oldState?: EditorState): Transaction | null {
-  const tr = fixTables(state, oldState) ?? state.tr;
+  // Structural normalization first — fixTables THROWS on the states it
+  // heals (see normalizeTableStructure). When it made changes,
+  // fixTables must see the normalized doc, so its steps are folded on
+  // top; the oldState fast path is skipped in that (rare) case.
+  const structural = state.tr;
+  normalizeTableStructure(structural);
+  let tr: Transaction;
+  if (structural.steps.length) {
+    const fixed = safeFixTables(state.apply(structural));
+    if (fixed) for (const step of fixed.steps) structural.step(step);
+    tr = structural;
+  } else {
+    tr = safeFixTables(state, oldState) ?? state.tr;
+  }
 
   // Mark sweep scans tr.doc so positions reflect any table fixes above;
   // removeMark never shifts positions, so one scan can batch all fixes.

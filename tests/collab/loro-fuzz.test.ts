@@ -11,7 +11,17 @@
 
 import { describe, it, expect } from 'vitest';
 import { TextSelection } from 'prosemirror-state';
-import { addRowAfter, addColumnAfter, deleteRow, deleteColumn } from 'prosemirror-tables';
+// Table ops go through the app's ragged-table guard, exactly as the
+// ribbon dispatches them — raw prosemirror-tables commands on a ragged
+// table (the shape concurrent row+column inserts merge to) can nest a
+// row inside a row and corrupt the doc (seed 51). The raw-command
+// aftermath is covered by tests/collab/table-clash.test.ts.
+import {
+  guardedAddRowAfter,
+  guardedAddColumnAfter,
+  guardedDeleteRow,
+  guardedDeleteColumn,
+} from '../../src/editor/table-guard.js';
 import { schema } from '../../src/schema/index.js';
 import { buildDocRepairTr } from '../../src/doc-repair.js';
 import { repairView } from './_repair-view.js';
@@ -92,7 +102,12 @@ function randomOp(rnd: () => number, p: LoroPeer): void {
           TextSelection.create(view.state.doc, Math.min(cellPos, view.state.doc.content.size)),
         ),
       );
-      const cmd = [addRowAfter, addColumnAfter, deleteRow, deleteColumn][Math.floor(rnd() * 4)]!;
+      const cmd = [
+        guardedAddRowAfter,
+        guardedAddColumnAfter,
+        guardedDeleteRow,
+        guardedDeleteColumn,
+      ][Math.floor(rnd() * 4)]!;
       cmd(view.state, view.dispatch);
     }
   } catch {

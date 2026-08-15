@@ -101,17 +101,21 @@ import {
   getOperatingRanges,
   META_OPERATING_ON_SHADOW,
 } from './similar-selection-plugin.js';
+// Structural table commands go through the ragged-table guard — raw
+// prosemirror-tables commands on a ragged table (the shape concurrent
+// collab row+column inserts merge to) can nest a row inside a row and
+// corrupt the doc. See table-guard.ts.
 import {
-  addRowAfter,
-  addRowBefore,
-  deleteRow,
-  addColumnAfter,
-  addColumnBefore,
-  deleteColumn,
-  deleteTable,
-  mergeCells,
-  splitCell,
-} from 'prosemirror-tables';
+  guardedAddRowAfter,
+  guardedAddRowBefore,
+  guardedDeleteRow,
+  guardedAddColumnAfter,
+  guardedAddColumnBefore,
+  guardedDeleteColumn,
+  guardedDeleteTable,
+  guardedMergeCells,
+  guardedSplitCell,
+} from './table-guard.js';
 
 type HeadingTypeName = 'pocket' | 'hat' | 'block';
 
@@ -5904,23 +5908,23 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
     case 'insertTable':
       return insertTable();
     case 'addRowAfter':
-      return addRowAfter;
+      return guardedAddRowAfter;
     case 'addRowBefore':
-      return addRowBefore;
+      return guardedAddRowBefore;
     case 'deleteTableRow':
-      return deleteRow;
+      return guardedDeleteRow;
     case 'addColumnAfter':
-      return addColumnAfter;
+      return guardedAddColumnAfter;
     case 'addColumnBefore':
-      return addColumnBefore;
+      return guardedAddColumnBefore;
     case 'deleteTableColumn':
-      return deleteColumn;
+      return guardedDeleteColumn;
     case 'mergeTableCells':
-      return mergeCells;
+      return guardedMergeCells;
     case 'splitTableCell':
-      return splitCell;
+      return guardedSplitCell;
     case 'deleteTable':
-      return deleteTable;
+      return guardedDeleteTable;
     case 'newDocument':
       // File-level commands: always available, even with no doc open
       // and no selection. PM-command convention: a "query" call (no
