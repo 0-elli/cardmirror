@@ -57,7 +57,10 @@ function mount(doc: PMNode): void {
 }
 
 /** Select the doc range containing `needle`, then release a paint
- *  stroke (mouseup inside the editor), with optional modifiers. */
+ *  stroke as a full primary-button drag gesture (mousedown in the
+ *  editor, pointer travel, mouseup inside the editor), with optional
+ *  modifiers. The gesture handshake requires all three — a bare
+ *  mouseup no longer paints. */
 function stroke(needle: string, alt: boolean, ctrl = false): void {
   let from = -1;
   let to = -1;
@@ -71,8 +74,20 @@ function stroke(needle: string, alt: boolean, ctrl = false): void {
     return true;
   });
   if (from < 0) throw new Error(`"${needle}" not found`);
+  view.dom.dispatchEvent(
+    new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 10, clientY: 10 }),
+  );
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-  view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, altKey: alt, ctrlKey: ctrl }));
+  view.dom.dispatchEvent(
+    new MouseEvent('mouseup', {
+      bubbles: true,
+      button: 0,
+      clientX: 60,
+      clientY: 10,
+      altKey: alt,
+      ctrlKey: ctrl,
+    }),
+  );
 }
 
 /** Does any text node containing `needle` carry the highlight mark? */
@@ -90,6 +105,12 @@ function highlighted(needle: string): boolean {
 beforeEach(() => {
   buildRibbonStubs();
   settings.set('lastHighlightColor', 'yellow');
+  // jsdom has no layout: PM's own mousedown handler calls
+  // posAtCoords -> document.elementFromPoint, which doesn't exist
+  // there. Stub it so the stroke helper's mousedown doesn't error out
+  // of PM's handler (the panel's listeners run at document level).
+  (document as unknown as { elementFromPoint: (x: number, y: number) => Element | null })
+    .elementFromPoint = () => null;
 });
 
 afterEach(() => {

@@ -8,7 +8,10 @@
  *     to it. If selection is empty, toggles a sticky paintbrush mode
  *     for that mark — subsequent drag-selects in the editor get the
  *     active color automatically until Escape or the button is clicked
- *     again. Behaviour mirrors Word's highlighter pen.
+ *     again. Behaviour mirrors Word's highlighter pen. Only a genuine
+ *     stroke paints: a primary-button drag or double/triple-click
+ *     select that began in the editor. Right-clicks, shift-click
+ *     extends, and selections made before the gesture never do.
  *   - Arrow button: opens a 16-swatch picker. Top-left swatch is always
  *     the none/automatic option (No highlight / No background /
  *     Automatic). Picking any swatch — including "none" — updates the
@@ -204,19 +207,55 @@ export function wireColorPanel(viewRef: ViewRef): ColorPanelHandle {
   }
 
   // Sticky paintbrush — apply the active mark to every drag-selected
-  // range while a paintbrush mode is on. Listen for mouseup *inside*
-  // the editor so click-mouseup on ribbon buttons doesn't accidentally
-  // re-apply the last selection. After applying, collapse the
+  // range while a paintbrush mode is on. After applying, collapse the
   // selection to the end of the painted range so the user can see
   // what they just painted (Word's "lift the brush" UX). The strip
   // key (⌃ on macOS, Alt elsewhere) held at release turns a colored
   // pen into the strip-pen for this stroke ("paint no color"); a pen
   // already set to "none" ignores it — it strips either way.
+  //
+  // A stroke must be a gesture the user made AS painting: a
+  // primary-button drag (or double/triple-click select) that began
+  // inside the editor while the brush was armed. Anything else that
+  // releases a mouse button over a live selection must not paint —
+  // before this handshake ANY mouseup did, so armed-brush + select-all
+  // + right-click (a context-menu attempt; the browser preserves the
+  // selection for it) painted a shared doc wall-to-wall in one event
+  // (field incident 2026-08-14). Shift-click extends are excluded on
+  // the same principle: that's the select-to-copy gesture, and a drag
+  // paints the same range anyway.
+  let paintStroke: { editorEl: HTMLElement; x: number; y: number } | null = null;
+  document.addEventListener(
+    'mousedown',
+    (e) => {
+      paintStroke = null;
+      if (!activePaintbrush || e.button !== 0 || e.shiftKey) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const editorEl = target?.closest('.ProseMirror');
+      if (!(editorEl instanceof HTMLElement)) return;
+      paintStroke = { editorEl, x: e.clientX, y: e.clientY };
+    },
+    // Capture, so a plugin that swallows mousedown can neither leave a
+    // stale stroke record behind nor block a legitimate one.
+    true,
+  );
   document.addEventListener('mouseup', (e) => {
+    const stroke = paintStroke;
+    paintStroke = null;
     if (!activePaintbrush) return;
+    if (e.button !== 0) return;
+    if (!stroke) return;
     const view = viewRef.view;
     if (!view) return;
+    // The gesture must have started in the pane resolved at stroke
+    // time — the element match also keeps ribbon-click mouseups (and
+    // strokes begun in another pane) away from this view's selection.
+    if (stroke.editorEl !== view.dom) return;
     if (!view.dom.contains(e.target as Node)) return;
+    // A stationary single click is selection housekeeping (caret move,
+    // collapse), not a stroke — require real drag travel or a
+    // double/triple-click select.
+    if (e.detail < 2 && Math.hypot(e.clientX - stroke.x, e.clientY - stroke.y) < 3) return;
     const sel = view.state.selection;
     if (sel.empty) return;
     const setup = controls.find((c) => c.paintbrushMode === activePaintbrush);
