@@ -49,6 +49,9 @@ declare global {
 }
 
 const SEEDS = Number(process.env['FUZZ_SEEDS'] ?? 5);
+// Triage knob, same as loro-fuzz: rerun one seed in isolation with
+// FUZZ_SEED_START=n FUZZ_SEEDS=n.
+const SEED_START = Number(process.env['FUZZ_SEED_START'] ?? 1);
 const ROUNDS = Number(process.env['FUZZ_ROUNDS'] ?? 8);
 const PEERS = Number(process.env['FUZZ_PEERS'] ?? 5);
 const CARDS = 12;
@@ -186,7 +189,8 @@ function randomOp(rnd: () => number, p: LoroPeer, peerIdx: number): void {
 }
 
 async function fuzzRun(): Promise<void> {
-  for (let seed = 1; seed <= SEEDS; seed++) {
+  for (let seed = SEED_START; seed <= SEEDS; seed++) {
+    if (process.env['FUZZ_LOG_SEEDS']) console.log(`[deep-fuzz] seed ${seed}`);
     const rnd = mulberry32(seed);
     const peers = await createLoroPeers(seedDoc(), PEERS);
     for (let round = 0; round < ROUNDS; round++) {
