@@ -28,7 +28,7 @@ import { Selection, TextSelection } from 'prosemirror-state';
 import type { EditorState, Transaction } from 'prosemirror-state';
 import { schema } from '../../schema/index.js';
 import { settings } from '../settings.js';
-import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiFailureNotice, aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion } from './edit-coordinator.js';
 import { showToast } from '../toast.js';
@@ -470,9 +470,9 @@ export function runAiCreateCite(view: EditorView): void {
       applyCiteToSelection(view, region.from, region.to, parsed, (tr) => lease.apply(tr));
     } catch (e) {
       if (e instanceof LlmError) {
-        showToast(`Cite: ${e.message}`);
+        aiFailureNotice('Create Cite', e);
       } else {
-        showToast(`Cite: ${e instanceof Error ? e.message : String(e)}`);
+        aiFailureNotice('Create Cite', e);
       }
     } finally {
       lease.release();

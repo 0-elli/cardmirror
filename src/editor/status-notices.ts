@@ -115,9 +115,15 @@ function render(): void {
     return;
   }
   chip.hidden = false;
-  const worst = notices.some((n) => n.severity === 'error') ? 'error' : 'warning';
+  // Three display tiers by the WORST message present (user decision):
+  // grey/low-key for status updates, yellow for act-on, red critical.
+  const worst = notices.some((n) => n.severity === 'error')
+    ? 'error'
+    : notices.some((n) => n.severity === 'warning')
+      ? 'warning'
+      : 'info';
   chip.dataset['severity'] = worst;
-  chip.textContent = `⚠ ${notices.length}`;
+  chip.textContent = `${worst === 'info' ? 'ⓘ' : '⚠'} ${notices.length}`;
   chip.title = 'Notices — click to review';
   if (panel) renderPanel();
 }

@@ -30,7 +30,7 @@ import type { EditorState, Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../schema/index.js';
 import { settings } from '../settings.js';
-import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiFailureNotice, aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { salvageJson, extractJsonObjects } from './repair-text.js';
 import { showToast } from '../toast.js';
 import { AiActivity } from './ai-activity.js';
@@ -677,8 +677,7 @@ export function runRepairFormatting(view: EditorView): void {
       );
     } catch (e) {
       console.warn(`[repair-fmt] error: ${e instanceof Error ? e.message : String(e)}`);
-      if (e instanceof LlmError) showToast(`Repair formatting: ${e.message}`);
-      else showToast(`Repair formatting: ${e instanceof Error ? e.message : String(e)}`);
+      aiFailureNotice('Repair formatting', e);
     } finally {
       activity.stop();
       lease.release();

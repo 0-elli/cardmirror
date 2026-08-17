@@ -20,7 +20,7 @@ import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema/index.js';
 import { settings } from './settings.js';
-import { callLlm, LlmError, type LlmMessage, activeApiKey, aiGateToast } from './ai/llm.js';
+import { aiFailureNotice, callLlm, LlmError, type LlmMessage, activeApiKey, aiGateToast } from './ai/llm.js';
 import {
   buildExplainContext,
   formatExplainFirstTurn,
@@ -1517,8 +1517,7 @@ export class CommentsColumn {
         if (kind === 'ai') learnStore.appendAiComment(id, aiTurn);
         else learnStore.appendNoteComment(id, aiTurn);
       } catch (e) {
-        if (e instanceof LlmError) showToast(`AI: ${e.message}`);
-        else showToast(`AI error: ${e instanceof Error ? e.message : String(e)}`);
+        aiFailureNotice('AI', e);
       } finally {
         this.aiInFlight.delete(id);
         if (this.aiInFlight.size === 0) this.stopActivityTicker();
@@ -1598,8 +1597,7 @@ export class CommentsColumn {
     try {
       card = await requestFlashcard(apiKey, ctx, turns);
     } catch (e) {
-      if (e instanceof LlmError) showToast(`AI: ${e.message}`);
-      else showToast(`AI error: ${e instanceof Error ? e.message : String(e)}`);
+      aiFailureNotice('AI', e);
       btn.disabled = false;
       btn.textContent = 'Convert to Flashcard';
       return;
@@ -2447,9 +2445,9 @@ export class CommentsColumn {
         v2.dispatch(v2.state.tr.setMeta(commentsKey, addReplyMeta(threadId, aiComment)));
       } catch (e) {
         if (e instanceof LlmError) {
-          showToast(`AI: ${e.message}`);
+          aiFailureNotice('AI', e);
         } else {
-          showToast(`AI error: ${e instanceof Error ? e.message : String(e)}`);
+          aiFailureNotice('AI', e);
         }
       } finally {
         this.aiInFlight.delete(threadId);

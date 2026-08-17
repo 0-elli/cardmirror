@@ -29,7 +29,7 @@ import {
 } from '../settings.js';
 import { showToast } from '../toast.js';
 import { promptForChoice } from '../text-prompt.js';
-import {
+import { aiFailureNotice,
   LlmError,
   callLlm,
   VISION_MEDIA_TYPES,
@@ -332,9 +332,9 @@ function runAiAltTextRequest(
       applyAltTextResult(view, region.from, altText, { writeAttribute: true }, (tr) => lease.apply(tr));
     } catch (err) {
       if (err instanceof LlmError) {
-        showToast(`Alt text: ${err.message}`);
+        aiFailureNotice('Alt text', err);
       } else {
-        showToast(`Alt text: ${err instanceof Error ? err.message : String(err)}`);
+        aiFailureNotice('Alt text', err);
       }
     } finally {
       lease.release();
@@ -585,9 +585,9 @@ export function runGenerateTable(
       lease.apply(tr.scrollIntoView());
     } catch (err) {
       if (err instanceof LlmError) {
-        showToast(`Table: ${err.message}`);
+        aiFailureNotice('Image to table', err);
       } else {
-        showToast(`Table: ${err instanceof Error ? err.message : String(err)}`);
+        aiFailureNotice('Image to table', err);
       }
     } finally {
       lease.release();

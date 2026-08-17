@@ -22,7 +22,7 @@ import { Selection } from 'prosemirror-state';
 import type { EditorState, Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { settings } from '../settings.js';
-import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiFailureNotice, aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { showToast } from '../toast.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion, type EditLease } from './edit-coordinator.js';
@@ -829,8 +829,7 @@ export function runRepairText(view: EditorView): void {
       // Mirror the failure to the console (forwarded to the dev log) —
       // the toast is transient and otherwise leaves no trace to debug.
       console.warn(`[repair] error: ${e instanceof Error ? e.message : String(e)}`);
-      if (e instanceof LlmError) showToast(`Repair: ${e.message}`);
-      else showToast(`Repair: ${e instanceof Error ? e.message : String(e)}`);
+      aiFailureNotice('Repair text', e);
     } finally {
       activity.stop();
       lease.release();

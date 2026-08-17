@@ -66,12 +66,16 @@ describe('status notices', () => {
     expect(panel()!.textContent).toContain('×6');
   });
 
-  it('distinct notices stack; severity colors the chip by the worst', () => {
+  it('distinct notices stack; the chip displays the worst tier present', () => {
+    postNotice({ severity: 'info', title: 'I', body: 'i body' });
+    expect(chip().dataset['severity']).toBe('info');
+    expect(chip().textContent).toContain('ⓘ');
     postNotice({ severity: 'warning', title: 'W', body: 'w body' });
     expect(chip().dataset['severity']).toBe('warning');
+    expect(chip().textContent).toContain('⚠');
     postNotice({ severity: 'error', title: 'E', body: 'e body' });
-    expect(noticeCount()).toBe(2);
-    expect(chip().textContent).toContain('2');
+    expect(noticeCount()).toBe(3);
+    expect(chip().textContent).toContain('3');
     expect(chip().dataset['severity']).toBe('error');
   });
 

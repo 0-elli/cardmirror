@@ -21,6 +21,7 @@
 
 import { settings } from '../settings.js';
 import { showToast } from '../toast.js';
+import { postNotice } from '../status-notices.js';
 
 /** Anthropic multipart content blocks (vision support). A text-only
  *  message can be a plain string; messages with images use the
@@ -119,6 +120,20 @@ export function resolveAiModel(): string {
   }
   const override = (settings.get('aiModelOverride') || '').trim();
   return isPlausibleModelId(override) ? override : DEFAULT_MODEL;
+}
+
+/** Error tail for every AI feature: immediate toast + a durable,
+ *  coalescing chip entry. The payload is unbounded provider text the
+ *  user often needs to re-read or copy (rate limits, auth, model
+ *  errors) — exactly what a cursor tooltip loses. */
+export function aiFailureNotice(tool: string, err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  postNotice({
+    severity: 'error',
+    title: `${tool} failed`,
+    body: `${tool}: ${msg}`,
+    key: `ai:${tool}`,
+  });
 }
 
 export const AI_DISABLED_MESSAGE = 'AI features are disabled — enable them in Settings.';

@@ -23,7 +23,7 @@
 
 import type { EditorView } from 'prosemirror-view';
 import { settings, condenseWarningCloseFor } from './settings.js';
-import { callLlm, LlmError, resolveAiModel, activeApiKey, aiConfigured } from './ai/llm.js';
+import { aiFailureNotice, callLlm, LlmError, resolveAiModel, activeApiKey, aiConfigured } from './ai/llm.js';
 import { showToast } from './toast.js';
 import { CLIPBOARD_BUSY_MESSAGE, writeClipboardText } from './clipboard-write.js';
 
@@ -364,8 +364,7 @@ export function runTranslate(view: EditorView): void {
         truncated ? { durationMs: 4000 } : undefined,
       );
     } catch (e) {
-      if (e instanceof LlmError) showToast(`Translate: ${e.message}`);
-      else showToast(`Translate: ${e instanceof Error ? e.message : String(e)}`);
+      aiFailureNotice('Translate', e);
     }
   })();
 }

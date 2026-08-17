@@ -15359,6 +15359,11 @@ body.pmd-multi-doc #collab-chip {
   font-weight: 600;
 }
 
+/* Info tier: low-key status updates — no alarm color, no bold. */
+#notice-chip[data-severity='info'] {
+  color: var(--pmd-c-text-muted);
+}
+
 .pmd-notice-panel {
   position: fixed;
   right: 8px;

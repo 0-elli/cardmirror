@@ -35,12 +35,13 @@
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { settings } from '../settings.js';
-import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiFailureNotice, aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion } from './edit-coordinator.js';
 import { showConfirm } from '../confirm-dialog.js';
 import { isAnyOverlayOpen } from '../overlay-stack.js';
 import { showToast } from '../toast.js';
+import { postNotice } from '../status-notices.js';
 import {
   DEFAULT_AI_CITE_PROMPT,
   CITE_TOKENS_MARKED_META,
@@ -342,7 +343,7 @@ async function reformatAllCites(
         // Auth / model / config failures repeat on every remaining cite;
         // stop rather than burning the whole document down on them.
         if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'model')) {
-          showToast(`Reformat cites: ${msg}`);
+          aiFailureNotice('Reformat cites', e);
           break;
         }
       } finally {
@@ -364,5 +365,12 @@ async function reformatAllCites(
     activity?.stop();
   }
 
-  showToast(summaryMessage(s, total), { durationMs: 5000 });
+  // Chip entry too: the audit flagged this multi-clause summary as
+  // un-toastable at any duration, and it's the record of what the run
+  // did (and skipped) to the user's cites.
+  postNotice({
+    severity: s.failed || s.halted ? 'warning' : 'info',
+    title: 'Reformat All Cites finished',
+    body: summaryMessage(s, total),
+  });
 }
