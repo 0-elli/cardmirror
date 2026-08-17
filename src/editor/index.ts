@@ -202,6 +202,7 @@ import { editCoordinatorPlugin, coordinatorBlocks, flashLockedLeases } from './a
 import { cardCutterPreviewPlugin, cardCutterFlagPlugin } from './card-cutter-preview-plugin.js';
 import { italicCaretPlugin } from './italic-caret-plugin.js';
 import { absorbPlugin } from './absorb-plugin.js';
+import { containerIntegrityPlugin } from './container-integrity-plugin.js';
 import { citeClassifierPlugin } from './cite-classifier-plugin.js';
 import { namedStyleNormalizerPlugin } from './named-style-normalizer-plugin.js';
 import { fontSizeClassPlugin } from './font-size-class-plugin.js';
@@ -5300,6 +5301,11 @@ export function buildEditorPlugins(targetUid?: string | null): Plugin[] {
     makeSelfRefPlugin(),
     frozenSelectionPlugin,
     pilcrowSelectionPlugin,
+    // Backstop for schema-invalid containers a paste fitter can leave
+    // behind (Issue #34) — REGISTERED BEFORE absorb: PM restarts the
+    // appendTransaction loop after each appended tr, so healing first
+    // means absorb never walks a wounded doc.
+    containerIntegrityPlugin,
     absorbPlugin,
     citeClassifierPlugin,
     namedStyleNormalizerPlugin,

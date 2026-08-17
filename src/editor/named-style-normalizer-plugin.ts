@@ -61,53 +61,62 @@ export const namedStyleNormalizerPlugin: Plugin = new Plugin({
     const emphasisMark = schema.marks['emphasis_mark']!;
     let tr: Transaction | null = null;
 
-    newState.doc.nodesBetween(range.from, range.to, (node, pos, parent) => {
-      if (node.type.name === 'image') {
-        for (const m of node.marks) {
-          if (!IMAGE_ALLOWED_MARKS.has(m.type.name)) {
-            if (!tr) tr = newState.tr;
-            tr.removeNodeMark(pos, m);
+    // try/catch: mirrors the cite-classifier — a schema-invalid doc
+    // mid-dispatch (Issue #34 fitter shells) makes the walk throw and
+    // would abort the dispatch before the integrity heal can run.
+    try {
+      newState.doc.nodesBetween(range.from, range.to, (node, pos, parent) => {
+        if (node.type.name === 'image') {
+          for (const m of node.marks) {
+            if (!IMAGE_ALLOWED_MARKS.has(m.type.name)) {
+              if (!tr) tr = newState.tr;
+              tr.removeNodeMark(pos, m);
+            }
           }
+          return false;
         }
-        return false;
-      }
-      if (!node.isText || !parent) return true;
-      const parentName = parent.type.name;
-      const hasDirect = node.marks.some((m) => m.type === directMark);
-      const hasNamed = node.marks.some((m) => m.type === namedMark);
-      const hasCiteOrEmph = node.marks.some(
-        (m) => m.type === citeMark || m.type === emphasisMark,
-      );
-      const isBody = BODY_TEXTBLOCKS.has(parentName);
-      const isStructural = STRUCTURAL_TEXTBLOCKS.has(parentName);
+        if (!node.isText || !parent) return true;
+        const parentName = parent.type.name;
+        const hasDirect = node.marks.some((m) => m.type === directMark);
+        const hasNamed = node.marks.some((m) => m.type === namedMark);
+        const hasCiteOrEmph = node.marks.some(
+          (m) => m.type === citeMark || m.type === emphasisMark,
+        );
+        const isBody = BODY_TEXTBLOCKS.has(parentName);
+        const isStructural = STRUCTURAL_TEXTBLOCKS.has(parentName);
 
-      if (isBody) {
-        if (hasCiteOrEmph) {
-          // Cite or emphasis present → strip any underline marks
-          // (cite/emphasis wins over underline for body text).
-          if (hasNamed) {
-            if (!tr) tr = newState.tr;
-            tr.removeMark(pos, pos + node.nodeSize, namedMark);
-          }
-          if (hasDirect) {
+        if (isBody) {
+          if (hasCiteOrEmph) {
+            // Cite or emphasis present → strip any underline marks
+            // (cite/emphasis wins over underline for body text).
+            if (hasNamed) {
+              if (!tr) tr = newState.tr;
+              tr.removeMark(pos, pos + node.nodeSize, namedMark);
+            }
+            if (hasDirect) {
+              if (!tr) tr = newState.tr;
+              tr.removeMark(pos, pos + node.nodeSize, directMark);
+            }
+          } else if (hasDirect) {
+            // No conflict — flip direct → named (body uses the named
+            // style).
             if (!tr) tr = newState.tr;
             tr.removeMark(pos, pos + node.nodeSize, directMark);
+            if (!hasNamed) tr.addMark(pos, pos + node.nodeSize, namedMark.create());
           }
-        } else if (hasDirect) {
-          // No conflict — flip direct → named (body uses the named
-          // style).
+        } else if (isStructural && hasNamed) {
+          // Structural uses direct underline; flip named → direct.
           if (!tr) tr = newState.tr;
-          tr.removeMark(pos, pos + node.nodeSize, directMark);
-          if (!hasNamed) tr.addMark(pos, pos + node.nodeSize, namedMark.create());
+          tr.removeMark(pos, pos + node.nodeSize, namedMark);
+          if (!hasDirect) tr.addMark(pos, pos + node.nodeSize, directMark.create());
         }
-      } else if (isStructural && hasNamed) {
-        // Structural uses direct underline; flip named → direct.
-        if (!tr) tr = newState.tr;
-        tr.removeMark(pos, pos + node.nodeSize, namedMark);
-        if (!hasDirect) tr.addMark(pos, pos + node.nodeSize, directMark.create());
-      }
-      return true;
-    });
+        return true;
+      });
+
+    } catch (err) {
+      console.warn('[named-style-normalizer] skipped round on invalid doc:', err);
+      return null;
+    }
 
     return tr === null ? null : guardNormalizerTr(transactions, tr);
   },

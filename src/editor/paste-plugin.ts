@@ -49,7 +49,7 @@ import {
   type ResolvedPos,
 } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
-import { schema } from '../schema/index.js';
+import { schema, newHeadingId } from '../schema/index.js';
 import { freshHeadingIds } from './drag-controller.js';
 import { condenseBranchC, condenseMerge } from './condense.js';
 import { buildImageNodeFromBlob, insertImageNode } from './image-insert.js';
@@ -378,6 +378,69 @@ export function clipboardHasMeaningfulText(cd: DataTransfer): boolean {
   return /\S/.test(text);
 }
 
+/** Heal schema-invalid CLOSED containers inside a pasted slice
+ *  (Issue #34, the headless-card producer). A cut whose selection
+ *  crosses out of one card into the next serializes the second
+ *  card's tail as a card WITHOUT its leading tag; `parseSlice`
+ *  rebuilds closed nodes with no validation and the paste fitter
+ *  trusts slice interiors, so the invalid card lands in the live
+ *  doc — where it breaks keystrokes near it and trips the save
+ *  heal on every journal write. Blank-head endpoint per the settled
+ *  hollow-shell doctrine ("re-delete a blank tag occasionally beats
+ *  deleting too much"): prepend an empty tag / analytic rather than
+ *  dropping or merging content. Only CLOSED nodes are touched — the
+ *  slice's open spine is legitimately partial and is the fitter's
+ *  business. */
+const HEAD_OF_CONTAINER: Record<string, string> = { card: 'tag', analytic_unit: 'analytic' };
+
+function healHeadlessContainersInSlice(slice: Slice): Slice {
+  const healFragment = (frag: Fragment, openStart: number, openEnd: number): Fragment => {
+    let changed = false;
+    const kids: PMNode[] = [];
+    frag.forEach((child, _off, i) => {
+      const startOpen = i === 0 && openStart > 0;
+      const endOpen = i === frag.childCount - 1 && openEnd > 0;
+      let node = child;
+      if (!node.isText && node.content.childCount > 0) {
+        const inner = healFragment(
+          node.content,
+          startOpen ? openStart - 1 : 0,
+          endOpen ? openEnd - 1 : 0,
+        );
+        if (inner !== node.content) {
+          node = node.type.create(node.attrs, inner, node.marks);
+        }
+      }
+      const head = HEAD_OF_CONTAINER[node.type.name];
+      // A START-OPEN container is allowed to lack its head — its
+      // content merges into an existing container at the paste
+      // point. A CLOSED (or merely end-open) one is not.
+      if (head && !startOpen && node.firstChild?.type.name !== head) {
+        try {
+          const headNode =
+            head === 'tag'
+              ? schema.nodes['tag']!.create({ id: newHeadingId() })
+              : schema.nodes['analytic']!.create({ id: newHeadingId() });
+          const healed = node.type.createChecked(
+            node.attrs,
+            Fragment.from([headNode]).append(node.content),
+            node.marks,
+          );
+          node = healed;
+        } catch {
+          /* content invalid beyond the missing head — leave it; the
+             fitter will reject or the repair pass will catch it */
+        }
+      }
+      if (node !== child) changed = true;
+      kids.push(node);
+    });
+    return changed ? Fragment.fromArray(kids) : frag;
+  };
+  const content = healFragment(slice.content, slice.openStart, slice.openEnd);
+  return content === slice.content ? slice : new Slice(content, slice.openStart, slice.openEnd);
+}
+
 export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
   return new Plugin<PluginState>({
     key: plainPasteKey,
@@ -421,9 +484,11 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
         const intoZone = enclosingZonePos(view.state.doc, view.state.selection.from) !== null;
         if (!intoZone) {
           const linked = recallLinkedCopy(view, slice);
-          if (linked) return freshHeadingIds(unwrapSingleCellTables(linked));
+          if (linked) {
+            return healHeadlessContainersInSlice(freshHeadingIds(unwrapSingleCellTables(linked)));
+          }
         }
-        const out = freshHeadingIds(unwrapSingleCellTables(slice));
+        const out = healHeadlessContainersInSlice(freshHeadingIds(unwrapSingleCellTables(slice)));
         if (!fragmentHasZone(out.content)) return out;
         // Any zone content on the clipboard pastes as a PLAIN cached copy (its
         // cards), never a live link. A partial in-zone copy shouldn't drag the
@@ -432,7 +497,7 @@ export function buildPastePlugin(ctx: PastePluginCtx): Plugin<PluginState> {
         // zone can't nest. flattenZonesInSlice also corrects the open depths so
         // the pasted headings keep their formatting. To duplicate a live zone,
         // use the transclude command (it mints a fresh link).
-        return flattenZonesInSlice(out);
+        return healHeadlessContainersInSlice(flattenZonesInSlice(out));
       },
       // Every custom insertion path below stamps `uiEvent: 'paste'` on
       // its transaction, matching what PM's default paste path does.

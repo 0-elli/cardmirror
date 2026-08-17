@@ -40,16 +40,27 @@ export const citeClassifierPlugin: Plugin = new Plugin({
     if (!range) return null;
 
     let tr: Transaction | null = null;
-    newState.doc.nodesBetween(range.from, range.to, (node, pos, parent) => {
-      const name = node.type.name;
-      if (!CANDIDATE_TYPES.has(name)) return true;
-      if (!parent) return false;
-      const target = targetTypeFor(node, parent);
-      if (target === null || target === name) return false;
-      if (!tr) tr = newState.tr;
-      tr.setNodeMarkup(pos, schema.nodes[target]!);
-      return false;
-    });
+    // try/catch: on a schema-INVALID doc (a paste fitter can close a
+    // destination card as an empty shell mid-dispatch — Issue #34)
+    // the position walk itself throws, which would abort the whole
+    // dispatch BEFORE the container-integrity normalizer can heal the
+    // wound. Skip this round instead; the classifier re-runs on the
+    // healed doc next round.
+    try {
+      newState.doc.nodesBetween(range.from, range.to, (node, pos, parent) => {
+        const name = node.type.name;
+        if (!CANDIDATE_TYPES.has(name)) return true;
+        if (!parent) return false;
+        const target = targetTypeFor(node, parent);
+        if (target === null || target === name) return false;
+        if (!tr) tr = newState.tr;
+        tr.setNodeMarkup(pos, schema.nodes[target]!);
+        return false;
+      });
+    } catch (err) {
+      console.warn('[cite-classifier] skipped round on invalid doc:', err);
+      return null;
+    }
 
     return tr === null ? null : guardNormalizerTr(transactions, tr);
   },

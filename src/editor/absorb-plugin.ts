@@ -77,6 +77,7 @@ export const absorbPlugin: Plugin = new Plugin({
     const origAnchor = newState.selection.anchor;
     let headInOrphans = false;
     let anchorInOrphans = false;
+    try {
     for (let i = regions.length - 1; i >= 0; i--) {
       const r = regions[i]!;
       if (origHead > r.orphansStart && origHead < r.orphansEnd) headInOrphans = true;
@@ -92,6 +93,14 @@ export const absorbPlugin: Plugin = new Plugin({
       const $head = tr.doc.resolve(newHead);
       const $anchor = tr.doc.resolve(newAnchor);
       tr.setSelection(TextSelection.between($anchor, $head));
+    }
+    } catch (err) {
+      // A schema-invalid container mid-dispatch (Issue #34 fitter
+      // shells) makes inserts throw contentMatchAt — skipping the
+      // round beats aborting the dispatch; the container-integrity
+      // normalizer heals first and absorb re-runs on the next round.
+      console.warn('[absorb] skipped round on invalid doc:', err);
+      return null;
     }
     return guardNormalizerTr(transactions, tr);
   },
