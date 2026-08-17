@@ -268,7 +268,9 @@ mirrors Word's Navigation Pane, but does more:
   change; what depth a **newly opened** document starts at is the
   **Default navigation depth** setting (Settings → General), Block by
   default. Clicking the already-active level re-collapses any manual
-  expansions.
+  expansions. Changing depth keeps the section your cursor is in at the
+  top of the outline (turn off **Navigation pane follows the cursor**
+  in Settings → General to return to the top of the document instead).
 - **Multi-select** — Mod-click adds an entry to the selection,
   Shift-click selects a contiguous range.
 - **Reorder** — drag an entry (or a multi-selection) up or down. It
@@ -1023,6 +1025,18 @@ card / block"** — on by default, and cheap even on large files (the
 count is cached per container, so moving the cursor doesn't re-count
 anything). Turning it off restores the plain whole-doc readout exactly
 as it was.
+
+A third readout — **what's left to read** — is available and **off by
+default**: turn on **Settings → General → "Live read time for what is
+left to read"** and the bar appends everything still ahead of your
+cursor, from the cursor to the end of the document, with each reader's
+time for it: `Doc: 1,234 · Amy: 8:12 | Card: 42 · Amy: 0:31 | Left: 806
+· Amy: 5:20`. Only read-aloud text counts, same as every other readout,
+so trimming highlights lowers it. Select text and it measures from the
+**end** of the selection — a selection reads as "I've been through this
+much". It's cheap on large files too: CardMirror keeps a running total
+per section of the document, so moving the cursor only re-counts the
+card or paragraph it lands in.
 
 By default the primary readout always reflects the **whole document**.
 Turn on **Settings → General → "Live selection word count"** to have the
@@ -2004,6 +2018,17 @@ headers shown inside each tab.
   at when a document opens (Pocket / Hat / Block / Tag; Block by
   default). The 1–4 buttons in the pane change the depth for that
   window only.
+- **Navigation pane follows the cursor** — on by default. The
+  outline scrolls to keep your place in sight. Moving the cursor into a
+  different section brings that heading into view, and clicking the
+  pane's 1–4 buttons keeps the section you were in at the top of the
+  outline instead of jumping back to the top of the document. If your
+  section is hidden at the current depth, the outline follows its
+  nearest visible parent. The pane only moves when the heading would
+  otherwise be off-screen, so typing within one section — or scrolling
+  the outline by hand to look somewhere else — leaves it where you put
+  it. Only the outline's scroll position moves; your cursor and the
+  document stay put.
 - **Multi-doc layout** — with three docs open, show all three at once
   (compact) or two-and-a-bit with click-to-snap (wide). No effect with
   one or two docs.
@@ -2041,6 +2066,10 @@ headers shown inside each tab.
 - **Live word count for the current selection** — off by default. When
   on, the status bar's count and read time follow your selection as you
   change it; leave it off on very large docs if you notice drag lag.
+- **Live read time for what is left to read** — off by default. When on,
+  the status bar appends everything still ahead of the cursor (measured
+  from the end of a selection); cheap even on large files
+  (see [Read-time estimates](#read-time-estimates)).
 
 **Find**
 

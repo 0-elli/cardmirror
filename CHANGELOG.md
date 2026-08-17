@@ -5,9 +5,32 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## 1.1.0 — 2026-08-18
+## 1.1.0 — 2026-08-17
 
 ### Added
+
+- **The status bar can show how much is left to read.** Turn on
+  **Settings → General → "Live read time for what is left to read"**
+  and the bottom bar gains a third readout — every read-aloud word from
+  your cursor to the end of the document, with each of your top two
+  readers' times for it. Handy mid-speech, or for checking whether the
+  rest of a block fits the time you have left. Off by default; with
+  text selected it measures from the end of the selection, and it stays
+  quick on long files. Thanks to Cora (@coralynnkc)!
+
+- **The navigation pane follows your place in the document.** The
+  outline now scrolls to keep the section you're in visible (on by
+  default — turn off **Navigation pane follows the cursor** in Settings
+  → General → Workspace to keep the old behavior). Moving the cursor into a different section brings
+  that heading into view; changing depth with the **1 · 2 · 3 · 4**
+  buttons — which rebuilds the outline and has always scrolled it back
+  to the top of the document — instead keeps the section you were in at
+  the top. If that section is hidden at the current depth, the outline
+  follows its nearest visible parent. The pane only moves when the
+  heading would otherwise be off-screen, so typing within one section,
+  or scrolling the outline by hand, leaves it alone. Nothing but the
+  outline's scroll position moves: your cursor, your selection, and the
+  document are untouched. Thanks to Cora (@coralynnkc)!
 
 - **A guided tour of the interface.** New installs start with a
   step-by-step spotlight walk over the editor, the style clusters, the
@@ -28,6 +51,13 @@ see `DETAILED_CHANGELOG.md`.
   counter.
 
 ### Fixed
+
+- **Changing the outline depth no longer loses the "you are here"
+  highlight.** The navigation pane highlights the heading your cursor is
+  in, but clicking the **1 · 2 · 3 · 4** buttons rebuilt the outline
+  without restoring it — so whenever the new depth hid your heading, the
+  highlight simply vanished and nothing showed where you were. It now
+  falls back to the nearest visible parent, the same as everywhere else.
 
 - **Cards no longer lose their tag line after cut-and-paste round
   trips.** Certain cuts could paste back a card without its tag,

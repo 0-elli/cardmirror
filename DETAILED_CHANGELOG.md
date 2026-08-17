@@ -5,7 +5,133 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## 1.1.0 — 2026-08-18
+## 1.1.0 — 2026-08-17
+
+### Added: live remaining read time (third readout segment)
+
+`src/editor/live-read-time.ts` gains `remainingReadSegment(state)`, a
+sibling of `liveContainerSegment` behind the new `liveRemainingReadTime`
+setting (boolean, **default off**, General → Word counts, `kind:
+'toggle'` so it also gets a command-palette toggle). It appends a third
+pipe-joined segment — `Left: 1,204 · Amy: 6:31 · Ben: 5:44` — counting
+the read-aloud words from the cursor to the end of the document. The
+predicate is the existing one (`countReadAloudSplit`): nothing new
+decides what "readable" means, so the three segments can never disagree
+about which words a reader says out loud.
+
+Measured from `selection.to`, not `from`: the end of a selection is the
+furthest point the user has accounted for, so a selection reads as
+"I've been through this much" and the remainder starts after it. With a
+bare cursor the two coincide.
+
+The cost model is the point of the design. Counted directly, a suffix
+is O(doc − cursor) on **every cursor move and every keystroke** — an
+arrow key near the top of a large brief would pay a full document walk,
+which is exactly the regression the container segment was built to
+avoid. Instead a **suffix-sum table over the doc's top-level children**
+is built once per doc: for each child index `i`, the `ReadAloudCounts`
+of children `i..end`. Building it is one O(doc) pass — the same cost the
+whole-doc readout already pays per doc change. A cursor move is then
+`$pos.index(0)` (O(depth)) to find the child the cursor sits in, the
+table's suffix total for the next child on, plus one partial count of
+that single child. Never O(doc). The table is a one-slot module cache
+keyed on the doc NODE identity, matching the container cache's pattern:
+an edit produces a new node, so a stale table cannot be served for a
+changed doc.
+
+Both readouts compose in the same two mirrored places
+(`src/editor/index.ts` `refreshWordCount`, `multi-pane-shell.ts`
+`refreshWordCount`), which now build a segment list and drop the nulls
+rather than nesting conditionals — so container-off/remaining-on reads
+`Doc: … | Left: …` in scope order. The selection-only refresh gates in
+both surfaces take the new setting alongside `liveContainerReadTime`:
+the cursor is what the count runs from, so a plain caret move has to
+recompute.
+
+### Fixed: a level change dropped the caret highlight
+
+Pre-existing, and the reason the feature below was worth building. Every
+rebuild of `liEntries` has to be followed by a positional resync —
+`setCaretHeading` re-resolved against the rows that now exist — which is
+why the editor runs one after its debounced `update()`. `setMaxLevel`
+rebuilds the list and never did. `selectedIds` kept the caret heading's
+id, but when the new depth collapsed that heading away no rendered row
+carried it, so `render`'s selected-class pass matched nothing and the
+outline lost its "you are here" entirely.
+
+`setMaxLevel` now resyncs after the render, unconditionally — this is a
+bug fix, not part of the setting. It resolves the way every other caret
+consumer does (largest rendered `entry.pos <= caret pos`), which lands
+on the deepest rendered ancestor when the exact heading is gone. Passed
+as a positional resync, so an explicit nav multi-select survives a depth
+change the same way it survives a rebuild.
+
+### Added: the nav pane can follow the cursor
+
+`navFollowCursor` (General → Workspace, **on by default**, `kind:
+'toggle'` so it also gets a command-palette toggle). `setCaretHeading`
+has always resolved and highlighted the caret's row while explicitly
+declining to scroll to it — "that'd dominate scroll behavior for users
+who scroll the editor freely. Add later if it turns out to be desired."
+This is that later; the concern is answered by *when* it scrolls rather
+than by leaving it out.
+
+The scroll target is whichever row currently carries the highlight, read
+back off the DOM rather than re-derived from the doc. That's the point:
+`setCaretHeading` already owns the resolution, and a scroll that
+disagreed with the visible highlight would be worse than no scroll. (The
+first cut of this change re-derived the caret's heading with its own
+ancestor walk and doc-level sibling scan — ~60 lines reaching the same
+answer by a second route, now deleted.)
+
+Two modes:
+
+- **`'nearest'`** — caret movement. Runs only where `setCaretHeading`
+  has established the highlight moved to a *different* row (every
+  no-change path returns before it), and then only if that row is
+  off-screen, scrolling the minimum distance to reveal it. So typing
+  inside one section never moves the pane, and an outline the user
+  scrolled by hand stays put until the caret actually leaves the visible
+  span. Positional resyncs are excluded outright — the caret didn't
+  move, the doc changed under it, and yanking the pane after a
+  drag-reorder or a debounced rebuild is exactly the behavior the
+  original note was guarding against.
+- **`'top'`** — level change, where `render()` has already destroyed the
+  scroll offset. There is no position left to preserve, so the row is
+  pinned to the top of the viewport and the section the user was reading
+  heads the list.
+
+`offsetTop` is measured from the nearest positioned ancestor, which is
+the panel (`position: fixed`) — `.pmd-nav-list` is an unpositioned flex
+child — so the list's own offset comes off to get a content-relative
+coordinate; both are scroll-independent. Results clamp to the scrollable
+range. Scroll only: the editor selection, the nav multi-selection, and
+the collapsed set are all left alone. No view, no doc, an empty outline,
+or a caret ahead of the first heading all fall through to doing nothing.
+`scrollToTop()`, the doc-load reset, is untouched — a freshly opened
+document still starts at the top of its outline.
+
+Both surfaces inherit it: the single-doc panel and each pane's panel in
+the three-pane shell attach a view at construction, and the mobile shell
+reuses the single-doc instance.
+
+Tests (`tests/editor/nav-follow-cursor.test.ts`) stub the geometry jsdom
+doesn't have — rows `ROW_H` apart, a fixed viewport — and assert the
+offsets the panel computes: the bottom clamp, the collapsed-away
+fallback, the minimum-distance reveal, and the two guarantees that keep
+following from fighting the user (an already-visible row isn't touched;
+moving within one section doesn't scroll). The highlight fix is asserted
+with the setting off, where it belongs. The flag-OFF scroll reset can't
+be observed directly: jsdom stores `scrollTop` as a plain number and
+never re-clamps it when the list is emptied, so the browser's "wipe the
+list, lose the offset" doesn't happen there. Those cases assert instead
+that the panel never writes `scrollTop`, which is exactly the
+pre-existing behavior a real browser turns into a snap-to-top.
+
+Both the remaining-read-time segment and the nav-follow feature are
+Cora's (@coralynnkc, PRs #37 and #36); the default flip to on, the
+three-pane scroller fix, and the trimmed settings copy landed as
+merge fixups.
 
 ### Added: guided UI tour (spotlight onboarding)
 

@@ -389,6 +389,23 @@ export interface Settings {
    *  doc's view only (transient, per-pane); this setting is what
    *  every new doc starts at. */
   navMaxLevel: number;
+  /** When true, the nav pane scrolls to keep the outline row the cursor
+   *  is in visible — the pane follows your place in the document instead
+   *  of sitting wherever it was last left.
+   *
+   *  Two occasions, both resolving to whichever row currently carries the
+   *  caret highlight (the deepest RENDERED ancestor, when the cursor's own
+   *  heading is collapsed away): moving the cursor into a different
+   *  section scrolls that row into view, and only when it's actually
+   *  off-screen, so typing within one section never moves the pane and a
+   *  hand-scrolled outline is left alone. Switching level (the 1–4 buttons
+   *  or the context menu's "Show heading level N") rebuilds the list and
+   *  destroys its scroll offset outright, so there the row is pinned to
+   *  the top instead.
+   *
+   *  Scroll only: the cursor, the nav selection, and the collapsed set are
+   *  untouched. On by default. */
+  navFollowCursor: boolean;
   /** When true (default), `New document` mounts the CardMirror
    *  welcome / onboarding doc. When false, it mounts a blank
    *  doc — a single empty paragraph. The starter is the same one
@@ -913,6 +930,15 @@ export interface Settings {
    * ancestor walk; crossing containers costs one O(container) count.
    */
   liveContainerReadTime: boolean;
+  /**
+   * Append a third segment to the live word-count readout: the
+   * read-aloud words still ahead of the cursor, with the same per-reader
+   * times ("what's left to read"). Off by default. Measured from the
+   * selection's end, so a selection counts as already read. Cheap — a
+   * suffix-sum table over the doc's top-level children is built once per
+   * doc, so a cursor move only counts the child it lands in.
+   */
+  liveRemainingReadTime: boolean;
   /**
    * Per-style font sizes (in points). See DisplaySizes for details.
    * Each field becomes a CSS custom property on `#editor`.
@@ -1559,6 +1585,7 @@ export const CUSTOM_DASH_STYLES: ReadonlyArray<Settings['customDashStyle']> = [
 const DEFAULTS: Settings = {
   navWidth: 300,
   navMaxLevel: 3,
+  navFollowCursor: true,
   copyPreviousCiteNearestOnly: true,
   showOnboardingStarter: true,
   hasSeenUiTour: false,
@@ -1670,6 +1697,7 @@ const DEFAULTS: Settings = {
   ],
   liveSelectionWordCount: false,
   liveContainerReadTime: true,
+  liveRemainingReadTime: false,
   displaySizes: { ...DEFAULT_DISPLAY_SIZES },
   displayParagraphSpacing: { ...DEFAULT_PARAGRAPH_SPACING },
   displayTypography: { ...DEFAULT_DISPLAY_TYPOGRAPHY },
@@ -2034,6 +2062,24 @@ export const SETTING_METADATA: SettingMeta[] = [
     aliases: ['nav depth', 'outline depth', 'navigation level', 'nav pane depth'],
   },
   {
+    key: 'navFollowCursor',
+    label: 'Navigation pane follows the cursor',
+    description:
+      'The navigation pane scrolls to keep your place in sight: moving the cursor into a different section brings that heading into view',
+    kind: 'toggle',
+    category: 'general',
+    section: 'Workspace',
+    aliases: [
+      'nav scroll',
+      'outline scroll position',
+      'keep place',
+      'nav pane place',
+      'follow cursor',
+      'sync outline',
+      'outline follows',
+    ],
+  },
+  {
     key: 'mobileLayout',
     label: 'Layout on this device',
     description:
@@ -2116,6 +2162,16 @@ export const SETTING_METADATA: SettingMeta[] = [
     category: 'general',
     section: 'Word counts',
     aliases: ['container read time', 'card read time', 'block read time', 'enclosing read time'],
+  },
+  {
+    key: 'liveRemainingReadTime',
+    label: 'Live read time for what is left to read',
+    description:
+      "Off by default. Appends one more segment to the bottom bar's word count: everything still ahead of your cursor — the read-aloud words from the cursor to the end of the document, with each reader's time for them.",
+    kind: 'toggle',
+    category: 'general',
+    section: 'Word counts',
+    aliases: ['time left', 'remaining read time', 'words left', 'unread words'],
   },
   {
     key: 'findRememberLastQuery',
@@ -4007,6 +4063,7 @@ function sanitize(s: Settings): Settings {
   return {
     navWidth: clamp(s.navWidth, 150, 800),
     navMaxLevel: clamp(Math.round(s.navMaxLevel), 1, 4),
+    navFollowCursor: s.navFollowCursor !== false,
     // Default-on: preserve `false` only when explicitly set so the
     // onboarding shows up for new installs and survives upgrades
     // from before this setting existed.
@@ -4195,6 +4252,7 @@ function sanitize(s: Settings): Settings {
     // Default-on: preserve `false` only when explicitly set, so
     // installs upgrading from before this setting existed get it on.
     liveContainerReadTime: s.liveContainerReadTime === false ? false : true,
+    liveRemainingReadTime: s.liveRemainingReadTime === true,
     displaySizes: sanitizeDisplaySizes(s.displaySizes),
     displayParagraphSpacing: sanitizeParagraphSpacing(s.displayParagraphSpacing),
     displayTypography: sanitizeDisplayTypography(s.displayTypography),

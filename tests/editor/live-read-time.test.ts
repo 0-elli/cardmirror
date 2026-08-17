@@ -8,16 +8,22 @@
  * headings and loose doc-level content show nothing (design call,
  * 2026-07-26). With `liveSelectionWordCount` on, a selection is
  * already the primary readout, so the segment is dropped.
+ *
+ * Also the remaining read time (`liveRemainingReadTime`, default off):
+ * the third segment counts the read-aloud words still ahead of the
+ * cursor, off the per-doc suffix table.
  */
 
-import { describe, expect, it, afterEach } from 'vitest';
-import { EditorState, TextSelection } from 'prosemirror-state';
+import { describe, expect, it, afterEach, beforeEach } from 'vitest';
+import { EditorState, NodeSelection, TextSelection } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema, newHeadingId } from '../../src/schema/index.js';
 import {
   findEnclosingContainer,
   liveContainerSegment,
+  remainingReadSegment,
 } from '../../src/editor/live-read-time.js';
+import { countReadAloudSplit, totalWords } from '../../src/editor/word-count.js';
 import { settings } from '../../src/editor/settings.js';
 
 function tag(text: string): PMNode {
@@ -64,6 +70,7 @@ function textOfRange(state: EditorState, c: { from: number; to: number }): strin
 
 afterEach(() => {
   settings.set('liveContainerReadTime', true);
+  settings.set('liveRemainingReadTime', false);
   settings.set('liveSelectionWordCount', false);
   settings.set('readers', [
     { name: 'Reader 1', wpm: 200 },
@@ -163,5 +170,175 @@ describe('liveContainerSegment', () => {
     expect(liveContainerSegment(sel)).toMatch(/^Sel: \d/);
     settings.set('liveSelectionWordCount', true);
     expect(liveContainerSegment(sel)).toBeNull();
+  });
+});
+
+describe('remainingReadSegment', () => {
+  const m = schema.marks;
+  const hl = () => m['highlight']!.create();
+  const shaded = () => m['shading']!.create();
+
+  /**
+   * A doc whose top-level children mix every read-aloud kind with the
+   * kinds that must NOT count — plain body text and shaded highlight.
+   * Read-aloud totals: body 9 (4 + 2 + 3), other 7 (3 tag + 2 tag +
+   * 2 cite) = 16, against 27 words of raw text.
+   */
+  function fixture(): PMNode[] {
+    return [
+      heading('block', 'Block One'),
+      schema.nodes['card']!.createChecked(null, [
+        tag('ALPHA TAG HERE'),
+        schema.nodes['card_body']!.create(null, [
+          schema.text('one two three four', [hl()]),
+          schema.text(' plain unread words'),
+          schema.text(' shaded skip here', [hl(), shaded()]),
+        ]),
+      ]),
+      schema.nodes['paragraph']!.create(null, schema.text('five six', [hl()])),
+      schema.nodes['card']!.createChecked(null, [
+        tag('BETA TAG'),
+        schema.nodes['cite_paragraph']!.create(null, [
+          schema.text('Smith 25', [m['cite_mark']!.create()]),
+          schema.text(' filler text here'),
+        ]),
+        schema.nodes['card_body']!.create(null, schema.text('seven eight nine', [hl()])),
+      ]),
+    ];
+  }
+
+  const doc = schema.nodes['doc']!.createChecked(null, fixture());
+
+  /** Doc position where `needle` starts. */
+  function textStart(node: PMNode, needle: string): number {
+    let at = -1;
+    node.descendants((child, pos) => {
+      if (at >= 0) return false;
+      const text = child.text ?? '';
+      if (child.isText && text.includes(needle)) {
+        at = pos + text.indexOf(needle);
+        return false;
+      }
+      return true;
+    });
+    if (at < 0) throw new Error(`text "${needle}" not found`);
+    return at;
+  }
+
+  function cursorAt(node: PMNode, pos: number): EditorState {
+    return EditorState.create({ doc: node, selection: TextSelection.create(node, pos) });
+  }
+
+  /** The number the segment leads with. */
+  function left(state: EditorState): number {
+    const seg = remainingReadSegment(state);
+    if (seg === null) throw new Error('segment is off');
+    const match = /^Left: ([\d,]+) /.exec(seg);
+    if (!match) throw new Error(`unexpected segment "${seg}"`);
+    return Number(match[1]!.replace(/,/g, ''));
+  }
+
+  beforeEach(() => {
+    settings.set('liveRemainingReadTime', true);
+    settings.set('readers', [
+      { name: 'Amy', wpm: 200 },
+      { name: 'Ben', wpm: 100 },
+      { name: 'Cal', wpm: 300 },
+    ]);
+  });
+
+  it('gates on the setting', () => {
+    settings.set('liveRemainingReadTime', false);
+    expect(remainingReadSegment(cursorAt(doc, textStart(doc, 'five six')))).toBeNull();
+  });
+
+  it('renders label, count, and the first two readers', () => {
+    const seg = remainingReadSegment(cursorAt(doc, textStart(doc, 'five six')))!;
+    expect(seg).toMatch(/^Left: \d/);
+    expect(seg).toContain('Amy: ');
+    expect(seg).toContain('Ben: ');
+    expect(seg).not.toContain('Cal'); // first two readers only
+  });
+
+  it('cursor at the doc start counts the whole doc', () => {
+    const state = EditorState.create({ doc, selection: TextSelection.atStart(doc) });
+    expect(left(state)).toBe(totalWords(countReadAloudSplit(doc)));
+    expect(left(state)).toBe(16);
+  });
+
+  it('cursor at the doc end counts nothing', () => {
+    const state = EditorState.create({ doc, selection: TextSelection.atEnd(doc) });
+    expect(left(state)).toBe(0);
+  });
+
+  it('counts only read-aloud words ahead of the cursor', () => {
+    // Mid-card: the rest of the highlighted run (4) + the loose
+    // highlighted paragraph (2) + the last card's tag, cite, and body
+    // (2 + 2 + 3).
+    expect(left(cursorAt(doc, textStart(doc, 'one two three four')))).toBe(13);
+    // Parked right before the plain text: what's left is the loose
+    // paragraph and the last card — the plain run and the shaded
+    // highlight after it are silent, exactly as the read-aloud
+    // predicate says.
+    expect(left(cursorAt(doc, textStart(doc, 'plain unread words')))).toBe(9);
+    // Inside the last card's cite: the cite's own filler doesn't count,
+    // the body after it does.
+    expect(left(cursorAt(doc, textStart(doc, 'filler text here')))).toBe(3);
+  });
+
+  it('a selection measures from its end — what precedes it reads as read', () => {
+    const from = textStart(doc, 'one two three four');
+    const state = EditorState.create({
+      doc,
+      // Through "one two ", leaving "three four" of the run ahead.
+      selection: TextSelection.create(doc, from, from + 8),
+    });
+    expect(left(state)).toBe(11);
+    // …and NOT the 13 a from-anchored count would report.
+    expect(left(cursorAt(doc, from))).toBe(13);
+  });
+
+  it('a node selection ends on a child boundary — everything after it is left', () => {
+    // `to` lands between two top-level children (depth 0), the one
+    // position the child-relative math has to clamp.
+    const at = textStart(doc, 'five six') - 1;
+    const state = EditorState.create({ doc, selection: NodeSelection.create(doc, at) });
+    expect(left(state)).toBe(7); // just the last card
+  });
+
+  it('recounts after an edit — the suffix table is keyed on the doc', () => {
+    const at = textStart(doc, 'five six');
+    const before = cursorAt(doc, at);
+    expect(left(before)).toBe(9);
+    // Three more highlighted words, inserted AFTER the cursor so the
+    // selection maps to the same place. A table surviving the edit
+    // would still say 9.
+    const insertAt = textStart(doc, 'seven eight nine');
+    const after = before.apply(
+      before.tr.replaceWith(insertAt, insertAt, schema.text('ten eleven twelve ', [hl()])),
+    );
+    expect(after.selection.from).toBe(at);
+    expect(left(after)).toBe(12);
+    // The original doc still counts 9 — rebuilding for the new doc
+    // didn't poison the old answer.
+    expect(left(cursorAt(doc, at))).toBe(9);
+  });
+
+  it('composes as the third segment, after the container one', () => {
+    const state = cursorAt(doc, textStart(doc, 'one two three four'));
+    const container = liveContainerSegment(state);
+    const remaining = remainingReadSegment(state);
+    expect(container).toMatch(/^Card: /);
+    expect(remaining).toMatch(/^Left: /);
+    // The bars join in scope order, skipping whatever is off (the join
+    // itself lives in index.ts / multi-pane-shell.ts).
+    const segments = ['Doc: 16 · Amy: 0:04 · Ben: 0:09', container, remaining].filter(
+      (s): s is string => s !== null,
+    );
+    expect(segments.join(' | ')).toMatch(/^Doc: .+ \| Card: .+ \| Left: .+$/);
+    // Container off, remaining on → two segments, still in order.
+    settings.set('liveContainerReadTime', false);
+    expect(liveContainerSegment(state)).toBeNull();
+    expect(remainingReadSegment(state)).toMatch(/^Left: /);
   });
 });

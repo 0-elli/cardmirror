@@ -18,7 +18,11 @@ import { settings, SETTINGS_DEFAULTS } from './settings.js';
 import { CLIPBOARD_BUSY_MESSAGE, writeClipboardHtml } from './clipboard-write.js';
 import { showToast } from './toast.js';
 import { setManualShadowSelection } from './similar-selection-plugin.js';
-import { insertSelfRef, insertInDocCopy } from './self-transclusion-commands.js';
+import {
+  insertSelfRef,
+  insertInDocCopy,
+  selfRefSelectionPos,
+} from './self-transclusion-commands.js';
 import { registerOpenContextMenu, clearOpenContextMenu } from './context-menu-registry.js';
 import { dragController, type DragItem, type DragSurface } from './drag-controller.js';
 import { isTransclusionNode, zoneIdentity } from './transclusion.js';
@@ -1188,9 +1192,13 @@ export class NavigationPanel {
    * highlight may briefly point at a stale neighbor in that window,
    * which is acceptable for a visual indicator.
    *
-   * Doesn't auto-scroll the nav pane to bring the highlight into
-   * view — that'd dominate scroll behavior for users who scroll the
-   * editor freely. Add later if it turns out to be desired.
+   * Auto-scrolling the pane to bring the highlight into view is opt-in
+   * (`navFollowCursor`, default off) — unconditional scrolling would
+   * dominate scroll behavior for users who scroll the editor freely,
+   * which is why this stayed highlight-only until asked for. The
+   * following mode only moves the pane when the highlight actually
+   * CHANGES rows and the new row is off-screen; see
+   * `scrollCaretRowIntoView`.
    *
    * `opts.preserveMultiSelect`: set by the POSITIONAL RESYNC callers
    * (post-rebuild / divergence refresh), where the caret didn't move —
@@ -1244,6 +1252,19 @@ export class NavigationPanel {
     }
     if (!hadWindow && this.selectedIds.size === 1 && this.selectedIds.has(best.id!)) return;
     this.selectSingle(best);
+    // Reached only when the highlight moved to a DIFFERENT row (every
+    // no-change path returned above), which is what keeps following from
+    // fighting the user: typing inside one section can't scroll the pane.
+    //
+    // Positional resyncs are excluded. `preserveMultiSelect` marks exactly
+    // those callers (see the opts docs above): the caret did NOT move, the
+    // doc changed under it — a drag-reorder, a debounced rebuild, a level
+    // change. Scrolling there would yank the pane for something the user
+    // didn't do with the cursor, and the level-change caller wants the
+    // 'top' anchoring instead, which it applies itself.
+    if (opts?.preserveMultiSelect !== true && settings.get('navFollowCursor')) {
+      this.scrollCaretRowIntoView('nearest');
+    }
   }
 
   private handleShiftClick(entry: HeadingEntry): void {
@@ -1960,6 +1981,111 @@ export class NavigationPanel {
     this.localMaxLevel = level;
     this.updateLevelButtonsActive();
     if (this.currentDoc) this.render(this.currentDoc);
+    // `render` rebuilt `liEntries`, so the caret highlight has to be
+    // re-resolved against the rows that now exist — the same positional
+    // resync the editor runs after its debounced `update()`. Without it
+    // the highlight simply VANISHES whenever the new depth collapses the
+    // caret's heading away: `selectedIds` still holds that heading's id,
+    // but no rendered row carries it, so nothing lights up. (Pre-existing
+    // on main, where it hid behind the scroll jumping to the top too.)
+    // Positional resync, not a caret move → an explicit multi-select
+    // survives, matching the other resync callers.
+    this.resyncCaretHighlight();
+    // Then keep the user's place: the rebuild dropped `scrollTop` to 0,
+    // so the outline would otherwise snap to the top of the document.
+    if (settings.get('navFollowCursor')) this.scrollCaretRowIntoView('top');
+  }
+
+  /** Re-resolve the caret highlight against the currently-rendered rows.
+   *  Call after any `render()` that wasn't driven by a caret move. */
+  private resyncCaretHighlight(): void {
+    const view = this.view;
+    if (!view) return;
+    this.setCaretHeading(view.state.selection.from, selfRefSelectionPos(view.state), {
+      preserveMultiSelect: true,
+    });
+  }
+
+  /**
+   * The rendered row carrying the caret highlight — what the outline
+   * currently says "you are here" about. Null when nothing is
+   * highlighted (empty outline, or a caret ahead of the first heading).
+   *
+   * Deliberately reads the DOM class rather than re-deriving the caret's
+   * heading from the doc: `setCaretHeading` already owns that resolution
+   * (largest rendered `entry.pos <= caret pos`, which lands on the
+   * deepest rendered ancestor when the exact heading is collapsed away),
+   * and scrolling to a row the highlight DISAGREES with would be worse
+   * than not scrolling at all.
+   */
+  private caretRow(): HTMLLIElement | null {
+    for (const li of this.liEntries.keys()) {
+      if (li.classList.contains('pmd-nav-item-selected')) return li;
+    }
+    return null;
+  }
+
+  /**
+   * Scroll the outline to the highlighted row, so the pane keeps up with
+   * where the caret is in the document.
+   *
+   * Two modes, and the difference is the whole reason this doesn't
+   * "dominate scroll behavior for users who scroll the editor freely"
+   * (the concern `setCaretHeading` documents):
+   *
+   *   - `'nearest'` — the caret-following case. Does NOTHING when the row
+   *     is already visible, so ordinary typing and cursor movement inside
+   *     one section never move the pane, and a nav pane the user scrolled
+   *     by hand is left alone until the caret actually leaves the visible
+   *     span. Only an off-screen row scrolls, and only just far enough.
+   *   - `'top'` — the level-change case, where `render()` has already
+   *     destroyed the scroll offset. There is no position left to
+   *     preserve, so the row is pinned to the top of the viewport and the
+   *     section the user was reading heads the list.
+   *
+   * Scroll only: the editor selection, the nav selection, and the
+   * collapsed set are all left exactly as they were.
+   */
+  private scrollCaretRowIntoView(mode: 'nearest' | 'top'): void {
+    const target = this.caretRow();
+    if (!target) return;
+    const list = this.listEl;
+    // WHICH element scrolls differs by layout: single-doc scrolls the
+    // list itself, but three-pane scrolls the section BODY
+    // (`.pmd-multi-nav-body`) so the panel header can stick to its top
+    // — there the list is never its own scroller and writing its
+    // `scrollTop` is a silent no-op (and its unclipped `clientHeight`
+    // makes every row look "already visible"). Prefer the list when it
+    // actually scrolls, else the enclosing body.
+    const scroller =
+      list.scrollHeight > list.clientHeight
+        ? list
+        : (list.closest<HTMLElement>('.pmd-multi-nav-body') ?? list);
+    // `offsetTop` is measured from the nearest POSITIONED ancestor —
+    // the fixed panel in single-doc, the `position: relative` section
+    // in three-pane. Row and scroller share it either way, so the
+    // difference is a scroller-content-relative coordinate.
+    const top = target.offsetTop - scroller.offsetTop;
+    // In three-pane the panel header is `position: sticky` INSIDE the
+    // scroller and masks the top of its viewport: rows under it count
+    // as hidden, and 'top' pins just below it. Single-doc's header
+    // sits outside the list, so the allowance is zero there.
+    const headerEl = this.root.querySelector<HTMLElement>(':scope > header');
+    const headerH =
+      scroller !== list && headerEl && scroller.contains(headerEl) ? headerEl.offsetHeight : 0;
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    if (mode === 'nearest') {
+      const viewTop = scroller.scrollTop + headerH;
+      const viewBottom = scroller.scrollTop + scroller.clientHeight;
+      const bottom = top + target.offsetHeight;
+      if (top >= viewTop && bottom <= viewBottom) return; // already visible
+      // Off the bottom → bring its bottom edge just inside; off the top →
+      // its top edge. Either way the pane moves the minimum distance.
+      const next = top < viewTop ? top - headerH : bottom - scroller.clientHeight;
+      scroller.scrollTop = Math.max(0, Math.min(next, max));
+      return;
+    }
+    scroller.scrollTop = Math.max(0, Math.min(top - headerH, max));
   }
 
   private updateLevelButtonsActive(): void {
