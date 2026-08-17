@@ -40,8 +40,7 @@ for the parts that aren't.
 18. [Appearance and accessibility](#18-appearance-and-accessibility)
 19. [Keyboard shortcuts](#19-keyboard-shortcuts)
 20. [Plugins (experimental)](#20-plugins-experimental)
-21. [What's not here yet](#21-whats-not-here-yet)
-22. [Glossary](#22-glossary)
+21. [Glossary](#21-glossary)
 
 ## 1. Getting started
 
@@ -2682,40 +2681,7 @@ documented in the repository README and reference docs.
 
 ---
 
-## 21. What's not here yet
-
-CardMirror is in active development. Planned, but not built yet:
-
-- **Numbered and bulleted lists** (true list blocks — distinct from the
-  display-only card numbering in §2).
-- **Robust screen-reader support and more accessibility presets** —
-  fuller keyboard/ARIA semantics, plus high-contrast and colorblind
-  palettes on top of the customization already shipped.
-
-Deliberately out of scope (CardMirror drops these on import and never
-writes them): page/section layout, footnotes, and Word's internal
-revision metadata.
-
-### Notes for Verbatim users
-
-- Several of Verbatim's bulk cleanup macros — AutoNumberTags,
-  DeNumberTags, FixFakeTags, ConvertToDefaultStyles, and similar —
-  aren't in CardMirror, and aren't currently planned. The cleanup
-  commands that are here: Convert Analytics to Tags, Fix Formatting
-  Gaps, Remove Hyperlinks, and Select Similar Formatting.
-- ReformatAllCites has an AI-driven counterpart: **Reformat Every Cite**
-  rewrites every cite in the document through the AI cite formatter
-  (see [AI features](#13-ai-features)). It reads the citation and
-  reformats it, rather than pattern-matching the old text the way the
-  Verbatim macro does.
-- **OCR**, **caselist** upload, **Tabroom** integration, and **vTub**
-  don't exist in CardMirror yet.
-- CardMirror is pageless (like Word's Web Layout); it round-trips page
-  breaks but doesn't show page boundaries while editing.
-
----
-
-## 22. Glossary
+## 21. Glossary
 
 - **Pocket / Hat / Block / Tag** — the four heading levels (Word Heading
   1–4).
