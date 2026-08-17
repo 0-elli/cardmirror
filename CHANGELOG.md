@@ -5,6 +5,16 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Fixed
+
+- **Numbered lists restart properly in Word again.** Exported documents
+  wrote each list as its own Word counter but never told Word to
+  restart it, so separate lists rendered as one continuous 1, 2, 3…
+  sequence across the whole file when opened in Word — even though
+  CardMirror displayed them correctly. Each list now restarts at 1.
+
 ## 1.1.0 — 2026-08-17
 
 ### Added

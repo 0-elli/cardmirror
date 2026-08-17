@@ -95,8 +95,18 @@ export function buildNumberingXml(numIds: number[]): string {
     '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl>' +
     '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2)"/><w:lvlJc w:val="left"/></w:lvl>' +
     '</w:abstractNum>';
+  // Each num instance needs an explicit startOverride: Word runs ONE
+  // counter per abstractNum across the whole document, so distinct
+  // numIds sharing abstractNum 0 CONTINUE each other unless every
+  // <w:num> restates its start. Without these, every exported doc
+  // rendered as one continuous list in Word (field report 2026-08-17)
+  // — invisible to our own round-trip, whose importer derives restarts
+  // from numId transitions rather than Word's counter semantics.
+  const startOverrides =
+    '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>' +
+    '<w:lvlOverride w:ilvl="1"><w:startOverride w:val="1"/></w:lvlOverride>';
   const nums = numIds
-    .map((id) => `<w:num w:numId="${id}"><w:abstractNumId w:val="0"/></w:num>`)
+    .map((id) => `<w:num w:numId="${id}"><w:abstractNumId w:val="0"/>${startOverrides}</w:num>`)
     .join('');
   return `${XML_PROLOG}\n<w:numbering xmlns:w="${W_NS}">${abstractNum}${nums}</w:numbering>`;
 }

@@ -27,6 +27,24 @@ const numPr = (ilvl: number, numId: number): string =>
 const numCount = (xml: string | null): number => (xml ? (xml.match(/<w:num w:numId=/g) ?? []).length : 0);
 const numPrCount = (xml: string): number => (xml.match(/<w:numPr>/g) ?? []).length;
 
+describe('export — every num instance restarts its counter', () => {
+  it('each <w:num> carries startOverrides for both levels (field report 2026-08-17)', () => {
+    // Word runs ONE counter per abstractNum: without a startOverride on
+    // every num instance, separate restart runs CONTINUE each other in
+    // Word (lists ran 1..100+ across a whole file) even though our own
+    // importer round-trips them as restarts.
+    const { numberingXml } = exportDoc(
+      doc(card('A', 'number'), block('B'), card('C', 'number'), card('D', 'number', true)),
+    );
+    const nums = numberingXml!.match(/<w:num w:numId=.*?<\/w:num>/g) ?? [];
+    expect(nums.length).toBe(3); // three restart runs → three independent counters
+    for (const n of nums) {
+      expect(n).toContain('<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>');
+      expect(n).toContain('<w:lvlOverride w:ilvl="1"><w:startOverride w:val="1"/></w:lvlOverride>');
+    }
+  });
+});
+
 describe('export — numbered cards get numPr', () => {
   it('a number card → ilvl 0; numbering.xml has one num + the two levels', () => {
     const { documentXml, numberingXml } = exportDoc(doc(card('A', 'number')));

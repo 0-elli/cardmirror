@@ -5,6 +5,20 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+### Fixed: exported numbering never restarted in Word (startOverride)
+
+Field report (Reddit, 2026-08-17): docx exports rendered all numbered
+lists as one continuous counter in Word. `buildNumberingXml` allocated
+a fresh `w:numId` per restart run — correct instinct — but all nums
+share one `abstractNum`, and Word runs ONE counter per abstractNum
+unless each `<w:num>` carries `<w:lvlOverride><w:startOverride>`.
+Our own round-trip couldn't see it: the importer derives restarts from
+numId transitions, not Word's counter semantics, so export→import was
+self-consistently wrong. Every num instance now restates start=1 for
+both levels; pinned by an export test counting per-num overrides.
+
 ## 1.1.0 — 2026-08-17
 
 ### Added: live remaining read time (third readout segment)
