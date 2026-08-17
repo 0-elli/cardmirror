@@ -104,11 +104,10 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
     },
     {
       id: 'char-styles',
-      title: 'Evidence marks',
+      title: 'Character styles',
       body:
-        'The marks that cut a card: F9 underlines, F10 emphasizes, F11 highlights, F8 ' +
-        'marks the cite — and the color panel beside them handles highlight colors, ' +
-        'background shading, and font color.',
+        'F9 underlines, F10 emphasizes, F11 highlights, F8 marks the cite. The color ' +
+        'panel beside them handles highlight colors, background shading, and font color.',
       target: el('cite-panel'),
       union: el('color-panel'),
     },

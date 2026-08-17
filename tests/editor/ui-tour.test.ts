@@ -129,7 +129,7 @@ describe('UI tour', () => {
       'Welcome',
       'The editor',
       'Structural styles',
-      'Evidence marks',
+      'Character styles',
       'The outline',
       'Open, new, save',
       'Speech docs',
@@ -249,7 +249,7 @@ describe('UI tour', () => {
     const tour = new UiTourController();
     tour.start();
     for (let i = 0; i < 3; i++) btn('Next')!.click();
-    expect(card()!.textContent).toContain('Evidence marks');
+    expect(card()!.textContent).toContain('Character styles');
     const shade = document.querySelector<HTMLElement>('.pmd-tour-shade')!;
     // cite-panel spans x 10..90, color-panel x 100..160 — the cutout
     // must span both (plus padding), not ring them separately.
