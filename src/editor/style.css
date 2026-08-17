@@ -2159,6 +2159,14 @@ body:not(.pmd-multi-doc) #app {
 
 .status-segment {
   display: flex;
+}
+/* The class's display:flex outranks the hidden attribute's UA rule
+   (same trap as the account chip) — an empty notice chip painted as
+   a bare outlined pill. */
+.status-segment[hidden] {
+  display: none;
+}
+.status-segment {
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
