@@ -38,6 +38,55 @@ Auto-runs once, only for profiles whose persisted settings match the
 initializes the seen-flag on. Rerun via the `startUiTour` ribbon
 command. Desktop layout only.
 
+### Fixed: headless cards from clipboard round trips (issue #34)
+
+Root cause of the long-lived "invalid content for node card"
+corruption: `parseSlice` rebuilds closed nodes without schema
+validation and the paste fitter trusts slice interiors, so a cut that
+opened mid-card could paste back a `card(card_body)` with no tag —
+invalid, and invisible until something walked it. Wounded docs then
+made normalizer `appendTransaction` walks throw `contentMatchAt`,
+aborting entire dispatches — the reporter's "disappearing line
+breaks." Three layers ship: `transformPasted` heals closed headless
+containers in the incoming slice by prepending a blank head
+(start-open spine exempt — that's a legitimate partial node); a
+container-integrity plugin registered ahead of absorb repairs wounds
+in the live doc via whole-node `replaceWith` (inserting INTO a wound
+throws the same error being healed) and deletes empty shells; and the
+absorb/cite-classifier/named-style-normalizer walks are crash-proofed
+to skip a round instead of killing the dispatch. Doctrine: an
+occasional blank tag the user re-deletes beats ever deleting content.
+Documents wounded by earlier versions heal on reopen. Pinned by
+`tests/editor/paste-slice-heal.test.ts`; the crash-aware clipboard
+sweep that found the 72 failing recipes now reports zero invalid docs
+and zero dispatch crashes.
+
+### Added: status-bar notice chip; toast timing; decision dialogs
+
+Toast-audit follow-through (364 call sites reviewed). A toast is a
+cursor-anchored tooltip — fine for confirmations, information-loss
+for anything worth re-reading. `postNotice` keeps the immediate toast
+and additionally files the message under a status-bar chip where it
+persists until dismissed. Severity tiers color the chip by the worst
+message present (grey info / yellow warning / red error); repeats
+coalesce by key into a ×N counter and never re-toast (the save-heal
+tripwire's once-a-minute heartbeat becomes one entry); the panel
+offers Copy, Dismiss, and Dismiss all, capped at 50 entries. Routed
+in: the error-surface catch-all, save-heal tripwire, autosave
+failures, pairing/relay auth rejections, AI-feature failures, and
+plugin toast overflow. Toast duration now derives from reading time
+(200ms/word on a 1.6s floor, 8s cap) instead of a flat second.
+
+Three act-on-it toasts became real decisions, using the compact
+dialog family (not the route-style Save/Don't-save look): the
+changed-on-disk conflict prompt is shared between manual save and the
+first autosave failure of a streak on single-doc paths (multi-pane
+records stay pause-plus-notice — their manual-save flow targets the
+focused record); a failed live-zone anchor write offers a
+close-it-in-Word retry loop; the repaired-copy completion message
+files as an info notice (the real decision dialog already runs before
+opening).
+
 ### Changed: settings account row status chip
 
 The disconnected helper paragraph is gone; a status chip renders in

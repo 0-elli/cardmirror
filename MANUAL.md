@@ -137,7 +137,8 @@ already carries (Cite / Underline / Emphasis, and Pocket / Hat / Block /
 Tag / Analytic / Undertag).
 
 The **status bar** at the bottom shows the word count and read-time
-estimate (click it for details) and the zoom controls.
+estimate (click it for details), the zoom controls, and — when there
+is something to report — the [notice chip](#the-notice-chip).
 
 <a id="new-in-cardmirror"></a>
 ### New in CardMirror
@@ -1967,6 +1968,19 @@ same way and clicking the chip restarts straight into the new version;
 if your install can't be updated in place (for example the app isn't in
 a writable location), the chip opens the releases page instead so you
 can grab the new `.dmg`.
+
+<a id="the-notice-chip"></a>
+### The notice chip
+
+Errors and important status updates appear as a brief pop-up message,
+and also land under a small **notice chip** in the status bar, where
+they stay until you dismiss them. The chip shows a count and takes
+the color of the most serious message waiting: grey for routine
+notes, yellow when something needs your attention, red for problems.
+Click it to open the list — each entry can be re-read in full,
+**copied** (handy for bug reports), or **dismissed**, and **Dismiss
+all** clears the lot. If the same problem fires repeatedly, it
+collapses into a single entry with a ×N counter instead of nagging.
 
 ---
 

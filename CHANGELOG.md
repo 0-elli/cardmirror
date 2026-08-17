@@ -18,6 +18,24 @@ see `DETAILED_CHANGELOG.md`.
   changed a setting, CardMirror assumes you know your way around and
   won't show it uninvited.
 
+- **A notice center in the status bar.** Errors and important status
+  updates now also land under a small chip at the bottom of the
+  window, where they stay until you dismiss them — no more trying to
+  read a toast before it fades. The chip is grey for routine notes,
+  yellow when something needs your attention, and red for problems;
+  click it to re-read, copy, or dismiss messages, individually or all
+  at once. Repeats of the same message collapse into one entry with a
+  counter.
+
+### Fixed
+
+- **Cards no longer lose their tag line after cut-and-paste round
+  trips.** Certain cuts could paste back a card without its tag,
+  quietly damaging the document — later symptoms included line breaks
+  that refused to stick and repair prompts on save. Pastes are now
+  healed as they arrive, the editor repairs any damaged card on the
+  spot, and documents damaged by earlier versions heal when reopened.
+
 ### Changed
 
 - **The welcome guide caught up with 1.0.** It now introduces card
@@ -32,6 +50,16 @@ see `DETAILED_CHANGELOG.md`.
   instead of waiting for the dialog to be reopened. Wording across
   Settings and the manual now reflects that card sharing and
   co-editing on the official relay require a linked paid membership.
+
+- **Pop-up messages stay visible long enough to read.** Toasts now
+  time out based on how much text they hold instead of a flat one
+  second.
+
+- **Decisions come as dialogs, not disappearing toasts.** If a file
+  changed on disk while autosave was on, CardMirror now asks whether
+  to overwrite it or save elsewhere instead of silently pausing
+  autosave; a failed write to a Word live-source file offers a retry
+  once you've closed it in Word.
 
 - **Substructure numbering now defaults to "a."** instead of "a)",
   matching the number style. Display-only — if you picked a separator
