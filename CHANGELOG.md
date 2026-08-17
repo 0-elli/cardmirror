@@ -5,6 +5,21 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **The outline can keep your place when you change its depth.** The
+  navigation pane's **1 · 2 · 3 · 4** buttons rebuild the outline, which
+  has always scrolled it back to the top of the document — so switching
+  depth halfway through a file meant finding your way back. Turn on
+  **Keep your place when the navigation depth changes** (Settings →
+  General → Workspace, off by default) and the section your cursor is in
+  stays at the top of the outline across the switch. If that section is
+  hidden at the new depth, the outline anchors on its nearest visible
+  parent instead. Nothing but the outline's scroll position moves: your
+  cursor, your selection, and the document are untouched.
+
 ## 1.1.0 — 2026-08-18
 
 ### Added

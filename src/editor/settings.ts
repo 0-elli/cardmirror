@@ -389,6 +389,15 @@ export interface Settings {
    *  doc's view only (transient, per-pane); this setting is what
    *  every new doc starts at. */
   navMaxLevel: number;
+  /** When true, switching the nav pane's level (the 1–4 buttons or the
+   *  context menu's "Show heading level N") keeps the section the cursor
+   *  sits in pinned to the top of the outline instead of scrolling back
+   *  to the top of the document. If that section's own row isn't
+   *  rendered at the new level — it collapsed under a shallower parent —
+   *  the nearest ancestor row that IS rendered takes its place. Scroll
+   *  only: the cursor, the nav selection, and the collapsed set are
+   *  untouched. Off by default. */
+  navKeepPlaceOnLevelChange: boolean;
   /** When true (default), `New document` mounts the CardMirror
    *  welcome / onboarding doc. When false, it mounts a blank
    *  doc — a single empty paragraph. The starter is the same one
@@ -1559,6 +1568,7 @@ export const CUSTOM_DASH_STYLES: ReadonlyArray<Settings['customDashStyle']> = [
 const DEFAULTS: Settings = {
   navWidth: 300,
   navMaxLevel: 3,
+  navKeepPlaceOnLevelChange: false,
   copyPreviousCiteNearestOnly: true,
   showOnboardingStarter: true,
   hasSeenUiTour: false,
@@ -2032,6 +2042,16 @@ export const SETTING_METADATA: SettingMeta[] = [
     category: 'general',
     section: 'Workspace',
     aliases: ['nav depth', 'outline depth', 'navigation level', 'nav pane depth'],
+  },
+  {
+    key: 'navKeepPlaceOnLevelChange',
+    label: 'Keep your place when the navigation depth changes',
+    description:
+      "Off by default. When on, clicking the navigation pane's 1–4 buttons keeps the section your cursor is in at the top of the outline, instead of jumping back to the top of the document. If that section is hidden at the new depth, the outline anchors on its nearest visible parent. Nothing but the outline's scroll position moves — your cursor and the document stay put.",
+    kind: 'toggle',
+    category: 'general',
+    section: 'Workspace',
+    aliases: ['nav scroll', 'outline scroll position', 'keep place', 'nav pane place'],
   },
   {
     key: 'mobileLayout',
@@ -4007,6 +4027,7 @@ function sanitize(s: Settings): Settings {
   return {
     navWidth: clamp(s.navWidth, 150, 800),
     navMaxLevel: clamp(Math.round(s.navMaxLevel), 1, 4),
+    navKeepPlaceOnLevelChange: s.navKeepPlaceOnLevelChange === true,
     // Default-on: preserve `false` only when explicitly set so the
     // onboarding shows up for new installs and survives upgrades
     // from before this setting existed.

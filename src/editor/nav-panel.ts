@@ -68,6 +68,7 @@ import {
   zoneRangeForEntry,
   headingInsertPos,
   TYPE_LABEL,
+  TYPE_TO_LEVEL,
   type HeadingEntry,
 } from './headings.js';
 import { setIcon } from './icons';
@@ -1956,10 +1957,102 @@ export class NavigationPanel {
    *  level re-collapses any manual chevron expansions. */
   private setMaxLevel(level: number): void {
     if (level < 1 || level > 4) return;
+    // `render` clears the list, which drops the scroll offset to 0 — the
+    // outline snaps back to the top of the document and the user loses
+    // the place they were reading. With `navKeepPlaceOnLevelChange` on,
+    // note where the cursor is BEFORE the rebuild and re-anchor after it.
+    const anchorPos = settings.get('navKeepPlaceOnLevelChange')
+      ? this.activeHeadingPos()
+      : null;
     this.applyMaxLevelToCollapseState(level);
     this.localMaxLevel = level;
     this.updateLevelButtonsActive();
     if (this.currentDoc) this.render(this.currentDoc);
+    if (anchorPos !== null) this.scrollAnchorToTop(anchorPos);
+  }
+
+  /**
+   * Position of the heading whose section holds the cursor — the outline
+   * row that should keep its place across a level change, or null when
+   * there's nothing to anchor on (no view, empty doc, or a cursor sitting
+   * ahead of the document's first heading).
+   *
+   * Sections resolve POSITIONALLY, not structurally: a pocket/hat/block
+   * heading owns everything after it up to the next equal-or-shallower
+   * heading, so the enclosing one is found by scanning the doc's top-level
+   * children backwards from the cursor's (the same idiom as
+   * `findEnclosingContainer` in `live-read-time.ts`). Two differences,
+   * both because this feeds the OUTLINE rather than a read-time readout:
+   * every heading type counts — each one is a row the user can be parked
+   * on — and the ancestor walk runs first, so a cursor inside a card or
+   * analytic unit resolves to that wrapper's own tag/analytic head
+   * (heading-anchored nodes live INSIDE their wrapper, where a sibling
+   * scan at doc level can't see them). Finer is better here: at level 4
+   * the card under the cursor is a row of its own, and it's the row the
+   * user is looking at.
+   *
+   * Read from `view.state`, which can be a few edits ahead of
+   * `currentDoc` (the outline rebuilds on a ~200ms debounce). Positions
+   * drift by at most those edits, and the anchor only picks a scroll
+   * target, so the same tolerance `setCaretHeading` documents applies.
+   */
+  private activeHeadingPos(): number | null {
+    const view = this.view;
+    if (!view) return null;
+    const $pos = view.state.selection.$from;
+
+    // Outward first: the cursor may be in the heading itself, or in the
+    // body of a card / analytic unit whose head IS the heading.
+    for (let d = $pos.depth; d >= 1; d--) {
+      const node = $pos.node(d);
+      if (TYPE_TO_LEVEL[node.type.name] !== undefined) return $pos.before(d);
+      const first = node.firstChild;
+      if (first && TYPE_TO_LEVEL[first.type.name] !== undefined) return $pos.before(d) + 1;
+    }
+
+    // Then backwards across top-level siblings, for content that sits
+    // under a pocket/hat/block heading without any wrapper of its own.
+    const doc = view.state.doc;
+    if (doc.childCount === 0) return null;
+    const index = Math.min($pos.index(0), doc.childCount - 1);
+    let childPos = 0;
+    const positions: number[] = [];
+    for (let i = 0; i < doc.childCount; i++) {
+      positions.push(childPos);
+      childPos += doc.child(i).nodeSize;
+    }
+    for (let i = index; i >= 0; i--) {
+      const child = doc.child(i);
+      if (TYPE_TO_LEVEL[child.type.name] !== undefined) return positions[i]!;
+      const first = child.firstChild;
+      if (first && TYPE_TO_LEVEL[first.type.name] !== undefined) return positions[i]! + 1;
+    }
+    return null; // nothing but loose content before the cursor
+  }
+
+  /**
+   * Scroll the outline so the row anchoring `pos` sits at the top of the
+   * list viewport.
+   *
+   * The heading at `pos` needn't have a row at the new level — it can be
+   * collapsed under a shallower parent — so the anchor is the LAST
+   * rendered row at or before it: its deepest rendered ancestor, the same
+   * rule the find-hit and caret decorations resolve by. `liEntries` is
+   * filled in render order, which is document order, so the last match
+   * wins. Scroll only — the editor selection, the nav selection, and the
+   * collapsed set are all left exactly as they were.
+   */
+  private scrollAnchorToTop(pos: number): void {
+    let target: HTMLLIElement | null = null;
+    for (const [li, entry] of this.liEntries) {
+      if (entry.pos <= pos) target = li;
+    }
+    // Nothing rendered at or before the cursor (empty outline, or the
+    // cursor is ahead of the first heading): the top is already right.
+    if (!target) return;
+    const max = Math.max(0, this.listEl.scrollHeight - this.listEl.clientHeight);
+    const top = target.offsetTop - this.listEl.offsetTop;
+    this.listEl.scrollTop = Math.max(0, Math.min(top, max));
   }
 
   private updateLevelButtonsActive(): void {

@@ -268,7 +268,10 @@ mirrors Word's Navigation Pane, but does more:
   change; what depth a **newly opened** document starts at is the
   **Default navigation depth** setting (Settings → General), Block by
   default. Clicking the already-active level re-collapses any manual
-  expansions.
+  expansions. Changing depth normally returns the outline to the top of
+  the document; turn on **Keep your place when the navigation depth
+  changes** (Settings → General) to have the section your cursor is in
+  stay at the top of the outline instead.
 - **Multi-select** — Mod-click adds an entry to the selection,
   Shift-click selects a contiguous range.
 - **Reorder** — drag an entry (or a multi-selection) up or down. It
@@ -1991,6 +1994,12 @@ headers shown inside each tab.
   at when a document opens (Pocket / Hat / Block / Tag; Block by
   default). The 1–4 buttons in the pane change the depth for that
   window only.
+- **Keep your place when the navigation depth changes** — off by
+  default. On, clicking the pane's 1–4 buttons keeps the section your
+  cursor is in at the top of the outline instead of jumping back to the
+  top of the document; if that section is hidden at the new depth, the
+  outline anchors on its nearest visible parent. Only the outline's
+  scroll position moves — your cursor and the document stay put.
 - **Multi-doc layout** — with three docs open, show all three at once
   (compact) or two-and-a-bit with click-to-snap (wide). No effect with
   one or two docs.
