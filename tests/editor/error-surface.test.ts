@@ -13,6 +13,7 @@ import {
   isFileChangedOnDiskError,
   fileLockedMessage,
 } from '../../src/editor/error-surface.js';
+import { noticeCount, __resetNoticesForTests } from '../../src/editor/status-notices.js';
 
 describe('isFileGoneError', () => {
   it('classifies Electron ENOENT (raw and IPC-wrapped) as file-gone', () => {
@@ -113,6 +114,27 @@ describe('installGlobalErrorSurface', () => {
     vi.advanceTimersByTime(11_000);
     window.dispatchEvent(new ErrorEvent('error', { error: new Error('third') }));
     expect(toasts().some((t) => t.includes('third'))).toBe(true);
+  });
+
+  it('every event reaches the notice chip even inside the toast throttle window', () => {
+    __resetNoticesForTests();
+    // Same error three times in a burst: ONE coalesced chip entry (the
+    // ×N counter must see all three), still just one toast.
+    for (let i = 0; i < 3; i++) {
+      window.dispatchEvent(new ErrorEvent('error', { error: new Error('storm') }));
+    }
+    expect(noticeCount()).toBe(1);
+    expect(toasts().length).toBe(1);
+    // Three DISTINCT errors in a burst: three chip entries, still one
+    // toast — the throttle gates toasts, not the record.
+    __resetNoticesForTests();
+    vi.advanceTimersByTime(11_000);
+    for (const m of ['alpha', 'beta', 'gamma']) {
+      window.dispatchEvent(new ErrorEvent('error', { error: new Error(m) }));
+    }
+    expect(noticeCount()).toBe(3);
+    expect(toasts().length).toBe(1);
+    __resetNoticesForTests();
   });
 
   it('ignores benign ResizeObserver loop noise entirely (no toast, no record)', () => {
