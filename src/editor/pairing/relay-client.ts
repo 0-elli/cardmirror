@@ -12,6 +12,7 @@
  */
 
 import { getElectronHost } from '../host/index.js';
+import { RELAY_FIX_PATH } from '../relay-decline.js';
 
 /** The minimal card shape sent over the wire — the dropzone's existing
  *  serialized slice plus a label and node kind. */
@@ -41,10 +42,7 @@ export function sendOutcomeToast(label: string, res: SendResult): string {
   if (res.fail === 0) return `Sent to ${label} ✓`;
   if (res.authFail > 0) {
     const scope = res.ok === 0 && res.authFail === res.fail ? '' : ` for ${res.authFail} recipient(s)`;
-    return (
-      `The relay declined your credentials${scope} — in Settings → Collaboration, ` +
-      `connect your Debate Decoded account or set up your own relay.`
-    );
+    return `The relay declined your credentials${scope}. ${RELAY_FIX_PATH}`;
   }
   if (res.ok === 0) return `Couldn't reach ${label}`;
   return `Sent to ${label} (${res.fail} failed)`;

@@ -28,6 +28,17 @@ export interface ToastOptions {
   fadeMs?: number;
 }
 
+/** Default visibility from reading time, not vibes (toast audit,
+ *  2026-08-17: the flat 1000ms default under-timed 60% of the app's
+ *  toasts — every error and most instructions). ~200ms/word at a
+ *  UI-reading pace on top of a pickup floor, capped so a runaway
+ *  message can't park a tooltip for half a minute. Explicit
+ *  `durationMs` still wins. */
+function defaultDurationMs(message: string): number {
+  const words = message.trim().split(/\s+/).length;
+  return Math.min(8000, Math.max(1600, 1600 + (words - 1) * 200));
+}
+
 export function showToast(message: string, opts: ToastOptions = {}): void {
   // Guard for non-DOM environments (vitest's Node default). Callers
   // can invoke showToast from any Command without breaking unit tests.
@@ -35,7 +46,7 @@ export function showToast(message: string, opts: ToastOptions = {}): void {
     return;
   }
   ensureTracking();
-  const durationMs = opts.durationMs ?? 1000;
+  const durationMs = opts.durationMs ?? defaultDurationMs(message);
   const fadeMs = opts.fadeMs ?? 200;
 
   const toast = document.createElement('div');

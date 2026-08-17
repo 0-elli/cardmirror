@@ -30,7 +30,7 @@ import type { EditorState, Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../../schema/index.js';
 import { settings } from '../settings.js';
-import { callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { salvageJson, extractJsonObjects } from './repair-text.js';
 import { showToast } from '../toast.js';
 import { AiActivity } from './ai-activity.js';
@@ -571,15 +571,8 @@ const FLASH_MS = 1400;
  *  model request per card (sequential), one transaction (one undo)
  *  applying every card's mapping at the end. */
 export function runRepairFormatting(view: EditorView): void {
-  if (!settings.get('aiFeaturesEnabled')) {
-    showToast('AI features are disabled — enable them in Settings.');
-    return;
-  }
+  if (!aiGateToast()) return;
   const apiKey = activeApiKey();
-  if (!apiKey) {
-    showToast('Set an API key in Settings to use AI features.');
-    return;
-  }
   const sel = view.state.selection;
   if (sel.empty) {
     showToast('Select the body text whose formatting needs repair.');

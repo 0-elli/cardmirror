@@ -22,7 +22,7 @@ import { Selection } from 'prosemirror-state';
 import type { EditorState, Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
 import { settings } from '../settings.js';
-import { callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { showToast } from '../toast.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion, type EditLease } from './edit-coordinator.js';
@@ -706,15 +706,8 @@ function collapseToSingleUndo(
  *  single undo step at the end. The second pass is skipped when the first
  *  found nothing (clean text). */
 export function runRepairText(view: EditorView): void {
-  if (!settings.get('aiFeaturesEnabled')) {
-    showToast('AI features are disabled — enable them in Settings.');
-    return;
-  }
+  if (!aiGateToast()) return;
   const apiKey = activeApiKey();
-  if (!apiKey) {
-    showToast('Set an API key in Settings to use AI features.');
-    return;
-  }
   const sel = view.state.selection;
   if (sel.empty) {
     showToast('Select the text to repair first.');

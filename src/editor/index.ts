@@ -299,6 +299,7 @@ import {
 } from './ribbon-commands.js';
 import { openWordCount } from './word-count-ui.js';
 import { wireColorPanel } from './color-panel.js';
+import { AI_DISABLED_MESSAGE } from './ai/llm.js';
 import {
   countReadAloudWords,
   countReadAloudSplit,
@@ -1570,7 +1571,7 @@ const ribbonContext: RibbonContext = {
   aiAskAboutSelection: () => {
     if (!view || !commentsColumn) return;
     if (!settings.get('aiFeaturesEnabled')) {
-      showToast('AI features are disabled — enable them in Settings.');
+      showToast(AI_DISABLED_MESSAGE);
       return;
     }
     const sel = view.state.selection;

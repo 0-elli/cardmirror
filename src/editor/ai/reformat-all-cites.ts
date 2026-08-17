@@ -35,7 +35,7 @@
 import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { settings } from '../settings.js';
-import { callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion } from './edit-coordinator.js';
 import { showConfirm } from '../confirm-dialog.js';
@@ -200,15 +200,8 @@ export async function runReformatAllCites(view: EditorView): Promise<void> {
   }
   runningPasses.add(view);
   try {
-    if (!settings.get('aiFeaturesEnabled')) {
-      showToast('AI features are disabled — enable them in Settings.');
-      return;
-    }
+    if (!aiGateToast()) return;
     const apiKey = activeApiKey();
-    if (!apiKey) {
-      showToast('Set an API key in Settings to use AI features.');
-      return;
-    }
     const total = collectCiteParagraphs(view.state.doc).length;
     if (total === 0) {
       showToast('No cites in this document.');

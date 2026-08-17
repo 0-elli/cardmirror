@@ -17,6 +17,7 @@ import { getElectronHost } from '../host/index.js';
 import { settings } from '../settings.js';
 import { appVersion, CARD_COMPAT_MIN_VERSION } from '../install-info.js';
 import { showToast } from '../toast.js';
+import { RELAY_FIX_PATH } from '../relay-decline.js';
 import { inboxStore } from './inbox-store.js';
 import { SendPillController } from './send-pill-ui.js';
 import { ReceivePillController } from './receive-pill-ui.js';
@@ -123,11 +124,7 @@ export function initPairingWiring(): void {
   // (a wrong custom-relay token or a stale build is the likely cause).
   if (electron?.onPairingUnauthorized) {
     electron.onPairingUnauthorized(() => {
-      showToast(
-        'Card sharing: the relay rejected your credentials. In Settings → ' +
-          'Collaboration, connect your Debate Decoded account or check your ' +
-          'self-hosted relay token. An outdated app can also cause this.',
-      );
+      showToast('Card sharing: the relay rejected your credentials. ' + RELAY_FIX_PATH);
     });
   }
 

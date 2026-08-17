@@ -17,7 +17,7 @@ import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { settings } from './settings.js';
 import { runGenerateAltText, runGenerateTable } from './ai/image-ai.js';
-import { activeApiKey } from './ai/llm.js';
+import { AI_DISABLED_MESSAGE, AI_NO_KEY_MESSAGE, activeApiKey } from './ai/llm.js';
 import { promptForText } from './text-prompt.js';
 
 /** PM plugin. Installed via `buildEditorPlugins` so every editor
@@ -79,8 +79,8 @@ function showImageContextMenu(
   const aiOn = settings.get('aiFeaturesEnabled');
   const hasKey = activeApiKey() !== '';
   const aiBlockedReason =
-    !aiOn ? 'AI features are disabled — enable them in Settings.'
-    : !hasKey ? 'Set an API key in Settings to use AI features.'
+    !aiOn ? AI_DISABLED_MESSAGE
+    : !hasKey ? AI_NO_KEY_MESSAGE
     : null;
 
   const items: MenuItem[] = [

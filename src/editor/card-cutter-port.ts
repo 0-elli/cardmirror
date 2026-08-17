@@ -84,6 +84,9 @@ interface CutOptions {
 }
 
 /** Stage → gerund phrase shown in the pill ("…", or "Clod is …"). */
+
+const CUTTER_NO_KEY_MESSAGE = 'Set an API key in Settings to use the card cutter.';
+const CUTTER_ENGINE_MISSING_MESSAGE = 'Card-cutter engine not loaded.';
 const STAGE_LABEL: Record<CutStage, string> = {
   initial: 'making the first pass',
   highlight: 'highlighting',
@@ -1107,13 +1110,13 @@ export async function cutFocusedCard(
   if (!engine) {
     const ok = await tryLoadCardCutterEngine();
     if (!ok) {
-      showToast('Card-cutter engine not loaded.');
+      showToast(CUTTER_ENGINE_MISSING_MESSAGE);
       return null;
     }
   }
   const api = engine!;
   if (!activeApiKey()) {
-    showToast('Set an API key in Settings to use the card cutter.');
+    showToast(CUTTER_NO_KEY_MESSAGE);
     return null;
   }
   const focused = inv.cardId ? resolveCardById(view, inv.cardId) : focusedPlainCard(view);
@@ -1398,11 +1401,11 @@ export async function refineHighlightFocusedCard(
   inv: RefineInvocation,
 ): Promise<boolean> {
   if (!(await ensureEngine())) {
-    showToast('Card-cutter engine not loaded.');
+    showToast(CUTTER_ENGINE_MISSING_MESSAGE);
     return false;
   }
   if (!activeApiKey()) {
-    showToast('Set an API key in Settings to use the card cutter.');
+    showToast(CUTTER_NO_KEY_MESSAGE);
     return false;
   }
   const feedback = inv.feedback?.trim() || undefined;
@@ -1562,11 +1565,11 @@ export function hasCardSubSelection(view: EditorView): boolean {
  *  already read. Adds marks only; never removes. */
 export async function addHighlightFocusedCard(view: EditorView): Promise<void> {
   if (!(await ensureEngine())) {
-    showToast('Card-cutter engine not loaded.');
+    showToast(CUTTER_ENGINE_MISSING_MESSAGE);
     return;
   }
   if (!activeApiKey()) {
-    showToast('Set an API key in Settings to use the card cutter.');
+    showToast(CUTTER_NO_KEY_MESSAGE);
     return;
   }
   const focused = focusedPlainCard(view);

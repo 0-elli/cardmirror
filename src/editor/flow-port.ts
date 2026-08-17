@@ -19,6 +19,8 @@ import { showToast } from './toast.js';
 /** Body prose — excluded in "headings only" mode (Verbatim's
  *  OutlineLevel<>BodyText filter). Everything else (pocket/hat/block/tag/
  *  analytic/cite/undertag) is a heading/label and is kept. */
+
+const FLOW_WINDOWS_ONLY_MESSAGE = 'The Verbatim Flow integration is Windows-only.';
 const BODY_TYPE = 'card_body';
 /** The citation line. In "headings only" mode we send only its
  *  cite-marked text (the short author/year cite), not the whole
@@ -97,7 +99,7 @@ function flowError(res: FlowResult | { error?: string }): string {
 export async function runSendToFlow(view: EditorView, opts: SendOptions): Promise<void> {
   const host = getElectronHost();
   if (!host?.flowSend) {
-    showToast('The Verbatim Flow integration is Windows-only.');
+    showToast(FLOW_WINDOWS_ONLY_MESSAGE);
     return;
   }
   const cells = selectionCells(view, opts);
@@ -130,7 +132,7 @@ export async function runSendToFlow(view: EditorView, opts: SendOptions): Promis
 export async function runPullFromFlow(view: EditorView): Promise<void> {
   const host = getElectronHost();
   if (!host?.flowPull) {
-    showToast('The Verbatim Flow integration is Windows-only.');
+    showToast(FLOW_WINDOWS_ONLY_MESSAGE);
     return;
   }
   const res = await host.flowPull();
@@ -156,7 +158,7 @@ export async function runPullFromFlow(view: EditorView): Promise<void> {
 export async function runCreateFlow(): Promise<void> {
   const host = getElectronHost();
   if (!host?.flowCreate) {
-    showToast('The Verbatim Flow integration is Windows-only.');
+    showToast(FLOW_WINDOWS_ONLY_MESSAGE);
     return;
   }
   showToast('Opening a new Flow…');
@@ -169,7 +171,7 @@ export async function runCreateFlow(): Promise<void> {
 export async function runStartFlowHost(silent = false): Promise<void> {
   const host = getElectronHost();
   if (!host?.flowStartHost) {
-    if (!silent) showToast('The Verbatim Flow integration is Windows-only.');
+    if (!silent) showToast(FLOW_WINDOWS_ONLY_MESSAGE);
     return;
   }
   const res = await host.flowStartHost();

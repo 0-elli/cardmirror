@@ -20,7 +20,7 @@ import type { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema/index.js';
 import { settings } from './settings.js';
-import { callLlm, LlmError, type LlmMessage, activeApiKey } from './ai/llm.js';
+import { callLlm, LlmError, type LlmMessage, activeApiKey, aiGateToast } from './ai/llm.js';
 import {
   buildExplainContext,
   formatExplainFirstTurn,
@@ -1470,15 +1470,8 @@ export class CommentsColumn {
   private invokeAiLocal(kind: 'ai' | 'note', id: string): void {
     const view = this.getView();
     if (!view) return;
-    if (!settings.get('aiFeaturesEnabled')) {
-      showToast('AI features are disabled — enable them in Settings.');
-      return;
-    }
+    if (!aiGateToast()) return;
     const apiKey = activeApiKey();
-    if (!apiKey) {
-      showToast('Set an API key in Settings to use AI features.');
-      return;
-    }
     const item = kind === 'ai' ? learnStore.getAiThread(id) : learnStore.getNote(id);
     if (!item) return;
 
@@ -1582,15 +1575,8 @@ export class CommentsColumn {
    *  user can tweak or confirm. The new card grounds to the SAME
    *  selection as the AI question. */
   private async convertAiThreadToFlashcard(threadId: string, btn: HTMLButtonElement): Promise<void> {
-    if (!settings.get('aiFeaturesEnabled')) {
-      showToast('AI features are disabled — enable them in Settings.');
-      return;
-    }
+    if (!aiGateToast()) return;
     const apiKey = activeApiKey();
-    if (!apiKey) {
-      showToast('Set an API key in Settings to use AI features.');
-      return;
-    }
     const thread = learnStore.getAiThread(threadId);
     if (!thread) return;
     const ctx = this.aiContextByThread.get(threadId) ?? this.contextFromLocal('ai', threadId);
@@ -2375,15 +2361,8 @@ export class CommentsColumn {
   private invokeAi(threadId: string): void {
     const view = this.getView();
     if (!view) return;
-    if (!settings.get('aiFeaturesEnabled')) {
-      showToast('AI features are disabled — enable them in Settings.');
-      return;
-    }
+    if (!aiGateToast()) return;
     const apiKey = activeApiKey();
-    if (!apiKey) {
-      showToast('Set an API key in Settings to use AI features.');
-      return;
-    }
     const thread = getCommentsState(view.state).threads.get(threadId);
     if (!thread) return;
 

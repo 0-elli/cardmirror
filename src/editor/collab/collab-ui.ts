@@ -19,6 +19,7 @@ import type { EditorView } from 'prosemirror-view';
 import { LoroUndoPlugin, loroSyncPluginKey, loroUndoPluginKey, undo as loroUndo, redo as loroRedo } from 'loro-prosemirror';
 import { settings } from '../settings.js';
 import { showToast } from '../toast.js';
+import { RELAY_FIX_PATH } from '../relay-decline.js';
 import { promptForText, promptForRouteChoice, confirmDialog } from '../text-prompt.js';
 import { markSyncOrigin } from '../sync-origin.js';
 import { readModePlugin } from '../read-mode-plugin.js';
@@ -550,9 +551,9 @@ function sessionCallbacks(deps: CollabUiDeps, getSess: () => ActiveSession | nul
       // exactly like being offline (audit find, 2026-07-10). Fired once
       // per session by CollabSession.
       showToast(
-        'The session relay rejected your credentials — reconnect your Debate ' +
-          'Decoded account or check your relay settings (Settings → Collaboration). ' +
-          'Your edits are saved locally and keep retrying.',
+        'The session relay rejected your credentials. ' +
+          RELAY_FIX_PATH +
+          ' Your edits are saved locally and keep retrying.',
       );
     },
     onBacklogMerged: (_count: number) => {
@@ -620,10 +621,8 @@ function sessionCallbacks(deps: CollabUiDeps, getSess: () => ActiveSession | nul
 export function relayFailureMessage(err: unknown, opts: { initiating: boolean; verb: string }): string {
   if (err instanceof RoomsError && err.status === 401) {
     return opts.initiating
-      ? 'Starting a collaboration session requires a relay. In Settings → ' +
-          'Collaboration, connect your Debate Decoded account or set up your own relay.'
-      : 'The session relay rejected your credentials. In Settings → Collaboration, ' +
-          'connect your Debate Decoded account or set up your own relay.';
+      ? 'Starting a collaboration session requires a relay. ' + RELAY_FIX_PATH
+      : 'The session relay rejected your credentials. ' + RELAY_FIX_PATH;
   }
   // 410 = the room was ended (host); 404 = the room itself is gone (relay
   // idle GC). Not errors the user can retry into — tell them the session is

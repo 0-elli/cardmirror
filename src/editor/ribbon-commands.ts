@@ -79,6 +79,8 @@ import {
 // Re-exported: the command lives in formatting-gaps.ts (extracted so the
 // paste converters can run it without importing this module, which would
 // cycle through paste-plugin); this module remains its command-surface home.
+
+const SHRINK_ON_CITE_MESSAGE = 'This paragraph is a cite line — shrink works on body text';
 export { fixFormattingGaps };
 import { refreshFailMessage } from './transclusion-resolve.js';
 import { getElectronHost, getHost } from './host/index.js';
@@ -3115,9 +3117,7 @@ export function smartShrinkText(
     const blocks = computeSmartShrinkBlocks(state);
     if (blocks.length === 0) {
       if (dispatch && state.selection.$from.parent.type.name === 'cite_paragraph') {
-        showToast('This paragraph is a cite line — shrink works on body text', {
-          durationMs: 2200,
-        });
+        showToast(SHRINK_ON_CITE_MESSAGE, { durationMs: 2200 });
       }
       return false;
     }
@@ -3195,9 +3195,7 @@ function sizeCycleCommand(
       // as cite) — toast so the refusal is diagnosable. Still
       // returns false: the command didn't run.
       if (dispatch && state.selection.$from.parent.type.name === 'cite_paragraph') {
-        showToast('This paragraph is a cite line — shrink works on body text', {
-          durationMs: 2200,
-        });
+        showToast(SHRINK_ON_CITE_MESSAGE, { durationMs: 2200 });
       }
       return false;
     }

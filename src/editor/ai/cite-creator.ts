@@ -28,7 +28,7 @@ import { Selection, TextSelection } from 'prosemirror-state';
 import type { EditorState, Transaction } from 'prosemirror-state';
 import { schema } from '../../schema/index.js';
 import { settings } from '../settings.js';
-import { callLlm, LlmError, activeApiKey } from './llm.js';
+import { aiGateToast, callLlm, LlmError, activeApiKey } from './llm.js';
 import { AiActivity } from './ai-activity.js';
 import { claimRegion } from './edit-coordinator.js';
 import { showToast } from '../toast.js';
@@ -421,15 +421,8 @@ export function applyCiteToSelection(
  *  with the formatted + marked cite. No-op when AI features are
  *  off, the key isn't set, or the selection is empty. */
 export function runAiCreateCite(view: EditorView): void {
-  if (!settings.get('aiFeaturesEnabled')) {
-    showToast('AI features are disabled — enable them in Settings.');
-    return;
-  }
+  if (!aiGateToast()) return;
   const apiKey = activeApiKey();
-  if (!apiKey) {
-    showToast('Set an API key in Settings to use AI features.');
-    return;
-  }
   const { state } = view;
   const sel = state.selection;
   if (sel.empty) {

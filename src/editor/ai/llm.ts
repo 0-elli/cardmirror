@@ -20,6 +20,7 @@
  */
 
 import { settings } from '../settings.js';
+import { showToast } from '../toast.js';
 
 /** Anthropic multipart content blocks (vision support). A text-only
  *  message can be a plain string; messages with images use the
@@ -118,6 +119,25 @@ export function resolveAiModel(): string {
   }
   const override = (settings.get('aiModelOverride') || '').trim();
   return isPlausibleModelId(override) ? override : DEFAULT_MODEL;
+}
+
+export const AI_DISABLED_MESSAGE = 'AI features are disabled — enable them in Settings.';
+export const AI_NO_KEY_MESSAGE = 'Set an API key in Settings to use AI features.';
+
+/** One shared entry gate for every AI feature: toasts the blocking
+ *  reason and returns false when AI can't run (master switch off, or
+ *  no key for the active provider). The toast audit found this guard
+ *  hand-copied at 17 call sites — copy edits now happen here once. */
+export function aiGateToast(): boolean {
+  if (!settings.get('aiFeaturesEnabled')) {
+    showToast(AI_DISABLED_MESSAGE);
+    return false;
+  }
+  if (!activeApiKey()) {
+    showToast(AI_NO_KEY_MESSAGE);
+    return false;
+  }
+  return true;
 }
 
 /** The API key for the currently selected provider, trimmed. Single

@@ -43,6 +43,9 @@ vi.mock('../../src/editor/ai/llm.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/editor/ai/llm.js')>()),
   callLlm: (req: LlmRequest) => callLlm(req),
   activeApiKey: () => 'test-key',
+  // The shared gate reads the REAL key internally (which tests don't
+  // set) — honor the settings switch, skip the key check.
+  aiGateToast: () => settings.get('aiFeaturesEnabled'),
 }));
 vi.mock('../../src/editor/confirm-dialog.js', () => ({
   showConfirm: (opts: ConfirmOptions) => showConfirm(opts),
