@@ -1,12 +1,12 @@
 # CardMirror Privacy Policy
 
-**Last updated: August 12, 2026**
+**Last updated: August 17, 2026**
 
 CardMirror is a writing and research tool for debate and academic work. This
 policy explains, in plain language, what happens to your data when you use it.
 
 The short version: **CardMirror keeps your work on your own device.** There are
-no required accounts, no logins, and no advertising or analytics tracking. A few
+no required accounts or logins, and no advertising or analytics tracking. A few
 optional features connect to the internet — and when they do, the things you
 share are **end‑to‑end encrypted**, meaning our server passes them along
 without being able to read them. This policy spells out exactly what each
@@ -19,11 +19,11 @@ feature sends, what (if anything) is stored, and for how long.
 
 ## 1. What we *don't* do
 
-- **No CardMirror accounts, and none required.** You don't sign up, create a
-  password, or need any account to use CardMirror — every feature works
-  without one. The one exception: you can link CardMirror to an existing
-  Debate Decoded membership (see §9), which collaboration features on the
-  official relay will soon require. Everything else works without it.
+- **No account required.** You don't sign up, create a password, or need any
+  account to use CardMirror — every feature works without one. The one
+  exception: you can link CardMirror to an existing Debate Decoded
+  membership (see §9), which collaboration features on the official relay
+  will soon require. Everything else works without it.
 - **No tracking or analytics.** CardMirror contains no analytics SDKs, no
   advertising trackers, and no usage telemetry. We do not build a profile of
   you or sell, rent, or trade anyone's data. We never have.
