@@ -914,6 +914,15 @@ export interface Settings {
    */
   liveContainerReadTime: boolean;
   /**
+   * Append a third segment to the live word-count readout: the
+   * read-aloud words still ahead of the cursor, with the same per-reader
+   * times ("what's left to read"). Off by default. Measured from the
+   * selection's end, so a selection counts as already read. Cheap — a
+   * suffix-sum table over the doc's top-level children is built once per
+   * doc, so a cursor move only counts the child it lands in.
+   */
+  liveRemainingReadTime: boolean;
+  /**
    * Per-style font sizes (in points). See DisplaySizes for details.
    * Each field becomes a CSS custom property on `#editor`.
    */
@@ -1670,6 +1679,7 @@ const DEFAULTS: Settings = {
   ],
   liveSelectionWordCount: false,
   liveContainerReadTime: true,
+  liveRemainingReadTime: false,
   displaySizes: { ...DEFAULT_DISPLAY_SIZES },
   displayParagraphSpacing: { ...DEFAULT_PARAGRAPH_SPACING },
   displayTypography: { ...DEFAULT_DISPLAY_TYPOGRAPHY },
@@ -2116,6 +2126,16 @@ export const SETTING_METADATA: SettingMeta[] = [
     category: 'general',
     section: 'Word counts',
     aliases: ['container read time', 'card read time', 'block read time', 'enclosing read time'],
+  },
+  {
+    key: 'liveRemainingReadTime',
+    label: 'Live read time for what is left to read',
+    description:
+      "Off by default. Appends one more segment to the bottom bar's word count: everything still ahead of your cursor — the read-aloud words from the cursor to the end of the document, with each reader's time for them. With text selected it measures from the end of the selection, so a selection counts as already read. Cheap even on large files: the count is built from a suffix table over the document, so moving the cursor only re-counts the card or paragraph it lands in.",
+    kind: 'toggle',
+    category: 'general',
+    section: 'Word counts',
+    aliases: ['time left', 'remaining read time', 'words left', 'unread words'],
   },
   {
     key: 'findRememberLastQuery',
@@ -4195,6 +4215,7 @@ function sanitize(s: Settings): Settings {
     // Default-on: preserve `false` only when explicitly set, so
     // installs upgrading from before this setting existed get it on.
     liveContainerReadTime: s.liveContainerReadTime === false ? false : true,
+    liveRemainingReadTime: s.liveRemainingReadTime === true,
     displaySizes: sanitizeDisplaySizes(s.displaySizes),
     displayParagraphSpacing: sanitizeParagraphSpacing(s.displayParagraphSpacing),
     displayTypography: sanitizeDisplayTypography(s.displayTypography),

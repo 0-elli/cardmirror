@@ -306,7 +306,7 @@ import {
   formatNumber,
   type ReadAloudCounts,
 } from './word-count.js';
-import { liveContainerSegment } from './live-read-time.js';
+import { liveContainerSegment, remainingReadSegment } from './live-read-time.js';
 import { getHost, getElectronHost, isWindowsHost, isSameOpenHandle, type OpenedFile, type JournalEntry } from './host/index.js';
 import {
   installGlobalErrorSurface,
@@ -4802,10 +4802,16 @@ function refreshWordCount(opts?: { selectionOnly?: boolean }): void {
   for (const r of readers) {
     parts.push(`${r.name}: ${formatReadTimeFor(counts, r)}`);
   }
-  const container = liveContainerSegment(view.state);
-  wordCountText.textContent = container
-    ? `${parts.join(' · ')} | ${container}`
-    : parts.join(' · ');
+  // Segments are pipe-joined in scope order — whole doc, the enclosing
+  // container, what's left — and each is independently optional, so the
+  // join filters rather than nesting conditionals (container off with
+  // remaining on reads "Doc: … | Left: …").
+  const segments = [
+    parts.join(' · '),
+    liveContainerSegment(view.state),
+    remainingReadSegment(view.state),
+  ].filter((s): s is string => s !== null);
+  wordCountText.textContent = segments.join(' | ');
 }
 
 /**
@@ -5553,14 +5559,18 @@ function mountView(doc: PMNode, threads: Thread[] = []): void {
       // it when a range is involved on either side (plain cursor moves
       // can't change a selection count); `liveContainerReadTime` needs
       // every selection change, cursor moves included — the enclosing
-      // container follows the caret. Both reuse the cached whole-doc
-      // count (no doc walk), and the container count is itself cached
-      // per container, so an empty→empty move costs an ancestor walk.
+      // container follows the caret, and so does `liveRemainingReadTime`'s
+      // "what's left" boundary. All three reuse the cached whole-doc
+      // count (no doc walk); the container count is itself cached per
+      // container and the remaining count reads a per-doc suffix table,
+      // so an empty→empty move costs an ancestor walk plus at most one
+      // top-level child.
       else if (
         !prevState.selection.eq(next.selection) &&
         ((settings.get('liveSelectionWordCount') &&
           (!prevState.selection.empty || !next.selection.empty)) ||
-          settings.get('liveContainerReadTime'))
+          settings.get('liveContainerReadTime') ||
+          settings.get('liveRemainingReadTime'))
       ) {
         refreshWordCount({ selectionOnly: true });
       }

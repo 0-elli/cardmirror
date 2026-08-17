@@ -65,7 +65,7 @@ import {
   formatNumber,
   type ReadAloudCounts,
 } from './word-count.js';
-import { liveContainerSegment } from './live-read-time.js';
+import { liveContainerSegment, remainingReadSegment } from './live-read-time.js';
 import { openWordCount } from './word-count-ui.js';
 import { isAutosaveOnForPath, setAutosaveForPath } from './autosave-prefs-store.js';
 import {
@@ -1190,10 +1190,14 @@ class Slot {
     for (const r of readers) {
       parts.push(`${r.name}: ${formatReadTimeFor(counts, r)}`);
     }
-    const container = liveContainerSegment(rec.view.state);
-    this.wcEl.textContent = container
-      ? `${parts.join(' · ')} | ${container}`
-      : parts.join(' · ');
+    // Pipe-joined in scope order — whole doc, enclosing container,
+    // what's left — each independently optional, mirroring single-pane.
+    const segments = [
+      parts.join(' · '),
+      liveContainerSegment(rec.view.state),
+      remainingReadSegment(rec.view.state),
+    ].filter((s): s is string => s !== null);
+    this.wcEl.textContent = segments.join(' | ');
   }
 
   /** Open a small dropdown over the chip listing every doc in this
@@ -3161,14 +3165,17 @@ function buildDocRecord(
       // mirroring single-pane. `liveSelectionWordCount` needs it only
       // when a range is involved on either side; `liveContainerReadTime`
       // needs every selection change, cursor moves included — the
-      // enclosing container follows the caret. Cheap either way: the
-      // whole-doc count is cached per doc, the container count per
-      // container.
+      // enclosing container follows the caret, as does the boundary
+      // `liveRemainingReadTime` counts forward from. Cheap either way:
+      // the whole-doc count is cached per doc, the container count per
+      // container, and the remaining count comes off a per-doc suffix
+      // table plus one top-level child.
       else if (
         !prevState.selection.eq(next.selection) &&
         ((settings.get('liveSelectionWordCount') &&
           (!prevState.selection.empty || !next.selection.empty)) ||
-          settings.get('liveContainerReadTime'))
+          settings.get('liveContainerReadTime') ||
+          settings.get('liveRemainingReadTime'))
       ) {
         record.owner.refreshWordCount();
       }
