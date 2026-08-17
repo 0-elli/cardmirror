@@ -4940,7 +4940,7 @@ function makeStarterDoc(): PMNode {
     ),
     blank(),
     paraText(
-      'CardMirror is alpha software — save often and keep a Verbatim copy of anything important.',
+      'CardMirror keeps crash-recovery journals of unsaved work, but save early anyway — a real .docx on disk is what Verbatim and your teammates can open.',
     ),
     blank(),
 
@@ -5031,10 +5031,10 @@ function makeStarterDoc(): PMNode {
     ),
     blank(),
 
-    // Section 5: Multi-doc workspace
-    n['hat']!.create({ id: newHeadingId() }, schema.text('5. Multi-doc workspace')),
+    // Section 5: Three-pane workspace
+    n['hat']!.create({ id: newHeadingId() }, schema.text('5. Three-pane workspace')),
     paraText(
-      'Turn on ⚙ → General → Multi-doc workspace (and reload) for three side-by-side slots, each with its own outline, footer, and back/forward history. Mod-1 / Mod-2 / Mod-3 focus them.',
+      'Turn on ⚙ → General → "Three-pane workspace" for three side-by-side slots, each with its own outline, footer, and back/forward history (toggling reloads the editor). Mod-1 / Mod-2 / Mod-3 focus them.',
     ),
     blank(),
     paraText(
@@ -5053,14 +5053,34 @@ function makeStarterDoc(): PMNode {
     ),
     blank(),
 
-    // Section 7: Settings
-    n['hat']!.create({ id: newHeadingId() }, schema.text('7. Make it yours')),
+    // Section 7: Collaboration
+    n['hat']!.create({ id: newHeadingId() }, schema.text('7. Share and co-edit')),
+    paraText(
+      'In the desktop app, CardMirror machines can send cards to each other and co-edit documents live — both end-to-end encrypted. Turn on Enable collaboration in ⚙ → Collaboration to get your pairing code and the Send / Receive pills, then swap codes with teammates to send cards straight to their machines.',
+    ),
+    blank(),
+    paraText(
+      'For live co-editing, click the Send pill and press the invite button on a recipient — or run Start Collaboration Session from the command bar and share the code it copies. Up to 10 people type in one document with live cursors, and everyone keeps their copy when the session ends.',
+    ),
+    blank(),
+    paraText(
+      'On the official relay these features require a linked paid Debate Decoded membership (⚙ → Collaboration).',
+    ),
+    blank(),
+
+    // Section 8: Settings
+    n['hat']!.create({ id: newHeadingId() }, schema.text('8. Make it yours')),
     paraText(
       'Click ⚙ for Settings and 📖 for the full keyboard reference any time.',
     ),
     blank(),
+
+    // Outro — its own hat: field reports say the tour-off toggle was
+    // undiscoverable buried as a trailing paragraph, so it gets a
+    // heading the nav pane surfaces.
+    n['hat']!.create({ id: newHeadingId() }, schema.text('Done with the tour?')),
     paraText(
-      'Done with the tour? Turn off ⚙ → General → "Onboarding doc for new documents" and new documents will open blank. When you\'re ready, open a .docx with 📂 — or just start editing this one. Welcome aboard!',
+      'Turn off ⚙ → Files → "Onboarding doc for new documents" and new documents will open blank. When you\'re ready, open a .docx with 📂 — or just start editing this one. Welcome aboard!',
     ),
   ]);
 }
@@ -5095,7 +5115,7 @@ function makeMobileStarterDoc(): PMNode {
 
     n['hat']!.create({ id: newHeadingId() }, schema.text('1. Open a file')),
     paraText(
-      'Tap ⋮ (top-right) to open a Verbatim or CardMirror file, or start a new one. The mobile view is built for reading and light edits, not building a document from scratch — to write a new doc, switch to the desktop layout from the same ⋮ menu ("Use desktop layout"). Saving writes back the same Word format either way. CardMirror is alpha software — save often and keep a Verbatim copy of anything important.',
+      'Tap ⋮ (top-right) to open a Verbatim or CardMirror file, or start a new one. The mobile view is built for reading and light edits, not building a document from scratch — to write a new doc, switch to the desktop layout from the same ⋮ menu ("Use desktop layout"). Saving writes back the same Word format either way.',
     ),
     blank(),
 
