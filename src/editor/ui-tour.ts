@@ -257,7 +257,13 @@ function visibleRect(target: HTMLElement): DOMRect | null {
   const w = right - left;
   const h = bottom - top;
   if (w < 2 || h < 2) return null;
-  if (w * h < r.width * r.height * 0.5) return null; // mostly clipped
+  // "Mostly clipped" counts as hidden — but only for SMALL targets
+  // (ribbon clusters cut off by a narrow window). Large surfaces like
+  // the editor live inside scrollers and are ALWAYS mostly clipped
+  // vertically; a generously-sized visible slice is a fine spotlight.
+  const majorityVisible = w * h >= r.width * r.height * 0.5;
+  const bigEnoughSlice = w >= 160 && h >= 80;
+  if (!majorityVisible && !bigEnoughSlice) return null;
   return new DOMRect(left, top, w, h);
 }
 

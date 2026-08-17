@@ -194,6 +194,28 @@ describe('UI tour', () => {
     expect(card()!.textContent).toContain('too narrow');
   });
 
+  it('a large scrollable target (the editor) spotlights its visible slice, not the narrow card', () => {
+    buildChrome();
+    // Editor: 816px-wide page, 5000px tall, inside a 700x600 scroller —
+    // mostly clipped by area, but the visible slice is generous.
+    const scroller = document.createElement('div');
+    scroller.style.overflow = 'auto';
+    fakeRect(scroller, { left: 0, top: 60, width: 700, height: 600 });
+    const pm = document.querySelector<HTMLElement>('.ProseMirror')!;
+    fakeRect(pm, { left: 10, top: 60, width: 816, height: 5000 });
+    scroller.appendChild(pm);
+    document.body.appendChild(scroller);
+    const tour = new UiTourController();
+    tour.start();
+    btn('Next')!.click(); // editor
+    expect(card()!.textContent).toContain('The editor');
+    expect(card()!.textContent).not.toContain('too narrow');
+    const shade = document.querySelector<HTMLElement>('.pmd-tour-shade')!;
+    // Cutout is the clamped visible slice (scroller ∩ viewport), padded.
+    expect(parseFloat(shade.style.width)).toBeLessThanOrEqual(700 + 12);
+    expect(parseFloat(shade.style.height)).toBeLessThanOrEqual(600 + 12);
+  });
+
   it('a missing/renamed target degrades to the adapted card, not a crash', () => {
     buildChrome();
     document.getElementById('formatting-panel')!.remove();
