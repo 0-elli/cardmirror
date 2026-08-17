@@ -83,6 +83,14 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       target: () => document.querySelector<HTMLElement>('.pmd-home-action'),
       interactive: true,
       advanceWhen: () => !homeScreenActive() && document.querySelector('.ProseMirror') !== null,
+      // Backing into this step re-opens the home screen so the New
+      // button is actually there to spotlight (lazy import: the home
+      // module drags learn/collab UI the tour otherwise never needs).
+      prepare: () => {
+        if (!homeScreenActive()) {
+          void import('./home-screen.js').then((m) => m.homeScreen.show({ canReturnToDoc: true }));
+        }
+      },
     });
   }
   steps.push(
@@ -350,6 +358,14 @@ export class UiTourController {
   }
 
   next(): void {
+    // Next on the create-doc prompt does the creating: click the home
+    // screen's New-document card for the user; advanceWhen moves the
+    // tour along once the editor takes over.
+    const step = this.steps[this.index];
+    if (step?.id === 'create-doc' && homeScreenActive()) {
+      document.querySelector<HTMLElement>('.pmd-home-action')?.click();
+      return;
+    }
     this.leaveCommandBarCleanup();
     if (this.index >= this.steps.length - 1) {
       this.end();

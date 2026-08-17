@@ -22,6 +22,12 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const qcsState = vi.hoisted(() => ({ open: false }));
 
+vi.mock('../../src/editor/home-screen.js', () => ({
+  homeScreen: {
+    show: vi.fn(() => document.documentElement.classList.add('pmd-home-active')),
+  },
+}));
+
 vi.mock('../../src/editor/quick-card-search-ui.js', () => {
   const listeners = new Set<() => void>();
   return {
@@ -311,6 +317,43 @@ describe('UI tour', () => {
       document.documentElement.classList.remove('pmd-home-active');
       vi.advanceTimersByTime(600);
       expect(card()!.textContent).toContain('The editor');
+    } finally {
+      document.documentElement.classList.remove('pmd-home-active');
+    }
+  });
+
+  it('backing into create-doc reopens home; Next clicks New document for the user', async () => {
+    vi.useFakeTimers();
+    buildChrome({ speech: true }); // editor exists, hidden behind home
+    document.documentElement.classList.add('pmd-home-active');
+    const home = document.createElement('div');
+    home.className = 'pmd-home-screen';
+    const action = document.createElement('button');
+    action.className = 'pmd-home-action';
+    fakeRect(action, { left: 300, top: 200, width: 200, height: 80 });
+    // The real card's click handler creates the doc + leaves home.
+    action.addEventListener('click', () =>
+      document.documentElement.classList.remove('pmd-home-active'),
+    );
+    home.appendChild(action);
+    document.body.appendChild(home);
+    try {
+      const tour = new UiTourController();
+      tour.start();
+      btn('Next')!.click(); // create-doc
+      // Next CREATES the doc instead of skipping the step…
+      btn('Next')!.click();
+      vi.advanceTimersByTime(600);
+      expect(card()!.textContent).toContain('The editor');
+
+      // …and Back from the editor step re-opens home (no glitch loop:
+      // with home active again, advanceWhen stays false).
+      btn('Back')!.click();
+      await vi.advanceTimersByTimeAsync(600);
+      expect(document.documentElement.classList.contains('pmd-home-active')).toBe(true);
+      expect(card()!.textContent).toContain('Create your first document');
+      vi.advanceTimersByTime(600);
+      expect(card()!.textContent).toContain('Create your first document');
     } finally {
       document.documentElement.classList.remove('pmd-home-active');
     }
