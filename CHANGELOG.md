@@ -5,7 +5,7 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## Unreleased
+## 1.1.0 — 2026-08-17
 
 ### Added
 
@@ -16,7 +16,7 @@ see `DETAILED_CHANGELOG.md`.
   readers' times for it. Handy mid-speech, or for checking whether the
   rest of a block fits the time you have left. Off by default; with
   text selected it measures from the end of the selection, and it stays
-  quick on long files.
+  quick on long files. Thanks to Cora (@coralynnkc)!
 
 - **The navigation pane follows your place in the document.** The
   outline now scrolls to keep the section you're in visible (on by
@@ -30,19 +30,7 @@ see `DETAILED_CHANGELOG.md`.
   heading would otherwise be off-screen, so typing within one section,
   or scrolling the outline by hand, leaves it alone. Nothing but the
   outline's scroll position moves: your cursor, your selection, and the
-  document are untouched.
-
-### Fixed
-
-- **Changing the outline depth no longer loses the "you are here"
-  highlight.** The navigation pane highlights the heading your cursor is
-  in, but clicking the **1 · 2 · 3 · 4** buttons rebuilt the outline
-  without restoring it — so whenever the new depth hid your heading, the
-  highlight simply vanished and nothing showed where you were. It now
-  falls back to the nearest visible parent, the same as everywhere else.
-## 1.1.0 — 2026-08-18
-
-### Added
+  document are untouched. Thanks to Cora (@coralynnkc)!
 
 - **A guided tour of the interface.** New installs start with a
   step-by-step spotlight walk over the editor, the style clusters, the
@@ -63,6 +51,13 @@ see `DETAILED_CHANGELOG.md`.
   counter.
 
 ### Fixed
+
+- **Changing the outline depth no longer loses the "you are here"
+  highlight.** The navigation pane highlights the heading your cursor is
+  in, but clicking the **1 · 2 · 3 · 4** buttons rebuilt the outline
+  without restoring it — so whenever the new depth hid your heading, the
+  highlight simply vanished and nothing showed where you were. It now
+  falls back to the nearest visible parent, the same as everywhere else.
 
 - **Cards no longer lose their tag line after cut-and-paste round
   trips.** Certain cuts could paste back a card without its tag,

@@ -5,7 +5,7 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 1.1.0 — 2026-08-17
 
 ### Added: live remaining read time (third readout segment)
 
@@ -127,7 +127,11 @@ never re-clamps it when the list is emptied, so the browser's "wipe the
 list, lose the offset" doesn't happen there. Those cases assert instead
 that the panel never writes `scrollTop`, which is exactly the
 pre-existing behavior a real browser turns into a snap-to-top.
-## 1.1.0 — 2026-08-18
+
+Both the remaining-read-time segment and the nav-follow feature are
+Cora's (@coralynnkc, PRs #37 and #36); the default flip to on, the
+three-pane scroller fix, and the trimmed settings copy landed as
+merge fixups.
 
 ### Added: guided UI tour (spotlight onboarding)
 
