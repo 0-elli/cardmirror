@@ -18,7 +18,11 @@ import { settings, SETTINGS_DEFAULTS } from './settings.js';
 import { CLIPBOARD_BUSY_MESSAGE, writeClipboardHtml } from './clipboard-write.js';
 import { showToast } from './toast.js';
 import { setManualShadowSelection } from './similar-selection-plugin.js';
-import { insertSelfRef, insertInDocCopy } from './self-transclusion-commands.js';
+import {
+  insertSelfRef,
+  insertInDocCopy,
+  selfRefSelectionPos,
+} from './self-transclusion-commands.js';
 import { registerOpenContextMenu, clearOpenContextMenu } from './context-menu-registry.js';
 import { dragController, type DragItem, type DragSurface } from './drag-controller.js';
 import { isTransclusionNode, zoneIdentity } from './transclusion.js';
@@ -68,7 +72,6 @@ import {
   zoneRangeForEntry,
   headingInsertPos,
   TYPE_LABEL,
-  TYPE_TO_LEVEL,
   type HeadingEntry,
 } from './headings.js';
 import { setIcon } from './icons';
@@ -1189,9 +1192,13 @@ export class NavigationPanel {
    * highlight may briefly point at a stale neighbor in that window,
    * which is acceptable for a visual indicator.
    *
-   * Doesn't auto-scroll the nav pane to bring the highlight into
-   * view — that'd dominate scroll behavior for users who scroll the
-   * editor freely. Add later if it turns out to be desired.
+   * Auto-scrolling the pane to bring the highlight into view is opt-in
+   * (`navFollowCursor`, default off) — unconditional scrolling would
+   * dominate scroll behavior for users who scroll the editor freely,
+   * which is why this stayed highlight-only until asked for. The
+   * following mode only moves the pane when the highlight actually
+   * CHANGES rows and the new row is off-screen; see
+   * `scrollCaretRowIntoView`.
    *
    * `opts.preserveMultiSelect`: set by the POSITIONAL RESYNC callers
    * (post-rebuild / divergence refresh), where the caret didn't move —
@@ -1245,6 +1252,19 @@ export class NavigationPanel {
     }
     if (!hadWindow && this.selectedIds.size === 1 && this.selectedIds.has(best.id!)) return;
     this.selectSingle(best);
+    // Reached only when the highlight moved to a DIFFERENT row (every
+    // no-change path returned above), which is what keeps following from
+    // fighting the user: typing inside one section can't scroll the pane.
+    //
+    // Positional resyncs are excluded. `preserveMultiSelect` marks exactly
+    // those callers (see the opts docs above): the caret did NOT move, the
+    // doc changed under it — a drag-reorder, a debounced rebuild, a level
+    // change. Scrolling there would yank the pane for something the user
+    // didn't do with the cursor, and the level-change caller wants the
+    // 'top' anchoring instead, which it applies itself.
+    if (opts?.preserveMultiSelect !== true && settings.get('navFollowCursor')) {
+      this.scrollCaretRowIntoView('nearest');
+    }
   }
 
   private handleShiftClick(entry: HeadingEntry): void {
@@ -1957,102 +1977,97 @@ export class NavigationPanel {
    *  level re-collapses any manual chevron expansions. */
   private setMaxLevel(level: number): void {
     if (level < 1 || level > 4) return;
-    // `render` clears the list, which drops the scroll offset to 0 — the
-    // outline snaps back to the top of the document and the user loses
-    // the place they were reading. With `navKeepPlaceOnLevelChange` on,
-    // note where the cursor is BEFORE the rebuild and re-anchor after it.
-    const anchorPos = settings.get('navKeepPlaceOnLevelChange')
-      ? this.activeHeadingPos()
-      : null;
     this.applyMaxLevelToCollapseState(level);
     this.localMaxLevel = level;
     this.updateLevelButtonsActive();
     if (this.currentDoc) this.render(this.currentDoc);
-    if (anchorPos !== null) this.scrollAnchorToTop(anchorPos);
+    // `render` rebuilt `liEntries`, so the caret highlight has to be
+    // re-resolved against the rows that now exist — the same positional
+    // resync the editor runs after its debounced `update()`. Without it
+    // the highlight simply VANISHES whenever the new depth collapses the
+    // caret's heading away: `selectedIds` still holds that heading's id,
+    // but no rendered row carries it, so nothing lights up. (Pre-existing
+    // on main, where it hid behind the scroll jumping to the top too.)
+    // Positional resync, not a caret move → an explicit multi-select
+    // survives, matching the other resync callers.
+    this.resyncCaretHighlight();
+    // Then keep the user's place: the rebuild dropped `scrollTop` to 0,
+    // so the outline would otherwise snap to the top of the document.
+    if (settings.get('navFollowCursor')) this.scrollCaretRowIntoView('top');
   }
 
-  /**
-   * Position of the heading whose section holds the cursor — the outline
-   * row that should keep its place across a level change, or null when
-   * there's nothing to anchor on (no view, empty doc, or a cursor sitting
-   * ahead of the document's first heading).
-   *
-   * Sections resolve POSITIONALLY, not structurally: a pocket/hat/block
-   * heading owns everything after it up to the next equal-or-shallower
-   * heading, so the enclosing one is found by scanning the doc's top-level
-   * children backwards from the cursor's (the same idiom as
-   * `findEnclosingContainer` in `live-read-time.ts`). Two differences,
-   * both because this feeds the OUTLINE rather than a read-time readout:
-   * every heading type counts — each one is a row the user can be parked
-   * on — and the ancestor walk runs first, so a cursor inside a card or
-   * analytic unit resolves to that wrapper's own tag/analytic head
-   * (heading-anchored nodes live INSIDE their wrapper, where a sibling
-   * scan at doc level can't see them). Finer is better here: at level 4
-   * the card under the cursor is a row of its own, and it's the row the
-   * user is looking at.
-   *
-   * Read from `view.state`, which can be a few edits ahead of
-   * `currentDoc` (the outline rebuilds on a ~200ms debounce). Positions
-   * drift by at most those edits, and the anchor only picks a scroll
-   * target, so the same tolerance `setCaretHeading` documents applies.
-   */
-  private activeHeadingPos(): number | null {
+  /** Re-resolve the caret highlight against the currently-rendered rows.
+   *  Call after any `render()` that wasn't driven by a caret move. */
+  private resyncCaretHighlight(): void {
     const view = this.view;
-    if (!view) return null;
-    const $pos = view.state.selection.$from;
-
-    // Outward first: the cursor may be in the heading itself, or in the
-    // body of a card / analytic unit whose head IS the heading.
-    for (let d = $pos.depth; d >= 1; d--) {
-      const node = $pos.node(d);
-      if (TYPE_TO_LEVEL[node.type.name] !== undefined) return $pos.before(d);
-      const first = node.firstChild;
-      if (first && TYPE_TO_LEVEL[first.type.name] !== undefined) return $pos.before(d) + 1;
-    }
-
-    // Then backwards across top-level siblings, for content that sits
-    // under a pocket/hat/block heading without any wrapper of its own.
-    const doc = view.state.doc;
-    if (doc.childCount === 0) return null;
-    const index = Math.min($pos.index(0), doc.childCount - 1);
-    let childPos = 0;
-    const positions: number[] = [];
-    for (let i = 0; i < doc.childCount; i++) {
-      positions.push(childPos);
-      childPos += doc.child(i).nodeSize;
-    }
-    for (let i = index; i >= 0; i--) {
-      const child = doc.child(i);
-      if (TYPE_TO_LEVEL[child.type.name] !== undefined) return positions[i]!;
-      const first = child.firstChild;
-      if (first && TYPE_TO_LEVEL[first.type.name] !== undefined) return positions[i]! + 1;
-    }
-    return null; // nothing but loose content before the cursor
+    if (!view) return;
+    this.setCaretHeading(view.state.selection.from, selfRefSelectionPos(view.state), {
+      preserveMultiSelect: true,
+    });
   }
 
   /**
-   * Scroll the outline so the row anchoring `pos` sits at the top of the
-   * list viewport.
+   * The rendered row carrying the caret highlight — what the outline
+   * currently says "you are here" about. Null when nothing is
+   * highlighted (empty outline, or a caret ahead of the first heading).
    *
-   * The heading at `pos` needn't have a row at the new level — it can be
-   * collapsed under a shallower parent — so the anchor is the LAST
-   * rendered row at or before it: its deepest rendered ancestor, the same
-   * rule the find-hit and caret decorations resolve by. `liEntries` is
-   * filled in render order, which is document order, so the last match
-   * wins. Scroll only — the editor selection, the nav selection, and the
+   * Deliberately reads the DOM class rather than re-deriving the caret's
+   * heading from the doc: `setCaretHeading` already owns that resolution
+   * (largest rendered `entry.pos <= caret pos`, which lands on the
+   * deepest rendered ancestor when the exact heading is collapsed away),
+   * and scrolling to a row the highlight DISAGREES with would be worse
+   * than not scrolling at all.
+   */
+  private caretRow(): HTMLLIElement | null {
+    for (const li of this.liEntries.keys()) {
+      if (li.classList.contains('pmd-nav-item-selected')) return li;
+    }
+    return null;
+  }
+
+  /**
+   * Scroll the outline to the highlighted row, so the pane keeps up with
+   * where the caret is in the document.
+   *
+   * Two modes, and the difference is the whole reason this doesn't
+   * "dominate scroll behavior for users who scroll the editor freely"
+   * (the concern `setCaretHeading` documents):
+   *
+   *   - `'nearest'` — the caret-following case. Does NOTHING when the row
+   *     is already visible, so ordinary typing and cursor movement inside
+   *     one section never move the pane, and a nav pane the user scrolled
+   *     by hand is left alone until the caret actually leaves the visible
+   *     span. Only an off-screen row scrolls, and only just far enough.
+   *   - `'top'` — the level-change case, where `render()` has already
+   *     destroyed the scroll offset. There is no position left to
+   *     preserve, so the row is pinned to the top of the viewport and the
+   *     section the user was reading heads the list.
+   *
+   * Scroll only: the editor selection, the nav selection, and the
    * collapsed set are all left exactly as they were.
    */
-  private scrollAnchorToTop(pos: number): void {
-    let target: HTMLLIElement | null = null;
-    for (const [li, entry] of this.liEntries) {
-      if (entry.pos <= pos) target = li;
-    }
-    // Nothing rendered at or before the cursor (empty outline, or the
-    // cursor is ahead of the first heading): the top is already right.
+  private scrollCaretRowIntoView(mode: 'nearest' | 'top'): void {
+    const target = this.caretRow();
     if (!target) return;
-    const max = Math.max(0, this.listEl.scrollHeight - this.listEl.clientHeight);
-    const top = target.offsetTop - this.listEl.offsetTop;
-    this.listEl.scrollTop = Math.max(0, Math.min(top, max));
+    const list = this.listEl;
+    // `offsetTop` is measured from the nearest POSITIONED ancestor, which
+    // is the panel (`position: fixed`), not the list (`.pmd-nav-list` is
+    // an unpositioned flex child) — so the list's own offset comes off to
+    // get a content-relative coordinate. Both are scroll-independent.
+    const top = target.offsetTop - list.offsetTop;
+    const max = Math.max(0, list.scrollHeight - list.clientHeight);
+    if (mode === 'nearest') {
+      const viewTop = list.scrollTop;
+      const viewBottom = viewTop + list.clientHeight;
+      const bottom = top + target.offsetHeight;
+      if (top >= viewTop && bottom <= viewBottom) return; // already visible
+      // Off the bottom → bring its bottom edge just inside; off the top →
+      // its top edge. Either way the pane moves the minimum distance.
+      const next = top < viewTop ? top : bottom - list.clientHeight;
+      list.scrollTop = Math.max(0, Math.min(next, max));
+      return;
+    }
+    list.scrollTop = Math.max(0, Math.min(top, max));
   }
 
   private updateLevelButtonsActive(): void {

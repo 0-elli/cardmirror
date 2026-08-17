@@ -1,20 +1,30 @@
 // @vitest-environment jsdom
 
 /**
- * `navKeepPlaceOnLevelChange` — the nav pane keeps the cursor's section at
- * the top of the outline across a level change instead of snapping back to
- * the top of the document.
+ * The nav pane keeping up with your place in the document.
  *
- * jsdom has no layout: `offsetTop` / `clientHeight` / `scrollHeight` are all
- * 0, so the anchoring math would be indistinguishable from the fallback. The
- * geometry is stubbed instead — every row is `ROW_H` tall in DOM order, the
- * list viewport is `VIEWPORT_H` — which is exactly the shape a real browser
- * reports and lets the tests assert the offset the panel actually computes.
+ * Two behaviors, deliberately separated because only one of them is
+ * opt-in:
+ *
+ *   - The caret HIGHLIGHT surviving a level change is a plain bug fix and
+ *     runs unconditionally. `render()` rebuilds every row, so a heading
+ *     that collapses away at the new depth leaves `selectedIds` pointing
+ *     at an id no rendered row carries — and the outline goes blank with
+ *     no "you are here" at all. Every other rebuild in the editor is
+ *     followed by a positional resync; `setMaxLevel` was missing it.
+ *   - SCROLLING to follow the caret is `navFollowCursor`, default off.
+ *
+ * jsdom has no layout: `offsetTop` / `offsetHeight` / `clientHeight` /
+ * `scrollHeight` are all 0, so the anchoring math would be
+ * indistinguishable from the fallback. The geometry is stubbed instead —
+ * every row `ROW_H` tall in DOM order, the list viewport `VIEWPORT_H` —
+ * which is the shape a real browser reports and lets the tests assert the
+ * offsets the panel actually computes.
  *
  * The scroll RESET on the flag-off path can't be observed the same way:
- * jsdom stores `scrollTop` as a plain number and never re-clamps it when the
- * list is emptied, so the browser's "wipe the list, lose the offset" is
- * simply absent here. The honest assertion is that the panel writes
+ * jsdom stores `scrollTop` as a plain number and never re-clamps it when
+ * the list is emptied, so the browser's "wipe the list, lose the offset"
+ * is simply absent here. The honest assertion is that the panel writes
  * `scrollTop` only when the feature is on — with the flag off it doesn't
  * touch the offset at all, which in a real browser is precisely today's
  * snap-to-top.
@@ -29,7 +39,7 @@ import { NavigationPanel } from '../../src/editor/nav-panel.js';
 import { settings } from '../../src/editor/settings.js';
 
 const ROW_H = 20;
-const VIEWPORT_H = 40;
+const VIEWPORT_H = 40; // two rows visible at a time
 
 const node = (name: string, attrs: Record<string, unknown> | null, content?: PMNode | PMNode[]): PMNode =>
   schema.nodes[name]!.create(attrs, content);
@@ -125,6 +135,10 @@ function stubGeometry(listEl: HTMLElement): void {
       return Array.prototype.indexOf.call(parent.children, this) * ROW_H;
     },
   });
+  Object.defineProperty(HTMLLIElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get: () => ROW_H,
+  });
   Object.defineProperty(listEl, 'clientHeight', {
     configurable: true,
     get: () => VIEWPORT_H,
@@ -140,6 +154,8 @@ interface Harness {
   view: EditorView;
   writes: number[];
   rowLabels(): string[];
+  /** Label of the row currently carrying the caret highlight, or null. */
+  highlighted(): string | null;
 }
 
 const open: Harness[] = [];
@@ -156,6 +172,10 @@ function setup(doc: PMNode = makeDoc()): Harness {
     view,
     writes,
     rowLabels: () => [...listEl.children].map((li) => li.textContent ?? ''),
+    highlighted: () => {
+      const li = listEl.querySelector('.pmd-nav-item-selected');
+      return li ? (li.textContent ?? '') : null;
+    },
   };
   open.push(h);
   return h;
@@ -165,8 +185,14 @@ function putCursor(view: EditorView, pos: number): void {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
 }
 
+/** What the editor's `dispatchTransaction` does on every caret move — the
+ *  panel doesn't observe the view itself. */
+function syncCaret(h: Harness): void {
+  h.panel.setCaretHeading(h.view.state.selection.from);
+}
+
 beforeEach(() => {
-  settings.set('navKeepPlaceOnLevelChange', false);
+  settings.set('navFollowCursor', false);
   settings.set('navMaxLevel', 3);
 });
 
@@ -176,10 +202,36 @@ afterEach(() => {
     h.view.destroy();
   }
   delete (HTMLLIElement.prototype as unknown as Record<string, unknown>)['offsetTop'];
-  settings.set('navKeepPlaceOnLevelChange', false);
+  delete (HTMLLIElement.prototype as unknown as Record<string, unknown>)['offsetHeight'];
+  settings.set('navFollowCursor', false);
 });
 
-describe('nav level change with navKeepPlaceOnLevelChange OFF', () => {
+describe('caret highlight across a level change (unconditional)', () => {
+  it('keeps a highlight when the depth collapses the caret\'s heading away', () => {
+    const h = setup();
+    putCursor(h.view, inCardBody(h.view.state.doc, 2));
+    clickLevel(h.panel, 4);
+    expect(h.highlighted()).toContain('Tag two'); // its own row
+
+    // Level 3 collapses the tags: the row that WAS highlighted no longer
+    // exists. Before the resync this went blank — the reported bug.
+    clickLevel(h.panel, 3);
+    expect(h.highlighted()).toContain('Block one');
+  });
+
+  it('does so with the follow setting off — it is a fix, not a feature', () => {
+    const h = setup();
+    settings.set('navFollowCursor', false);
+    putCursor(h.view, inCardBody(h.view.state.doc, 4));
+    clickLevel(h.panel, 4);
+    expect(h.highlighted()).toContain('Tag four');
+    clickLevel(h.panel, 3);
+    expect(h.highlighted()).toContain('Block three');
+    expect(h.writes).toEqual([]); // …and still no scrolling
+  });
+});
+
+describe('level change with navFollowCursor OFF', () => {
   it('leaves the scroll offset alone — the rebuild lands at the top, as before', () => {
     const h = setup();
     putCursor(h.view, inCardBody(h.view.state.doc, 3));
@@ -188,8 +240,8 @@ describe('nav level change with navKeepPlaceOnLevelChange OFF', () => {
   });
 });
 
-describe('nav level change with navKeepPlaceOnLevelChange ON', () => {
-  beforeEach(() => settings.set('navKeepPlaceOnLevelChange', true));
+describe('level change with navFollowCursor ON', () => {
+  beforeEach(() => settings.set('navFollowCursor', true));
 
   it("pins the cursor's own row to the top when the new level renders it", () => {
     const h = setup();
@@ -231,6 +283,7 @@ describe('nav level change with navKeepPlaceOnLevelChange ON', () => {
     const h = setup(doc);
     putCursor(h.view, 1); // inside the leading paragraph
     clickLevel(h.panel, 4);
+    expect(h.highlighted()).toBeNull();
     expect(h.writes).toEqual([]);
   });
 
@@ -249,5 +302,56 @@ describe('nav level change with navKeepPlaceOnLevelChange ON', () => {
     expect(() => clickLevel(panel, 4)).not.toThrow();
     expect(writes).toEqual([]);
     panel.destroy();
+  });
+});
+
+describe('following the caret as it moves', () => {
+  beforeEach(() => {
+    settings.set('navFollowCursor', true);
+    settings.set('navMaxLevel', 4); // all eight rows rendered
+  });
+
+  it('scrolls an off-screen row just far enough into view', () => {
+    const h = setup();
+    putCursor(h.view, inCardBody(h.view.state.doc, 3));
+    syncCaret(h);
+    // Row 5 (Tag three) spans 100–120; the viewport shows 0–40. Scrolling
+    // DOWN brings its bottom edge to the viewport's bottom, not its top —
+    // the minimum move.
+    expect(h.highlighted()).toContain('Tag three');
+    expect(h.writes).toEqual([6 * ROW_H - VIEWPORT_H]);
+  });
+
+  it('leaves an already-visible row alone', () => {
+    const h = setup();
+    // Row 1 (Block one) spans 20–40, fully inside the 0–40 viewport.
+    putCursor(h.view, inCardBody(h.view.state.doc, 1));
+    h.panel.setCaretHeading(1); // resolve onto the Block one row
+    expect(h.writes).toEqual([]);
+  });
+
+  it('does not move the pane while the caret stays in one section', () => {
+    const h = setup();
+    const doc = h.view.state.doc;
+    putCursor(h.view, inCardBody(doc, 3));
+    syncCaret(h);
+    const afterFirst = h.writes.length;
+
+    // Typing along inside the same card keeps resolving to the same row,
+    // and `setCaretHeading` returns before ever reaching the scroll.
+    putCursor(h.view, inCardBody(h.view.state.doc, 3) + 2);
+    syncCaret(h);
+    putCursor(h.view, inCardBody(h.view.state.doc, 3) + 4);
+    syncCaret(h);
+    expect(h.writes).toHaveLength(afterFirst);
+  });
+
+  it('stays put with the setting off', () => {
+    settings.set('navFollowCursor', false);
+    const h = setup();
+    putCursor(h.view, inCardBody(h.view.state.doc, 4));
+    syncCaret(h);
+    expect(h.highlighted()).toContain('Tag four'); // highlight still tracks
+    expect(h.writes).toEqual([]); // …the pane just doesn't chase it
   });
 });

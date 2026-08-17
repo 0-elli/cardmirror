@@ -7,53 +7,85 @@ in each release, see `CHANGELOG.md`.
 
 ## Unreleased
 
-### Added: nav pane keeps your place across a level change
+### Fixed: a level change dropped the caret highlight
 
-`navKeepPlaceOnLevelChange` (General → Workspace, **off by default**,
-`kind: 'toggle'` so it also gets a command-palette toggle). Every level
-change routes through `setMaxLevel` — the header's 1–4 buttons and the
-context menu's "Show heading level N" alike — which re-renders the
-outline, and the render clears the list, dropping the scroll offset to
-0. With the flag on, `setMaxLevel` notes an anchor before the rebuild
-and re-applies the scroll after it.
+Pre-existing, and the reason the feature below was worth building. Every
+rebuild of `liEntries` has to be followed by a positional resync —
+`setCaretHeading` re-resolved against the rows that now exist — which is
+why the editor runs one after its debounced `update()`. `setMaxLevel`
+rebuilds the list and never did. `selectedIds` kept the caret heading's
+id, but when the new depth collapsed that heading away no rendered row
+carried it, so `render`'s selected-class pass matched nothing and the
+outline lost its "you are here" entirely.
 
-The anchor is the heading whose section holds the cursor. The nav pane
-had no such notion (caret tracking only ever lit a row), so it's derived
-here: an ancestor walk out from `selection.$from` first — a cursor in a
-card or analytic unit belongs to that wrapper's own tag/analytic head,
-which lives *inside* the wrapper — then a backwards scan across the
-doc's top-level siblings, since pocket/hat/block sections are positional
-spans, not structural ones (the `findEnclosingContainer` idiom from
-`live-read-time.ts`, but every heading type counts, because every one of
-them is a row the user can be parked on). Resolving as finely as the tag
-is deliberate: at level 4 the card under the cursor is its own row, and
-it's the row the user is looking at.
+`setMaxLevel` now resyncs after the render, unconditionally — this is a
+bug fix, not part of the setting. It resolves the way every other caret
+consumer does (largest rendered `entry.pos <= caret pos`), which lands
+on the deepest rendered ancestor when the exact heading is gone. Passed
+as a positional resync, so an explicit nav multi-select survives a depth
+change the same way it survives a rebuild.
 
-The anchoring heading needn't have a row at the new level — it may have
-collapsed under a shallower parent — so the post-render pass takes the
-last rendered row at or before it (`liEntries` is filled in document
-order), the same deepest-rendered-ancestor rule the find-hit and caret
-decorations resolve by, and sets `scrollTop` to that row's offset within
-the list, clamped to the scrollable range. Scroll only: the editor
-selection, the nav multi-selection, and the collapsed set are all left
-alone. No view, no doc, an empty outline, or a cursor ahead of the first
-heading all fall through to today's behavior (top). `scrollToTop()`, the
-doc-load reset, is untouched — a freshly opened document still starts at
-the top of its outline.
+### Added: the nav pane can follow the cursor
+
+`navFollowCursor` (General → Workspace, **off by default**, `kind:
+'toggle'` so it also gets a command-palette toggle). `setCaretHeading`
+has always resolved and highlighted the caret's row while explicitly
+declining to scroll to it — "that'd dominate scroll behavior for users
+who scroll the editor freely. Add later if it turns out to be desired."
+This is that later; the concern is answered by *when* it scrolls rather
+than by leaving it out.
+
+The scroll target is whichever row currently carries the highlight, read
+back off the DOM rather than re-derived from the doc. That's the point:
+`setCaretHeading` already owns the resolution, and a scroll that
+disagreed with the visible highlight would be worse than no scroll. (The
+first cut of this change re-derived the caret's heading with its own
+ancestor walk and doc-level sibling scan — ~60 lines reaching the same
+answer by a second route, now deleted.)
+
+Two modes:
+
+- **`'nearest'`** — caret movement. Runs only where `setCaretHeading`
+  has established the highlight moved to a *different* row (every
+  no-change path returns before it), and then only if that row is
+  off-screen, scrolling the minimum distance to reveal it. So typing
+  inside one section never moves the pane, and an outline the user
+  scrolled by hand stays put until the caret actually leaves the visible
+  span. Positional resyncs are excluded outright — the caret didn't
+  move, the doc changed under it, and yanking the pane after a
+  drag-reorder or a debounced rebuild is exactly the behavior the
+  original note was guarding against.
+- **`'top'`** — level change, where `render()` has already destroyed the
+  scroll offset. There is no position left to preserve, so the row is
+  pinned to the top of the viewport and the section the user was reading
+  heads the list.
+
+`offsetTop` is measured from the nearest positioned ancestor, which is
+the panel (`position: fixed`) — `.pmd-nav-list` is an unpositioned flex
+child — so the list's own offset comes off to get a content-relative
+coordinate; both are scroll-independent. Results clamp to the scrollable
+range. Scroll only: the editor selection, the nav multi-selection, and
+the collapsed set are all left alone. No view, no doc, an empty outline,
+or a caret ahead of the first heading all fall through to doing nothing.
+`scrollToTop()`, the doc-load reset, is untouched — a freshly opened
+document still starts at the top of its outline.
 
 Both surfaces inherit it: the single-doc panel and each pane's panel in
 the three-pane shell attach a view at construction, and the mobile shell
 reuses the single-doc instance.
 
-Tests (`tests/editor/nav-keep-place.test.ts`) stub the geometry jsdom
+Tests (`tests/editor/nav-follow-cursor.test.ts`) stub the geometry jsdom
 doesn't have — rows `ROW_H` apart, a fixed viewport — and assert the
-offset the panel computes, including the bottom clamp and the
-collapsed-away fallback. The flag-OFF reset can't be observed directly:
-jsdom stores `scrollTop` as a plain number and never re-clamps it when
-the list is emptied, so the browser's "wipe the list, lose the offset"
-doesn't happen there. Those cases assert instead that the panel never
-writes `scrollTop`, which is exactly the pre-existing behavior a real
-browser turns into a snap-to-top.
+offsets the panel computes: the bottom clamp, the collapsed-away
+fallback, the minimum-distance reveal, and the two guarantees that keep
+following from fighting the user (an already-visible row isn't touched;
+moving within one section doesn't scroll). The highlight fix is asserted
+with the setting off, where it belongs. The flag-OFF scroll reset can't
+be observed directly: jsdom stores `scrollTop` as a plain number and
+never re-clamps it when the list is emptied, so the browser's "wipe the
+list, lose the offset" doesn't happen there. Those cases assert instead
+that the panel never writes `scrollTop`, which is exactly the
+pre-existing behavior a real browser turns into a snap-to-top.
 
 ## 1.1.0 — 2026-08-18
 
