@@ -2065,7 +2065,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'navFollowCursor',
     label: 'Navigation pane follows the cursor',
     description:
-      "Off by default. When on, the navigation pane scrolls to keep your place in sight: moving the cursor into a different section brings that heading into view, and changing the depth with the 1–4 buttons keeps the section you were in at the top of the outline instead of jumping back to the top of the document. If your section is hidden at the current depth, the outline follows its nearest visible parent. The pane only moves when the heading would otherwise be off-screen, so typing within one section leaves it alone. Nothing but the outline's scroll position moves — your cursor and the document stay put.",
+      'Off by default. When on, the navigation pane scrolls to keep your place in sight: moving the cursor into a different section brings that heading into view',
     kind: 'toggle',
     category: 'general',
     section: 'Workspace',
@@ -2167,7 +2167,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'liveRemainingReadTime',
     label: 'Live read time for what is left to read',
     description:
-      "Off by default. Appends one more segment to the bottom bar's word count: everything still ahead of your cursor — the read-aloud words from the cursor to the end of the document, with each reader's time for them. With text selected it measures from the end of the selection, so a selection counts as already read. Cheap even on large files: the count is built from a suffix table over the document, so moving the cursor only re-counts the card or paragraph it lands in.",
+      "Off by default. Appends one more segment to the bottom bar's word count: everything still ahead of your cursor — the read-aloud words from the cursor to the end of the document, with each reader's time for them.",
     kind: 'toggle',
     category: 'general',
     section: 'Word counts',
