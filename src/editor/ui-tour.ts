@@ -20,13 +20,13 @@
  * a real spotlight if the element becomes visible mid-step. A
  * renamed id degrades the same way plus a console warning.
  *
- * Auto-runs once per FRESH profile (recent-files empty); existing
- * profiles are marked seen without touring — they rerun it via the
+ * Auto-runs once per FRESH profile (no customized settings); an
+ * established profile is marked seen without touring — rerun via the
  * `startUiTour` ribbon command. Desktop layout only: the mobile UI
  * has no ribbon to tour.
  */
 
-import { settings } from './settings.js';
+import { settings, hasCustomizedSettings } from './settings.js';
 import { formatKeyForDisplay } from './ribbon-commands.js';
 import { quickCardSearchUI, onQuickCardSearchOpen } from './quick-card-search-ui.js';
 
@@ -213,14 +213,18 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       title: 'Keyboard reference',
       body:
         'Every shortcut on one searchable sheet — the fastest way to pick up the ' +
-        'F-key workflow.',
+        'keyboard workflow.',
       target: el('reference-btn'),
     },
     {
       id: 'finish',
       title: 'That’s the tour',
+      // No welcome-doc pointer when the starter is toggled off — it
+      // would point at a document that isn't there.
       body:
-        'The welcome document below walks you through the basics of editing. ' +
+        (settings.get('showOnboardingStarter')
+          ? 'The welcome document below walks you through the basics of editing. '
+          : '') +
         'Rerun this tour any time from the command bar: "Take the UI Tour". Welcome aboard!',
     },
   );
@@ -653,22 +657,17 @@ export function startUiTour(): void {
   controller.start();
 }
 
-/** Auto-start once for fresh profiles. Existing profiles (anything in
- *  the recent-files list) are marked seen without touring — the tour
- *  postdates them, and unprompted overlays on upgrade are rude. Waits
- *  for either the editor chrome or the home screen (a first boot
- *  lands on home; the tour's leading step then walks creating the
- *  first document). */
+/** Auto-start once for fresh profiles. A profile with ANY customized
+ *  setting belongs to an established user — the tour postdates them,
+ *  and unprompted overlays on upgrade are rude — so it initializes as
+ *  already-seen there without touring. Waits for either the editor
+ *  chrome or the home screen (a first boot lands on home; the tour's
+ *  leading step then walks creating the first document). */
 export function maybeAutoStartUiTour(): void {
   if (settings.get('hasSeenUiTour')) return;
-  try {
-    const recents = JSON.parse(localStorage.getItem('pmd-recent-files') ?? '[]') as unknown[];
-    if (Array.isArray(recents) && recents.length > 0) {
-      settings.set('hasSeenUiTour', true);
-      return;
-    }
-  } catch {
-    /* unreadable recents — treat as fresh */
+  if (hasCustomizedSettings()) {
+    settings.set('hasSeenUiTour', true);
+    return;
   }
   let tries = 0;
   const poll = window.setInterval(() => {

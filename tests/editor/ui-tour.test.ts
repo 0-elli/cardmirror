@@ -409,14 +409,17 @@ describe('UI tour', () => {
     vi.useFakeTimers();
     buildChrome({ speech: true });
 
-    localStorage.setItem('pmd-recent-files', JSON.stringify(['/some/file.docx']));
+    // Upgrader: any customized setting marks the tour seen, no overlay.
+    settings.set('lastHighlightColor', 'green');
     maybeAutoStartUiTour();
     vi.advanceTimersByTime(2000);
     expect(document.querySelector('.pmd-tour')).toBeNull();
     expect(settings.get('hasSeenUiTour')).toBe(true);
 
+    // Fresh: everything back at defaults (hasSeenUiTour is ignored by
+    // the customization check).
+    settings.set('lastHighlightColor', 'yellow');
     settings.set('hasSeenUiTour', false);
-    localStorage.removeItem('pmd-recent-files');
     maybeAutoStartUiTour();
     vi.advanceTimersByTime(2000);
     expect(document.querySelector('.pmd-tour')).not.toBeNull();

@@ -1796,6 +1796,35 @@ const DEFAULTS: Settings = {
  *  that wants a "Restore defaults" button. */
 export const SETTINGS_DEFAULTS: Readonly<Settings> = DEFAULTS;
 
+/** Whether the persisted store differs from the defaults in ANY key
+ *  (minus `ignore`d ones). The UI tour's upgrade heuristic: a machine
+ *  with customized settings belongs to an established user, so the
+ *  tour initializes as already-seen there. Diff-based rather than
+ *  presence-based — boot code persisting an all-defaults store must
+ *  not disqualify a genuinely fresh profile. */
+export function hasCustomizedSettings(
+  ignore: readonly (keyof Settings)[] = ['hasSeenUiTour'],
+): boolean {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Record<
+      string,
+      unknown
+    > | null;
+    if (!raw || typeof raw !== 'object') return false;
+    // Compare against SANITIZED defaults — persistence runs values
+    // through sanitize() (which e.g. lowercases hex colors), so raw
+    // DEFAULTS would false-diff on every profile ever written.
+    const defaults = sanitize({ ...DEFAULTS }) as unknown as Record<string, unknown>;
+    return Object.keys(raw).some((k) => {
+      if ((ignore as readonly string[]).includes(k)) return false;
+      if (!(k in defaults)) return false; // stale/unknown keys aren't user intent
+      return JSON.stringify(raw[k]) !== JSON.stringify(defaults[k]);
+    });
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Tabs in the settings dialog. Each setting carries a `category`
  * and is rendered under the matching tab. Order here is the tab
