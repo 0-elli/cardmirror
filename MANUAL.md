@@ -99,8 +99,15 @@ full editor.
 
 ### First launch and the welcome guide
 
+On a fresh install, CardMirror starts with a **guided UI tour**: a
+step-by-step spotlight over the interface — the editor, the style
+clusters, the outline, read mode, the timer, and a hands-on stop at the
+command bar. Step with the on-screen buttons or **← →**, skip with
+**Esc**, and rerun it whenever you like with the **Take the UI Tour**
+command (command bar).
+
 The first time you open CardMirror — and every time you press **New
-Document** — you get an interactive welcome guide built out of real
+Document** — you also get an interactive welcome guide built out of real
 Pockets, Hats, cards, and analytics. It's a live document: type in it,
 press the shortcuts, and try things as you read. When you're done, turn
 it off in **Settings → Files → "Onboarding doc for new documents"** and

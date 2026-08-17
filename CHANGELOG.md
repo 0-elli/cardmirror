@@ -5,6 +5,38 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## 1.1.0 — 2026-08-18
+
+### Added
+
+- **A guided tour of the interface.** New installs start with a
+  step-by-step spotlight walk over the editor, the style clusters, the
+  outline, read mode, the timer, and more — including a hands-on stop
+  where you open the command bar yourself and use it to reach
+  Settings. Step with the buttons or ← →, skip with Esc, and rerun it
+  any time with the **Take the UI Tour** command. If you've ever
+  changed a setting, CardMirror assumes you know your way around and
+  won't show it uninvited.
+
+### Changed
+
+- **The welcome guide caught up with 1.0.** It now introduces card
+  sharing and co-editing, matches the current settings names and
+  locations, and gives "Done with the tour?" its own heading so the
+  off-switch is easy to find. The out-of-date "alpha software" warning
+  is gone.
+
+- **The account row in Settings shows its state at a glance.** A green
+  "✓ Connected as …" or a red "✕ Not connected" chip replaces the old
+  explanatory paragraph, and disconnecting updates the row immediately
+  instead of waiting for the dialog to be reopened. Wording across
+  Settings and the manual now reflects that card sharing and
+  co-editing on the official relay require a linked paid membership.
+
+- **Substructure numbering now defaults to "a."** instead of "a)",
+  matching the number style. Display-only — if you picked a separator
+  yourself, your choice is kept.
+
 ## 1.0.1 — 2026-08-15
 
 ### Added

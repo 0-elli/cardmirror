@@ -5,6 +5,63 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 1.1.0 — 2026-08-18
+
+### Added: guided UI tour (spotlight onboarding)
+
+A coach-marks overlay walks the chrome in first-session order: editor
+canvas → structural styles → character styles (cite + color panels in
+one cutout) → outline (level buttons ringed) → files → speech → read
+mode → live word count → timer → flashcards → command bar → the ⚙
+button → keyboard reference. Back/Next/Skip, step dots, ←/→/Esc; a
+first boot that lands on the home screen gets a leading step that has
+the user create their first document (Next clicks New for them, and
+backing across the boundary re-opens home). The command-bar step is a
+guided flow: the user presses the shortcut, the palette is spotlighted
+(it renders below the tour layer — the cutout lifts it), the card asks
+them to run "settings", the opened dialog is spotlighted, and closing
+it hands off to the ⚙ step.
+
+Robustness is the core of the design. Targets re-resolve on a 250ms
+tick (animated panes, the growing palette, dialogs). Visibility is
+judged by ancestor-clip intersection — the ribbon clips clusters at
+narrow widths without moving them off-screen — with an absolute-size
+escape so large scrollable surfaces (the editor is its document's full
+height inside a scroller, i.e. always "mostly clipped") spotlight
+their visible slice. A structurally absent target (the speech stack
+outside three-pane), a clipped one, or a renamed id all degrade to a
+centered card with adapted copy — never a crash, a dead end, or a
+silent skip — and upgrade to a live spotlight if the element appears.
+
+Auto-runs once, only for profiles whose persisted settings match the
+(sanitized) defaults; any customization marks an established user and
+initializes the seen-flag on. Rerun via the `startUiTour` ribbon
+command. Desktop layout only.
+
+### Changed: settings account row status chip
+
+The disconnected helper paragraph is gone; a status chip renders in
+both states — "✓ Connected as …" filling the controls row, or a
+compact red "✕ Not connected" leading it. Underlying fix: the chip's
+class carries `display: flex`, which outranks the `hidden`
+attribute's UA rule, so after Disconnect the old chip stayed painted
+with stale contents until the dialog was rebuilt; the row now swaps
+state immediately. Account-link copy across Settings and the manual
+moved to present tense: a linked paid membership is required for card
+sharing and co-editing on the official relay.
+
+### Changed: welcome guide refresh + numbering default
+
+The onboarding starter gained a "Share and co-edit" section (pairing
+codes, Send-pill invites, session share codes, the membership note),
+renamed its workspace section to match the "Three-pane workspace"
+settings label, corrected the tour-off toggle's path (Files, not
+General) and gave it its own hat for discoverability, fixed the nav
+multi-select modifier to Mod-click, and dropped the alpha-era save
+warning on both desktop and mobile variants. Substructure numbering
+separator now defaults to `period` ("a.") to match numbers; stored
+choices are respected.
+
 ## 1.0.1 — 2026-08-15
 
 ### Added: editor text context menu (Cut / Copy / Paste)
