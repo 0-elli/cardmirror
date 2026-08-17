@@ -47,6 +47,9 @@ export interface TourStep {
   prepare?: () => void;
   /** Secondary highlight ring inside/near the main target. */
   ring?: () => HTMLElement | null;
+  /** Additional element folded into the SAME spotlight cutout (a
+   *  cluster pair that reads as one unit). */
+  union?: () => HTMLElement | null;
   /** Steps the user acts through (clicks/keys reach the app). */
   interactive?: boolean;
   /** Checked on the reposition tick; true advances to the next step
@@ -79,7 +82,7 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       body: 'This is the home screen. Click "New document" — the tour continues inside.',
       target: () => document.querySelector<HTMLElement>('.pmd-home-action'),
       interactive: true,
-      advanceWhen: () => document.querySelector('.ProseMirror') !== null,
+      advanceWhen: () => !homeScreenActive() && document.querySelector('.ProseMirror') !== null,
     });
   }
   steps.push(
@@ -107,7 +110,7 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
         'marks the cite — and the color panel beside them handles highlight colors, ' +
         'background shading, and font color.',
       target: el('cite-panel'),
-      ring: el('color-panel'),
+      union: el('color-panel'),
     },
     {
       id: 'nav',
@@ -277,23 +280,17 @@ export class UiTourController {
       if (step?.interactive && (quickCardSearchUI.isOpen() || settingsDialogEl() !== null)) return;
       e.preventDefault();
       this.end();
-    } else if (e.key === 'ArrowRight' && !step?.interactive) {
+    } else if (e.key === 'ArrowRight' && !typingContext()) {
       e.preventDefault();
       this.next();
-    } else if (e.key === 'ArrowLeft' && !step?.interactive) {
+    } else if (e.key === 'ArrowLeft' && !typingContext()) {
       e.preventDefault();
       this.back();
     }
   };
 
   constructor(steps?: TourStep[]) {
-    this.steps =
-      steps ??
-      buildSteps({
-        includeCreateDoc:
-          document.querySelector('.pmd-home-screen') !== null &&
-          document.querySelector('.ProseMirror') === null,
-      });
+    this.steps = steps ?? buildSteps({ includeCreateDoc: homeScreenActive() });
   }
 
   get running(): boolean {
@@ -448,12 +445,25 @@ export class UiTourController {
         rect = visibleRect(target);
       }
       if (!rect && mode === 'normal') mode = 'hidden';
+      const unionEl = step.union?.() ?? null;
+      const ur = rect && unionEl ? visibleRect(unionEl) : null;
+      if (rect && ur) {
+        const left = Math.min(rect.left, ur.left);
+        const top = Math.min(rect.top, ur.top);
+        rect = new DOMRect(
+          left,
+          top,
+          Math.max(rect.right, ur.right) - left,
+          Math.max(rect.bottom, ur.bottom) - top,
+        );
+      }
     }
 
     this.renderCard(step, mode);
 
     const pad = 6;
     if (rect) {
+      this.root.classList.remove('pmd-tour-centered');
       Object.assign(this.shade.style, {
         left: `${rect.left - pad}px`,
         top: `${rect.top - pad}px`,
@@ -473,9 +483,10 @@ export class UiTourController {
       }
       this.placeCardNear(rect);
     } else {
-      // Centered card over a uniform dim (the shade collapses off-
-      // screen so its shadow still paints the dim).
-      Object.assign(this.shade.style, { left: '-20px', top: '-20px', width: '0px', height: '0px' });
+      // Centered card over a uniform dim: the ROOT paints the dim and
+      // the shade blinks out entirely — animating it to a corner left
+      // a bright sliver crawling across the screen.
+      this.root.classList.add('pmd-tour-centered');
       this.ring.hidden = true;
       Object.assign(this.card.style, {
         left: `${Math.max(12, (window.innerWidth - this.card.offsetWidth) / 2)}px`,
@@ -566,8 +577,32 @@ export class UiTourController {
   }
 }
 
+/** Whether the home/start screen is showing. The html class is the
+ *  authoritative signal — the editor DOM persists HIDDEN behind the
+ *  home screen, so "no .ProseMirror" is only true on the very first
+ *  boot and misclassifies every later visit. */
+/** Arrows must not steer the tour while the user is typing into a
+ *  text field (the command-bar input on the interactive step). */
+function typingContext(): boolean {
+  const ae = document.activeElement;
+  return ae instanceof HTMLElement && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+}
+
+function homeScreenActive(): boolean {
+  return (
+    document.documentElement.classList.contains('pmd-home-active') ||
+    (document.querySelector('.pmd-home-screen') !== null &&
+      document.querySelector('.ProseMirror') === null)
+  );
+}
+
 function settingsDialogEl(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('.pmd-settings-dialog');
+  // The settings modal HIDES on close (display:none on the overlay)
+  // rather than unmounting — bare presence checks would report it
+  // open forever after its first use.
+  const overlay = document.querySelector<HTMLElement>('.pmd-settings-overlay');
+  if (!overlay || overlay.style.display === 'none') return null;
+  return overlay.querySelector<HTMLElement>('.pmd-settings-dialog');
 }
 
 let controller: UiTourController | null = null;
@@ -605,9 +640,9 @@ export function maybeAutoStartUiTour(): void {
       return;
     }
     const ready =
+      homeScreenActive() ||
       (document.querySelector('.ProseMirror') !== null &&
-        document.getElementById('formatting-panel') !== null) ||
-      document.querySelector('.pmd-home-screen') !== null;
+        document.getElementById('formatting-panel') !== null);
     if (ready) {
       window.clearInterval(poll);
       startUiTour();

@@ -15332,3 +15332,15 @@ body.pmd-multi-doc #collab-chip {
     transition: none;
   }
 }
+
+/* Centered tour steps: the root paints a uniform dim and the shade
+   blinks out — animating the cutout to a corner left a bright sliver
+   crawling across the screen. */
+.pmd-tour-centered {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.pmd-tour-centered .pmd-tour-shade,
+.pmd-tour-centered .pmd-tour-ring {
+  display: none;
+}

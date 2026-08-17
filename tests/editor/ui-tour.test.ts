@@ -76,6 +76,8 @@ function buildChrome(opts: { speech?: boolean } = {}): void {
     fakeRect(el, {});
     document.body.appendChild(el);
   }
+  const color = document.getElementById('color-panel')!;
+  fakeRect(color, { left: 100, width: 60 });
   if (opts.speech) {
     const s = document.createElement('div');
     s.id = 'speech-stack';
@@ -218,16 +220,52 @@ describe('UI tour', () => {
     // The "command" ran: palette closes, the settings dialog appears.
     qcsState.open = false;
     palette.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'pmd-settings-overlay';
     const dialog = document.createElement('div');
     dialog.className = 'pmd-settings-dialog';
     fakeRect(dialog, { left: 100, top: 50, width: 500, height: 400 });
-    document.body.appendChild(dialog);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
     vi.advanceTimersByTime(300);
     expect(card()!.textContent).toContain('press Esc to close');
 
-    dialog.remove();
+    // The modal closes the way the real one does: it HIDES, staying in
+    // the DOM — detection must treat that as closed and auto-advance.
+    overlay.style.display = 'none';
     vi.advanceTimersByTime(300);
     expect(card()!.textContent).toContain('Settings, the clickable way');
+
+    // Returning to the step later starts from the shortcut prompt —
+    // the hidden-but-present dialog must not read as still open.
+    btn('Back')!.click();
+    vi.advanceTimersByTime(300);
+    expect(card()!.textContent).toContain('Press');
+    expect(card()!.textContent).not.toContain('press Esc to close');
+  });
+
+  it('the char-styles spotlight covers cite AND color panels in one cutout', () => {
+    buildChrome();
+    const tour = new UiTourController();
+    tour.start();
+    for (let i = 0; i < 3; i++) btn('Next')!.click();
+    expect(card()!.textContent).toContain('Evidence marks');
+    const shade = document.querySelector<HTMLElement>('.pmd-tour-shade')!;
+    // cite-panel spans x 10..90, color-panel x 100..160 — the cutout
+    // must span both (plus padding), not ring them separately.
+    expect(parseFloat(shade.style.left)).toBeLessThanOrEqual(10);
+    expect(parseFloat(shade.style.width)).toBeGreaterThanOrEqual(150);
+    expect(document.querySelector<HTMLElement>('.pmd-tour-ring')!.hidden).toBe(true);
+  });
+
+  it('centered steps dim via the root and blink the shade out', () => {
+    buildChrome();
+    const tour = new UiTourController();
+    tour.start();
+    const root = document.querySelector<HTMLElement>('.pmd-tour')!;
+    expect(root.classList.contains('pmd-tour-centered')).toBe(true); // welcome
+    btn('Next')!.click(); // editor — spotlighted
+    expect(root.classList.contains('pmd-tour-centered')).toBe(false);
   });
 
   it('home-screen boot: create-doc step leads and advances when an editor mounts', () => {
@@ -250,6 +288,54 @@ describe('UI tour', () => {
     buildChrome({ speech: true });
     vi.advanceTimersByTime(600);
     expect(card()!.textContent).toContain('The editor');
+  });
+
+  it('home screen with a hidden editor behind it still gets the create-doc step', () => {
+    vi.useFakeTimers();
+    buildChrome({ speech: true }); // editor DOM exists (hidden behind home)
+    document.documentElement.classList.add('pmd-home-active');
+    const home = document.createElement('div');
+    home.className = 'pmd-home-screen';
+    const action = document.createElement('button');
+    action.className = 'pmd-home-action';
+    fakeRect(action, { left: 300, top: 200, width: 200, height: 80 });
+    home.appendChild(action);
+    document.body.appendChild(home);
+    try {
+      const tour = new UiTourController();
+      tour.start();
+      btn('Next')!.click();
+      expect(card()!.textContent).toContain('Create your first document');
+      // "New document" clicked: home deactivates; the editor was there
+      // all along — the step advances on the class flip, not on DOM.
+      document.documentElement.classList.remove('pmd-home-active');
+      vi.advanceTimersByTime(600);
+      expect(card()!.textContent).toContain('The editor');
+    } finally {
+      document.documentElement.classList.remove('pmd-home-active');
+    }
+  });
+
+  it('arrow keys steer the tour on the command-bar step unless a text input is focused', () => {
+    buildChrome({ speech: true });
+    const tour = new UiTourController();
+    tour.start();
+    for (let i = 0; i < 11; i++) btn('Next')!.click();
+    expect(card()!.textContent).toContain('One shortcut');
+
+    // Not typing: ArrowLeft backs out of the interactive step.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    expect(card()!.textContent).toContain('Study your evidence');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    expect(card()!.textContent).toContain('One shortcut');
+
+    // Typing into the palette input: arrows belong to the field.
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    expect(card()!.textContent).toContain('One shortcut');
+    input.blur();
   });
 
   it('auto-start tours a fresh profile once and marks upgraders seen without touring', () => {
