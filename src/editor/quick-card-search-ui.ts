@@ -53,6 +53,7 @@ import { CATEGORY_TABS, visibleCategoryTabs, type SettingsTarget } from './setti
 import { appVersion } from './install-info.js';
 import { getHost, getElectronHost, isWindowsHost } from './host/index.js';
 import { showToast } from './toast.js';
+import { confirmDialog } from './text-prompt.js';
 import { showConfirm } from './confirm-dialog.js';
 import {
   insertZoneAtSelection,
@@ -2209,19 +2210,26 @@ class QuickCardSearchUI {
       showToast('Live zone not created — the Word file was left unchanged.');
       return false;
     }
-    const written = await electron.writeSourceAnchor(
-      docPath,
-      attrs.source_ref,
-      attrs.source_ref_base,
-      roots,
-      sourceAbs,
-      anchor.bytes,
-    );
-    if (!written.ok) {
-      showToast('Couldn’t write to the Word file (it may be read-only or open in Word).');
-      return false;
+    // The user explicitly asked for this live zone — a vanishing toast
+    // can't carry a retry decision (audit §3C). The usual cause is the
+    // file being open in Word, so offer close-it-and-retry.
+    for (;;) {
+      const written = await electron.writeSourceAnchor(
+        docPath,
+        attrs.source_ref,
+        attrs.source_ref_base,
+        roots,
+        sourceAbs,
+        anchor.bytes,
+      );
+      if (written.ok) return true;
+      const retry = await confirmDialog(
+        'Couldn’t write to the Word file — it may be read-only or open in Word. ' +
+          'Close it there and retry?',
+        { okLabel: 'Retry', cancelLabel: 'Cancel' },
+      );
+      if (!retry) return false;
     }
-    return true;
   }
 
   // ── Inline tag filter (Tab) ───────────────────────────────────────

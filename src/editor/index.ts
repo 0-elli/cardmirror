@@ -43,7 +43,7 @@ import {
   buildDeleteStructureTr,
   installIncomingSpeechSliceHandler,
 } from './speech-doc-send.js';
-import { promptForText, promptForRouteChoice, alertDialog, confirmDialog, installModalKeys, armDialogFocus } from './text-prompt.js';
+import { promptForChoice, promptForText, promptForRouteChoice, alertDialog, confirmDialog, installModalKeys, armDialogFocus } from './text-prompt.js';
 import { pushOverlay, popOverlay, isTopOverlay } from './overlay-stack.js';
 import { openDocMenu } from './doc-menu-ui.js';
 import { createReference } from './create-reference.js';
@@ -6419,11 +6419,17 @@ async function offerDamagedSalvage(name: string, bytes: Uint8Array): Promise<voi
     dirty: true,
     recordAsRecent: false,
   });
-  showToast(
-    salvaged.dropped.length === 0
-      ? 'Opened a repaired copy.'
-      : `Opened a repaired copy — ${salvaged.dropped.length} damaged element${salvaged.dropped.length === 1 ? '' : 's'} removed.`,
-  );
+  // The what-will-be-removed decision already happened in the consent
+  // dialog above; this completion files as a durable notice so the
+  // count stays findable after the toast fades.
+  postNotice({
+    severity: 'info',
+    title: 'Opened a repaired copy',
+    body:
+      salvaged.dropped.length === 0
+        ? 'Opened a repaired copy.'
+        : `Opened a repaired copy — ${salvaged.dropped.length} damaged element${salvaged.dropped.length === 1 ? '' : 's'} removed.`,
+  });
 }
 
 // ─── Home screen wiring ────────────────────────────────────────────
@@ -7692,6 +7698,23 @@ export async function runSaveFlow(): Promise<boolean> {
   }
 }
 
+/** The changed-on-disk decision, shared by manual save and the
+ *  autosave conflict path. A compact promptForChoice rather than the
+ *  route-style dialog: this is a small pick-one, not a Save/Don't
+ *  Save-family confirmation (user call, 2026-08-17). */
+function promptDiskConflict(filename: string | null): Promise<'overwrite' | 'saveAs' | null> {
+  return promptForChoice<'overwrite' | 'saveAs'>({
+    message:
+      `"${filename ?? 'This document'}" has changed on disk since it was ` +
+      `opened — it may have been edited by another program, on another ` +
+      `device, or through a sync service. Replace the on-disk version?`,
+    choices: [
+      { value: 'overwrite', label: 'Overwrite', primary: true },
+      { value: 'saveAs', label: 'Save As…' },
+    ],
+  });
+}
+
 async function runSaveFlowInner(): Promise<boolean> {
   const file = activeFile();
   if (!file.handle || !file.format || !getHost().supportsInPlaceSave) {
@@ -7757,24 +7780,7 @@ async function runSaveFlowInner(): Promise<boolean> {
       // was open. Blindly writing would destroy that version WITHOUT
       // even producing a Dropbox conflicted copy, so ask first.
       if (!isFileChangedOnDiskError(err)) throw err;
-      const choice = await promptForRouteChoice<'overwrite' | 'saveAs'>({
-        message:
-          `"${file.filename ?? 'This document'}" has changed on disk since it was ` +
-          `opened — it may have been edited by another program, on another ` +
-          `device, or through a sync service. Replace the on-disk version?`,
-        choices: [
-          {
-            value: 'overwrite',
-            label: 'Overwrite',
-            description: "Replace the on-disk file with this window's version.",
-          },
-          {
-            value: 'saveAs',
-            label: 'Save As…',
-            description: "Keep both: save this window's version to a new location.",
-          },
-        ],
-      });
+      const choice = await promptDiskConflict(file.filename);
       if (choice === 'saveAs') return runSaveAsFlow();
       if (choice !== 'overwrite') return false;
       await getHost().saveExisting(file.handle, bytes, { force: true });
@@ -7948,7 +7954,11 @@ export function notifyEditForAutosave(): void {
     // and autosave was dead for the session while its button stayed lit.
     autosaveChain = autosaveChain
       .then(() => runAutosaveAttempt())
-      .catch((err) => reportAutosaveFailure(currentDocFilename ?? 'Untitled', err));
+      .catch((err) =>
+        reportAutosaveFailure(currentDocFilename ?? 'Untitled', err, {
+          promptConflict: () => void runSaveFlow(),
+        }),
+      );
   }, AUTOSAVE_DELAY_MS);
 }
 
@@ -8070,7 +8080,9 @@ async function runAutosaveAttempt(): Promise<void> {
     commitClean();
     reportAutosaveSuccess();
   } catch (err) {
-    reportAutosaveFailure(file.filename ?? 'Untitled', err);
+    reportAutosaveFailure(file.filename ?? 'Untitled', err, {
+      promptConflict: () => void runSaveFlow(),
+    });
   }
 }
 
@@ -8087,12 +8099,28 @@ let autosaveFailureActive = false;
  *  bug 2026-07-11, folder renamed under a shared Dropbox). One toast
  *  per failure streak (not per retry), plus a persistent error state
  *  on the autosave button until a save lands. */
-export function reportAutosaveFailure(filename: string, err: unknown): void {
+export function reportAutosaveFailure(
+  filename: string,
+  err: unknown,
+  opts?: {
+    /** Provided by call sites whose manual-save flow targets THIS doc
+     *  (single-doc; multi-pane records may not be focused, so they
+     *  stay pause+notice). A changed-on-disk conflict prompts the
+     *  shared disk-conflict decision immediately — the divergence
+     *  only widens while it waits (audit §3C). */
+    promptConflict?: () => void;
+  },
+): void {
   console.warn('Autosave failed:', err);
   autosaveBtn?.setAttribute('data-autosave-error', 'true');
   if (autosaveFailureActive) return;
   autosaveFailureActive = true;
   refreshAutosaveBtn();
+  if (isFileChangedOnDiskError(err) && opts?.promptConflict) {
+    // The save flow re-serializes and shows promptDiskConflict; a
+    // cancel leaves autosave paused with the notice below standing.
+    opts.promptConflict();
+  }
   postAutosaveNotice(
     isFileGoneError(err)
       ? `Autosave failed — "${filename}" no longer exists at its saved location. Use Save As to pick a new one.`
