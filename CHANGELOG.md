@@ -5,6 +5,19 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **The status bar can show how much is left to read.** Turn on
+  **Settings → General → "Live read time for what is left to read"**
+  and the bottom bar gains a third readout — every read-aloud word from
+  your cursor to the end of the document, with each of your top two
+  readers' times for it. Handy mid-speech, or for checking whether the
+  rest of a block fits the time you have left. Off by default; with
+  text selected it measures from the end of the selection, and it stays
+  quick on long files.
+
 ## 1.1.0 — 2026-08-18
 
 ### Added

@@ -5,6 +5,49 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+### Added: live remaining read time (third readout segment)
+
+`src/editor/live-read-time.ts` gains `remainingReadSegment(state)`, a
+sibling of `liveContainerSegment` behind the new `liveRemainingReadTime`
+setting (boolean, **default off**, General → Word counts, `kind:
+'toggle'` so it also gets a command-palette toggle). It appends a third
+pipe-joined segment — `Left: 1,204 · Amy: 6:31 · Ben: 5:44` — counting
+the read-aloud words from the cursor to the end of the document. The
+predicate is the existing one (`countReadAloudSplit`): nothing new
+decides what "readable" means, so the three segments can never disagree
+about which words a reader says out loud.
+
+Measured from `selection.to`, not `from`: the end of a selection is the
+furthest point the user has accounted for, so a selection reads as
+"I've been through this much" and the remainder starts after it. With a
+bare cursor the two coincide.
+
+The cost model is the point of the design. Counted directly, a suffix
+is O(doc − cursor) on **every cursor move and every keystroke** — an
+arrow key near the top of a large brief would pay a full document walk,
+which is exactly the regression the container segment was built to
+avoid. Instead a **suffix-sum table over the doc's top-level children**
+is built once per doc: for each child index `i`, the `ReadAloudCounts`
+of children `i..end`. Building it is one O(doc) pass — the same cost the
+whole-doc readout already pays per doc change. A cursor move is then
+`$pos.index(0)` (O(depth)) to find the child the cursor sits in, the
+table's suffix total for the next child on, plus one partial count of
+that single child. Never O(doc). The table is a one-slot module cache
+keyed on the doc NODE identity, matching the container cache's pattern:
+an edit produces a new node, so a stale table cannot be served for a
+changed doc.
+
+Both readouts compose in the same two mirrored places
+(`src/editor/index.ts` `refreshWordCount`, `multi-pane-shell.ts`
+`refreshWordCount`), which now build a segment list and drop the nulls
+rather than nesting conditionals — so container-off/remaining-on reads
+`Doc: … | Left: …` in scope order. The selection-only refresh gates in
+both surfaces take the new setting alongside `liveContainerReadTime`:
+the cursor is what the count runs from, so a plain caret move has to
+recompute.
+
 ## 1.1.0 — 2026-08-18
 
 ### Added: guided UI tour (spotlight onboarding)

@@ -1024,6 +1024,18 @@ count is cached per container, so moving the cursor doesn't re-count
 anything). Turning it off restores the plain whole-doc readout exactly
 as it was.
 
+A third readout — **what's left to read** — is available and **off by
+default**: turn on **Settings → General → "Live read time for what is
+left to read"** and the bar appends everything still ahead of your
+cursor, from the cursor to the end of the document, with each reader's
+time for it: `Doc: 1,234 · Amy: 8:12 | Card: 42 · Amy: 0:31 | Left: 806
+· Amy: 5:20`. Only read-aloud text counts, same as every other readout,
+so trimming highlights lowers it. Select text and it measures from the
+**end** of the selection — a selection reads as "I've been through this
+much". It's cheap on large files too: CardMirror keeps a running total
+per section of the document, so moving the cursor only re-counts the
+card or paragraph it lands in.
+
 By default the primary readout always reflects the **whole document**.
 Turn on **Settings → General → "Live selection word count"** to have the
 bar switch to the **selection's** word count and read time the moment you
@@ -2041,6 +2053,10 @@ headers shown inside each tab.
 - **Live word count for the current selection** — off by default. When
   on, the status bar's count and read time follow your selection as you
   change it; leave it off on very large docs if you notice drag lag.
+- **Live read time for what is left to read** — off by default. When on,
+  the status bar appends everything still ahead of the cursor (measured
+  from the end of a selection); cheap even on large files
+  (see [Read-time estimates](#read-time-estimates)).
 
 **Find**
 
