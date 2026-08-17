@@ -100,7 +100,13 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       body:
         'This is a live document — everything in it can be typed in, styled, and ' +
         'rearranged. Right-click for cut, copy, and paste.',
-      target: () => document.querySelector<HTMLElement>('.ProseMirror'),
+      // Spotlight the whole canvas region, not the ProseMirror element
+      // — a blank doc's contenteditable is one paragraph tall, which
+      // made the cutout a thin strip at the top of an empty editor.
+      target: () => {
+        const pm = document.querySelector<HTMLElement>('.ProseMirror');
+        return pm?.closest<HTMLElement>('#editor, .pmd-pane-editor') ?? pm;
+      },
     },
     {
       id: 'styles',
