@@ -200,7 +200,7 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       id: 'finish',
       title: 'That’s the tour',
       body:
-        'The document in the editor walks the cutting side — styles, cards, shortcuts. ' +
+        'The welcome document below walks you through the basics of editing. ' +
         'Rerun this tour any time from the command bar: "Take the UI Tour". Welcome aboard!',
     },
   );
