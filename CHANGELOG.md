@@ -18,6 +18,28 @@ see `DETAILED_CHANGELOG.md`.
   text selected it measures from the end of the selection, and it stays
   quick on long files.
 
+- **The navigation pane can follow your place in the document.** Turn on
+  **Navigation pane follows the cursor** (Settings → General →
+  Workspace, off by default) and the outline scrolls to keep the section
+  you're in visible. Moving the cursor into a different section brings
+  that heading into view; changing depth with the **1 · 2 · 3 · 4**
+  buttons — which rebuilds the outline and has always scrolled it back
+  to the top of the document — instead keeps the section you were in at
+  the top. If that section is hidden at the current depth, the outline
+  follows its nearest visible parent. The pane only moves when the
+  heading would otherwise be off-screen, so typing within one section,
+  or scrolling the outline by hand, leaves it alone. Nothing but the
+  outline's scroll position moves: your cursor, your selection, and the
+  document are untouched.
+
+### Fixed
+
+- **Changing the outline depth no longer loses the "you are here"
+  highlight.** The navigation pane highlights the heading your cursor is
+  in, but clicking the **1 · 2 · 3 · 4** buttons rebuilt the outline
+  without restoring it — so whenever the new depth hid your heading, the
+  highlight simply vanished and nothing showed where you were. It now
+  falls back to the nearest visible parent, the same as everywhere else.
 ## 1.1.0 — 2026-08-18
 
 ### Added

@@ -389,6 +389,23 @@ export interface Settings {
    *  doc's view only (transient, per-pane); this setting is what
    *  every new doc starts at. */
   navMaxLevel: number;
+  /** When true, the nav pane scrolls to keep the outline row the cursor
+   *  is in visible — the pane follows your place in the document instead
+   *  of sitting wherever it was last left.
+   *
+   *  Two occasions, both resolving to whichever row currently carries the
+   *  caret highlight (the deepest RENDERED ancestor, when the cursor's own
+   *  heading is collapsed away): moving the cursor into a different
+   *  section scrolls that row into view, and only when it's actually
+   *  off-screen, so typing within one section never moves the pane and a
+   *  hand-scrolled outline is left alone. Switching level (the 1–4 buttons
+   *  or the context menu's "Show heading level N") rebuilds the list and
+   *  destroys its scroll offset outright, so there the row is pinned to
+   *  the top instead.
+   *
+   *  Scroll only: the cursor, the nav selection, and the collapsed set are
+   *  untouched. Off by default. */
+  navFollowCursor: boolean;
   /** When true (default), `New document` mounts the CardMirror
    *  welcome / onboarding doc. When false, it mounts a blank
    *  doc — a single empty paragraph. The starter is the same one
@@ -1568,6 +1585,7 @@ export const CUSTOM_DASH_STYLES: ReadonlyArray<Settings['customDashStyle']> = [
 const DEFAULTS: Settings = {
   navWidth: 300,
   navMaxLevel: 3,
+  navFollowCursor: false,
   copyPreviousCiteNearestOnly: true,
   showOnboardingStarter: true,
   hasSeenUiTour: false,
@@ -2042,6 +2060,24 @@ export const SETTING_METADATA: SettingMeta[] = [
     category: 'general',
     section: 'Workspace',
     aliases: ['nav depth', 'outline depth', 'navigation level', 'nav pane depth'],
+  },
+  {
+    key: 'navFollowCursor',
+    label: 'Navigation pane follows the cursor',
+    description:
+      "Off by default. When on, the navigation pane scrolls to keep your place in sight: moving the cursor into a different section brings that heading into view, and changing the depth with the 1–4 buttons keeps the section you were in at the top of the outline instead of jumping back to the top of the document. If your section is hidden at the current depth, the outline follows its nearest visible parent. The pane only moves when the heading would otherwise be off-screen, so typing within one section leaves it alone. Nothing but the outline's scroll position moves — your cursor and the document stay put.",
+    kind: 'toggle',
+    category: 'general',
+    section: 'Workspace',
+    aliases: [
+      'nav scroll',
+      'outline scroll position',
+      'keep place',
+      'nav pane place',
+      'follow cursor',
+      'sync outline',
+      'outline follows',
+    ],
   },
   {
     key: 'mobileLayout',
@@ -4027,6 +4063,7 @@ function sanitize(s: Settings): Settings {
   return {
     navWidth: clamp(s.navWidth, 150, 800),
     navMaxLevel: clamp(Math.round(s.navMaxLevel), 1, 4),
+    navFollowCursor: s.navFollowCursor === true,
     // Default-on: preserve `false` only when explicitly set so the
     // onboarding shows up for new installs and survives upgrades
     // from before this setting existed.
