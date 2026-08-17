@@ -113,7 +113,7 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       title: 'Structural styles',
       body:
         'Turn a paragraph into a Pocket, Hat, Block, Tag, Analytic, or Undertag with one ' +
-        'click — or one keystroke (F4–F7 and friends; the 📖 button lists them all).',
+        'click — or one keystroke (F4–F7 and friends; the keyboard reference lists them all).',
       target: el('formatting-panel'),
     },
     {
@@ -205,10 +205,16 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
     {
       id: 'settings-btn',
       title: 'Settings, the clickable way',
-      body:
-        'The ⚙ button gets you back to Settings any time — and 📖 beside it opens the ' +
-        'full keyboard reference.',
+      body: 'The ⚙ button gets you back to Settings any time.',
       target: el('settings-btn'),
+    },
+    {
+      id: 'reference',
+      title: 'Keyboard reference',
+      body:
+        'Every shortcut on one searchable sheet — the fastest way to pick up the ' +
+        'F-key workflow.',
+      target: el('reference-btn'),
     },
     {
       id: 'finish',

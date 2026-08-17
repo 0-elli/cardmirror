@@ -75,6 +75,7 @@ function buildChrome(opts: { speech?: boolean } = {}): void {
     'word-count-display',
     'timer-toggle-btn',
     'settings-btn',
+    'reference-btn',
   ];
   for (const id of ids) {
     const el = document.createElement('div');
@@ -145,6 +146,7 @@ describe('UI tour', () => {
       'Study your evidence',
       'One shortcut',
       'Settings, the clickable way',
+      'Keyboard reference',
       'That’s the tour',
     ];
     for (const [i, title] of expected.entries()) {
