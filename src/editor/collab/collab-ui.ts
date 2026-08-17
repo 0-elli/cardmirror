@@ -20,6 +20,7 @@ import { LoroUndoPlugin, loroSyncPluginKey, loroUndoPluginKey, undo as loroUndo,
 import { settings } from '../settings.js';
 import { showToast } from '../toast.js';
 import { RELAY_FIX_PATH } from '../relay-decline.js';
+import { postNotice } from '../status-notices.js';
 import { promptForText, promptForRouteChoice, confirmDialog } from '../text-prompt.js';
 import { markSyncOrigin } from '../sync-origin.js';
 import { readModePlugin } from '../read-mode-plugin.js';
@@ -550,11 +551,15 @@ function sessionCallbacks(deps: CollabUiDeps, getSess: () => ActiveSession | nul
       // Mid-session 401/403 — without this the endless retry loop reads
       // exactly like being offline (audit find, 2026-07-10). Fired once
       // per session by CollabSession.
-      showToast(
-        'The session relay rejected your credentials. ' +
+      postNotice({
+        severity: 'error',
+        title: 'Session credentials rejected',
+        body:
+          'The session relay rejected your credentials. ' +
           RELAY_FIX_PATH +
           ' Your edits are saved locally and keep retrying.',
-      );
+        key: 'collab-401',
+      });
     },
     onBacklogMerged: (_count: number) => {
       // Merge-visibility (M3): a real offline backlog just landed — say

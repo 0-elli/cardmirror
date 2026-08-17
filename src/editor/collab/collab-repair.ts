@@ -32,11 +32,11 @@
  */
 
 import { Plugin } from 'prosemirror-state';
+import { postNotice } from '../status-notices.js';
 import type { Transaction } from 'prosemirror-state';
 import { loroSyncPluginKey, loroUndoPluginKey } from 'loro-prosemirror';
 import { buildDocRepairTr, buildMarkRepairTr } from '../../doc-repair.js';
 import { guardNormalizerTr } from '../normalizer-guard.js';
-import { showToast } from '../toast.js';
 
 function isBindingTransaction(tr: Transaction): boolean {
   return tr.getMeta(loroSyncPluginKey) !== undefined || tr.getMeta(loroUndoPluginKey) !== undefined;
@@ -47,15 +47,24 @@ function isBindingTransaction(tr: Transaction): boolean {
  *  the synthesized head with a 'crdt-heal-' id). Without this the
  *  repair is invisible — the old behavior silently DELETED the card,
  *  and users deserve to know a conflict was patched over. */
+/** Scan cooldown — kept even though the notice itself coalesces:
+ *  the heal-sentinel doc walk below is gated on this timestamp
+ *  (perf study 2026-08-06: one full-doc traversal per remote frame
+ *  otherwise), so the rate limit still earns its keep as a scan
+ *  gate rather than a toast gate. */
 let lastHealToastAt = 0;
 function noteHealedMerge(): void {
-  const now = Date.now();
-  if (now - lastHealToastAt < 60_000) return;
-  lastHealToastAt = now;
-  showToast(
-    'A co-editing merge conflict left a card without its heading — it was kept, with a blank heading. '
+  lastHealToastAt = Date.now();
+  // Chip entry (coalescing) instead of a rate-limited toast: this is
+  // a your-document-changed notice the user must be able to re-read.
+  postNotice({
+    severity: 'warning',
+    title: 'Co-editing merge repaired',
+    body:
+      'A co-editing merge conflict left a card without its heading — it was kept, with a blank heading. '
       + 'Delete the blank heading if the card itself was meant to go.',
-  );
+    key: 'collab-merge-heal',
+  });
 }
 
 export function collabRepairPlugin(isLeader: () => boolean): Plugin {

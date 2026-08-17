@@ -300,6 +300,7 @@ import {
 import { openWordCount } from './word-count-ui.js';
 import { wireColorPanel } from './color-panel.js';
 import { AI_DISABLED_MESSAGE } from './ai/llm.js';
+import { postNotice, wireStatusNotices } from './status-notices.js';
 import {
   countReadAloudWords,
   countReadAloudSplit,
@@ -332,7 +333,6 @@ installGlobalErrorSurface();
 // producer bug is live) and keep a durable ring buffer of diagnostics
 // so the still-unidentified shell producer can be caught red-handed
 // from a field report instead of another corrupted file.
-let lastSaveHealToastAt = 0;
 setSaveHealListener(({ error, healed }) => {
   console.error(`[cardmirror] invalid doc at save (healed=${healed}): ${error}`);
   try {
@@ -343,19 +343,24 @@ setSaveHealListener(({ error, healed }) => {
   } catch {
     /* diagnostics only — never let logging break a save */
   }
-  const now = Date.now();
-  if (now - lastSaveHealToastAt < 60_000) return;
-  lastSaveHealToastAt = now;
-  showToast(
-    healed
-      ? 'CardMirror repaired invalid document structure while saving. Please report this — it means a bug corrupted the document in memory.'
+  // One coalescing chip entry instead of a once-a-minute toast
+  // heartbeat (Issue #34 field report: unreadable, unscreenshotable,
+  // and repeated for as long as the wound stayed open). The first
+  // occurrence still toasts; repeats bump the ×N counter.
+  postNotice({
+    severity: healed ? 'warning' : 'error',
+    title: healed ? 'Document repaired while saving' : 'Document damaged — repair failed',
+    body: healed
+      ? 'CardMirror repaired invalid document structure while saving. Please report this — it means a bug corrupted the document in memory. Reopening the document clears the condition.'
       : 'CardMirror found invalid document structure it could not repair while saving. Please report this.',
-  );
+    key: `save-heal:${healed}`,
+  });
 });
 
 // Web edition only: reveal + wire the "Download the desktop app" and
 // GitHub buttons in the ribbon's right-hand grid (no-op under Electron).
 wireWebEditionHeaderButtons();
+wireStatusNotices();
 
 // UI tour auto-start for fresh profiles (desktop layout only — the
 // mobile UI has no ribbon to tour). The module polls for the editor
@@ -8088,7 +8093,7 @@ export function reportAutosaveFailure(filename: string, err: unknown): void {
   if (autosaveFailureActive) return;
   autosaveFailureActive = true;
   refreshAutosaveBtn();
-  showToast(
+  postAutosaveNotice(
     isFileGoneError(err)
       ? `Autosave failed — "${filename}" no longer exists at its saved location. Use Save As to pick a new one.`
       : isFileChangedOnDiskError(err)
@@ -8097,6 +8102,12 @@ export function reportAutosaveFailure(filename: string, err: unknown): void {
           ? `Autosave failed — "${filename}"'s folder refused the write (cloud-synced folder?). Use Save As to move it to a local folder like My Files/Downloads.`
           : `Autosave failed for "${filename}" — your latest changes are not saved.`,
   );
+}
+
+/** Autosave failures are data-loss-adjacent: toast for immediacy plus
+ *  a durable chip entry (coalesced per file) the user can re-read. */
+function postAutosaveNotice(body: string): void {
+  postNotice({ severity: 'error', title: 'Autosave problem', body, key: 'autosave' });
 }
 
 /** Any successful save (manual, Save As, or autosave, either layout)

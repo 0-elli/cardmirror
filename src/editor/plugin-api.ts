@@ -4,6 +4,7 @@
  * design: only what flowing commands need (see the v1 spec).
  */
 import type { EditorView } from 'prosemirror-view';
+import { postNotice } from './status-notices.js';
 import { getElectronHost } from './host/index.js';
 import { showToast } from './toast.js';
 import { extractSelection } from './plugin-extract.js';
@@ -167,7 +168,17 @@ export function createPluginApi(pluginId: string, deps: PluginApiDeps): CardMirr
       return i && i.docId ? { docId: i.docId, docTitle: i.docTitle } : null;
     },
     showToast(message) {
-      showToast(String(message));
+      // Third-party text: attribute it to the plugin (so it can't
+      // impersonate a CardMirror system message) and cap the toast;
+      // anything longer lands as a durable chip notice instead of a
+      // wall-of-text tooltip.
+      const text = String(message);
+      const attributed = `[${pluginId}] ${text}`;
+      if (text.length > 300) {
+        postNotice({ severity: 'info', title: `Plugin: ${pluginId}`, body: attributed });
+      } else {
+        showToast(attributed);
+      }
     },
     storage: {
       get(key) {

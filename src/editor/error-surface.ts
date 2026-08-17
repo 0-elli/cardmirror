@@ -12,6 +12,7 @@
  */
 
 import { showToast } from './toast.js';
+import { postNotice } from './status-notices.js';
 
 /** Min gap between error toasts — a rejection storm (e.g., a broken timer
  *  loop) should not bury the UI in toasts; the console gets every event. */
@@ -23,8 +24,15 @@ function surface(kind: string, err: unknown): void {
   const now = Date.now();
   if (now - lastToastAt < TOAST_GAP_MS) return;
   lastToastAt = now;
-  const msg = (err instanceof Error ? err.message : String(err)).slice(0, 160);
-  showToast(`Something went wrong: ${msg} — details in the developer console.`);
+  const msg = (err instanceof Error ? err.message : String(err)).slice(0, 600);
+  // Toast for immediacy + a durable chip entry: catch-all errors are
+  // exactly the messages users need to re-read or copy into a report.
+  postNotice({
+    severity: 'error',
+    title: 'Something went wrong',
+    body: `${msg} — details in the developer console.`,
+    key: `err:${msg.slice(0, 80)}`,
+  });
 }
 
 /** Whether a save failure means the file's on-disk location is GONE —
