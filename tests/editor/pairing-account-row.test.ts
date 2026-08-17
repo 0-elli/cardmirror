@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 
 /**
- * Debate Decoded account row: Disconnect must fully clear the
- * connected state (field report 2026-08-17). The "Connected as …"
- * chip's class carries `display: flex`, which outranks the `hidden`
- * attribute's UA rule — so hiding it wasn't enough: its stale contents
- * stayed painted until the dialog was rebuilt. jsdom applies no CSS,
- * so the regression pin is the DOM-honesty half of the fix: after
- * Disconnect the chip is hidden AND empty, and the disconnected
+ * Debate Decoded account row: the status chip renders in BOTH states —
+ * "✓ Connected as …" or "✕ Not connected" — and Disconnect must swap
+ * it immediately (field report 2026-08-17: the chip's stale connected
+ * contents stayed painted until the dialog was rebuilt, because its
+ * class's `display: flex` outranks the `hidden` attribute). jsdom
+ * applies no CSS, so the pin here is the DOM: after Disconnect the
+ * chip reads "Not connected" with no stale email, and the connect
  * controls are back.
  */
 
@@ -96,10 +96,12 @@ describe('pairing account row disconnect', () => {
     disconnectBtn.click();
     await settled();
 
-    // The failure mode: chip hidden but still holding "Connected as …",
-    // kept visible by its class's display rule.
-    expect(chip!.hidden).toBe(true);
-    expect(chip!.textContent).toBe('');
+    // The failure mode was a chip still holding "Connected as …" after
+    // Disconnect. It now flips to the not-linked variant immediately.
+    expect(chip!.hidden).toBe(false);
+    expect(chip!.textContent).toContain('Not connected');
+    expect(chip!.textContent).not.toContain('Connected as');
+    expect(chip!.classList.contains('pmd-pairing-account-notlinked')).toBe(true);
     expect(input!.hidden).toBe(false);
     expect(disconnectBtn.hidden).toBe(true);
   });

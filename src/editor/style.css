@@ -7098,29 +7098,37 @@ body.pmd-steady-cursor .pmd-italic-caret,
   min-width: 16rem;
 }
 
-.pmd-pairing-account-status {
-  font-size: 0.82rem;
-  color: var(--pmd-c-text-muted);
-}
-
-/* Linked confirmation — occupies the input's spot on the left of the
-   controls row and fills it, so Disconnect lands at the right edge
-   where Connect was. Sized to match the setting's description blurb
-   (.pmd-settings-row-desc): muted grey, regular weight. */
+/* Status chip — renders in both states. Connected: occupies the
+   input's spot on the left of the controls row and fills it, so
+   Disconnect lands at the right edge where Connect was. Sized to
+   match the setting's description blurb (.pmd-settings-row-desc):
+   muted grey, regular weight. */
 .pmd-pairing-account-connected {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 0.35rem;
-}
-
-/* The author `display: flex` above outranks the UA's `[hidden]` rule,
-   so without this the "Connected as …" chip kept showing after
-   Disconnect until the dialog was rebuilt. */
-.pmd-pairing-account-connected[hidden] {
-  display: none;
   font-size: 0.85rem;
   color: var(--pmd-c-text-muted);
+}
+
+/* The author `display: flex` above outranks the UA's `[hidden]` rule —
+   without this, a hidden chip would stay painted. */
+.pmd-pairing-account-connected[hidden] {
+  display: none;
+}
+
+/* Disconnected state: the chip becomes a compact "✕ Not connected"
+   leading the row — the code input takes the flex space instead. */
+.pmd-pairing-account-connected.pmd-pairing-account-notlinked {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Doubled class beats .pmd-pairing-account-check's green regardless
+   of source order. */
+.pmd-pairing-account-check.pmd-pairing-account-cross {
+  background: var(--pmd-c-error);
 }
 
 .pmd-pairing-account-check {

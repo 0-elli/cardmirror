@@ -2446,17 +2446,6 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   wrap.className = 'pmd-pairing-account';
   row.style.display = 'none'; // shown only once main confirms the flow is available
 
-  // Disconnected-only helper line (the affirmative "Connected as …"
-  // confirmation lives INSIDE the controls row instead — see below —
-  // so the connected state follows the app's left-status / right-button
-  // layout rather than stacking a line above a lone button).
-  const helper = document.createElement('div');
-  helper.className = 'pmd-pairing-account-status';
-  helper.textContent =
-    'Not linked. Card sharing and co-editing on the official relay require a linked paid ' +
-    'membership; everything else works without one.';
-  wrap.appendChild(helper);
-
   // Real link (external browser on desktop) — nobody should have to
   // retype a URL out of the description text.
   const linkRow = document.createElement('div');
@@ -2466,10 +2455,10 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   );
   wrap.appendChild(linkRow);
 
-  // One row, left field + right button in both states: the code input /
-  // Connect when disconnected, the "Connected as …" confirmation /
-  // Disconnect when connected. The left member fills the row so the
-  // button sits at the right edge either way.
+  // One row in both states. Connected: the "✓ Connected as …" chip
+  // fills the row with Disconnect at the right edge. Disconnected: a
+  // compact "✗ Not connected" chip, then the code input filling the
+  // row, then Connect.
   const controls = document.createElement('div');
   controls.className = 'pmd-pairing-account-controls';
   const input = document.createElement('input');
@@ -2480,8 +2469,8 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   controls.appendChild(input);
   const connectedInfo = document.createElement('div');
   connectedInfo.className = 'pmd-pairing-account-connected';
-  connectedInfo.hidden = true; // shown only in the connected state
-  controls.appendChild(connectedInfo);
+  controls.insertBefore(connectedInfo, input); // status chip leads the row
+
   const connectBtn = document.createElement('button');
   connectBtn.type = 'button';
   connectBtn.className = 'pmd-settings-btn';
@@ -2520,30 +2509,27 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
     // The link is durable and self-renewing, so no expiry date — it
     // reads like a deadline when it's an implementation detail.
     const connected = st.connected;
-    helper.hidden = connected;
     linkRow.hidden = connected;
     input.hidden = connected;
     connectBtn.hidden = connected;
-    connectedInfo.hidden = !connected;
     disconnectBtn.hidden = !connected;
 
-    if (connected) {
-      connectedInfo.replaceChildren();
-      const check = document.createElement('span');
-      check.className = 'pmd-pairing-account-check';
-      check.setAttribute('aria-hidden', 'true');
-      check.textContent = '✓';
-      connectedInfo.appendChild(check);
-      connectedInfo.appendChild(
-        document.createTextNode(st.email ? `Connected as ${st.email}` : 'Connected'),
-      );
-    } else {
-      // Empty the chip too — its class carries `display: flex`, which
-      // outranks the `hidden` attribute, so stale contents stayed
-      // painted after Disconnect (fixed in CSS as well; this keeps the
-      // DOM honest regardless).
-      connectedInfo.replaceChildren();
-    }
+    // The status chip renders in BOTH states: "✓ Connected as …"
+    // filling the row, or a compact "✗ Not connected" leading it.
+    connectedInfo.replaceChildren();
+    connectedInfo.classList.toggle('pmd-pairing-account-notlinked', !connected);
+    const glyph = document.createElement('span');
+    glyph.className = connected
+      ? 'pmd-pairing-account-check'
+      : 'pmd-pairing-account-check pmd-pairing-account-cross';
+    glyph.setAttribute('aria-hidden', 'true');
+    glyph.textContent = connected ? '✓' : '✕';
+    connectedInfo.appendChild(glyph);
+    connectedInfo.appendChild(
+      document.createTextNode(
+        connected ? (st.email ? `Connected as ${st.email}` : 'Connected') : 'Not connected',
+      ),
+    );
     lapseNotice.hidden = !st.lapsed;
   }
 
