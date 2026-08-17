@@ -2050,24 +2050,42 @@ export class NavigationPanel {
     const target = this.caretRow();
     if (!target) return;
     const list = this.listEl;
-    // `offsetTop` is measured from the nearest POSITIONED ancestor, which
-    // is the panel (`position: fixed`), not the list (`.pmd-nav-list` is
-    // an unpositioned flex child) — so the list's own offset comes off to
-    // get a content-relative coordinate. Both are scroll-independent.
-    const top = target.offsetTop - list.offsetTop;
-    const max = Math.max(0, list.scrollHeight - list.clientHeight);
+    // WHICH element scrolls differs by layout: single-doc scrolls the
+    // list itself, but three-pane scrolls the section BODY
+    // (`.pmd-multi-nav-body`) so the panel header can stick to its top
+    // — there the list is never its own scroller and writing its
+    // `scrollTop` is a silent no-op (and its unclipped `clientHeight`
+    // makes every row look "already visible"). Prefer the list when it
+    // actually scrolls, else the enclosing body.
+    const scroller =
+      list.scrollHeight > list.clientHeight
+        ? list
+        : (list.closest<HTMLElement>('.pmd-multi-nav-body') ?? list);
+    // `offsetTop` is measured from the nearest POSITIONED ancestor —
+    // the fixed panel in single-doc, the `position: relative` section
+    // in three-pane. Row and scroller share it either way, so the
+    // difference is a scroller-content-relative coordinate.
+    const top = target.offsetTop - scroller.offsetTop;
+    // In three-pane the panel header is `position: sticky` INSIDE the
+    // scroller and masks the top of its viewport: rows under it count
+    // as hidden, and 'top' pins just below it. Single-doc's header
+    // sits outside the list, so the allowance is zero there.
+    const headerEl = this.root.querySelector<HTMLElement>(':scope > header');
+    const headerH =
+      scroller !== list && headerEl && scroller.contains(headerEl) ? headerEl.offsetHeight : 0;
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     if (mode === 'nearest') {
-      const viewTop = list.scrollTop;
-      const viewBottom = viewTop + list.clientHeight;
+      const viewTop = scroller.scrollTop + headerH;
+      const viewBottom = scroller.scrollTop + scroller.clientHeight;
       const bottom = top + target.offsetHeight;
       if (top >= viewTop && bottom <= viewBottom) return; // already visible
       // Off the bottom → bring its bottom edge just inside; off the top →
       // its top edge. Either way the pane moves the minimum distance.
-      const next = top < viewTop ? top : bottom - list.clientHeight;
-      list.scrollTop = Math.max(0, Math.min(next, max));
+      const next = top < viewTop ? top - headerH : bottom - scroller.clientHeight;
+      scroller.scrollTop = Math.max(0, Math.min(next, max));
       return;
     }
-    list.scrollTop = Math.max(0, Math.min(top, max));
+    scroller.scrollTop = Math.max(0, Math.min(top - headerH, max));
   }
 
   private updateLevelButtonsActive(): void {

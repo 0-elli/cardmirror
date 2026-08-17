@@ -355,3 +355,101 @@ describe('following the caret as it moves', () => {
     expect(h.writes).toEqual([]); // …the pane just doesn't chase it
   });
 });
+
+/**
+ * Three-pane layout: the section BODY (`.pmd-multi-nav-body`) is the
+ * scroller — the list is unclipped so the panel header can stick to the
+ * body's top. Writing `listEl.scrollTop` there is a silent no-op, which
+ * is exactly how the feature shipped broken in three-pane: these pin the
+ * scroller choice and the sticky-header allowance.
+ */
+describe('three-pane layout: the section body scrolls, not the list', () => {
+  const HEADER_H = 30;
+  const cleanup: Array<() => void> = [];
+
+  afterEach(() => {
+    for (const fn of cleanup.splice(0)) fn();
+  });
+
+  function setupThreePane(): Harness & { bodyWrites: number[]; listWrites: number[] } {
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'pmd-multi-nav-body';
+    document.body.appendChild(bodyEl);
+    const root = document.createElement('div');
+    bodyEl.appendChild(root);
+    const view = mountView(makeDoc());
+    const panel = new NavigationPanel(root);
+    panel.attach(view);
+    const listEl = listOf(panel);
+    // Rows are measured from the SECTION (the shared positioned
+    // ancestor), so the sticky header's height sits above them.
+    Object.defineProperty(HTMLLIElement.prototype, 'offsetTop', {
+      configurable: true,
+      get(this: HTMLLIElement) {
+        const parent = this.parentElement;
+        if (!parent) return 0;
+        return HEADER_H + Array.prototype.indexOf.call(parent.children, this) * ROW_H;
+      },
+    });
+    Object.defineProperty(HTMLLIElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get: () => ROW_H,
+    });
+    // The list does NOT scroll here: content height === client height.
+    const listSize = () => listEl.children.length * ROW_H;
+    Object.defineProperty(listEl, 'clientHeight', { configurable: true, get: listSize });
+    Object.defineProperty(listEl, 'scrollHeight', { configurable: true, get: listSize });
+    Object.defineProperty(bodyEl, 'clientHeight', { configurable: true, get: () => VIEWPORT_H });
+    Object.defineProperty(bodyEl, 'scrollHeight', {
+      configurable: true,
+      get: () => HEADER_H + listEl.children.length * ROW_H,
+    });
+    const header = root.querySelector<HTMLElement>('header')!;
+    Object.defineProperty(header, 'offsetHeight', { configurable: true, get: () => HEADER_H });
+    const bodyWrites = recordScroll(bodyEl);
+    const listWrites = recordScroll(listEl);
+    const h = {
+      panel,
+      view,
+      writes: bodyWrites,
+      bodyWrites,
+      listWrites,
+      rowLabels: () => [...listEl.children].map((li) => li.textContent ?? ''),
+      highlighted: () => {
+        const li = listEl.querySelector('.pmd-nav-item-selected');
+        return li ? (li.textContent ?? '') : null;
+      },
+    };
+    open.push(h);
+    cleanup.push(() => bodyEl.remove());
+    return h;
+  }
+
+  it('level change scrolls the body and pins the row below the sticky header', () => {
+    settings.set('navFollowCursor', true);
+    const h = setupThreePane();
+    putCursor(h.view, inCardBody(h.view.state.doc, 4));
+    h.bodyWrites.length = 0;
+    h.listWrites.length = 0;
+    clickLevel(h.panel, 4);
+    expect(h.highlighted()).toContain('Tag four');
+    // Row index 7 sits at HEADER_H + 7·ROW_H; pinning it below the
+    // sticky header lands at 7·ROW_H, within the clamp.
+    expect(h.bodyWrites.at(-1)).toBe(7 * ROW_H);
+    expect(h.listWrites).toEqual([]); // the non-scroller is never written
+  });
+
+  it('caret move reveals an off-screen row by scrolling the body', () => {
+    const h = setupThreePane();
+    settings.set('navFollowCursor', false);
+    clickLevel(h.panel, 4);
+    settings.set('navFollowCursor', true);
+    h.bodyWrites.length = 0;
+    putCursor(h.view, inCardBody(h.view.state.doc, 4));
+    syncCaret(h);
+    // Off the bottom → bottom edge just inside the body's viewport:
+    // (HEADER_H + 7·ROW_H + ROW_H) − VIEWPORT_H.
+    expect(h.bodyWrites.at(-1)).toBe(HEADER_H + 8 * ROW_H - VIEWPORT_H);
+    expect(h.listWrites).toEqual([]);
+  });
+});
