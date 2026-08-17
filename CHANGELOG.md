@@ -18,10 +18,10 @@ see `DETAILED_CHANGELOG.md`.
   text selected it measures from the end of the selection, and it stays
   quick on long files.
 
-- **The navigation pane can follow your place in the document.** Turn on
-  **Navigation pane follows the cursor** (Settings → General →
-  Workspace, off by default) and the outline scrolls to keep the section
-  you're in visible. Moving the cursor into a different section brings
+- **The navigation pane follows your place in the document.** The
+  outline now scrolls to keep the section you're in visible (on by
+  default — turn off **Navigation pane follows the cursor** in Settings
+  → General → Workspace to keep the old behavior). Moving the cursor into a different section brings
   that heading into view; changing depth with the **1 · 2 · 3 · 4**
   buttons — which rebuilds the outline and has always scrolled it back
   to the top of the document — instead keeps the section you were in at

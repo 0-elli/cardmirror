@@ -404,7 +404,7 @@ export interface Settings {
    *  the top instead.
    *
    *  Scroll only: the cursor, the nav selection, and the collapsed set are
-   *  untouched. Off by default. */
+   *  untouched. On by default. */
   navFollowCursor: boolean;
   /** When true (default), `New document` mounts the CardMirror
    *  welcome / onboarding doc. When false, it mounts a blank
@@ -1585,7 +1585,7 @@ export const CUSTOM_DASH_STYLES: ReadonlyArray<Settings['customDashStyle']> = [
 const DEFAULTS: Settings = {
   navWidth: 300,
   navMaxLevel: 3,
-  navFollowCursor: false,
+  navFollowCursor: true,
   copyPreviousCiteNearestOnly: true,
   showOnboardingStarter: true,
   hasSeenUiTour: false,
@@ -2065,7 +2065,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'navFollowCursor',
     label: 'Navigation pane follows the cursor',
     description:
-      'Off by default. When on, the navigation pane scrolls to keep your place in sight: moving the cursor into a different section brings that heading into view',
+      'The navigation pane scrolls to keep your place in sight: moving the cursor into a different section brings that heading into view',
     kind: 'toggle',
     category: 'general',
     section: 'Workspace',
@@ -4063,7 +4063,7 @@ function sanitize(s: Settings): Settings {
   return {
     navWidth: clamp(s.navWidth, 150, 800),
     navMaxLevel: clamp(Math.round(s.navMaxLevel), 1, 4),
-    navFollowCursor: s.navFollowCursor === true,
+    navFollowCursor: s.navFollowCursor !== false,
     // Default-on: preserve `false` only when explicitly set so the
     // onboarding shows up for new installs and survives upgrades
     // from before this setting existed.

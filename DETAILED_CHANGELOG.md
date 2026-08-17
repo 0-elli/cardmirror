@@ -68,7 +68,7 @@ change the same way it survives a rebuild.
 
 ### Added: the nav pane can follow the cursor
 
-`navFollowCursor` (General → Workspace, **off by default**, `kind:
+`navFollowCursor` (General → Workspace, **on by default**, `kind:
 'toggle'` so it also gets a command-palette toggle). `setCaretHeading`
 has always resolved and highlighted the caret's row while explicitly
 declining to scroll to it — "that'd dominate scroll behavior for users
