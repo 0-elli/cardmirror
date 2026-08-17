@@ -2537,6 +2537,12 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
       connectedInfo.appendChild(
         document.createTextNode(st.email ? `Connected as ${st.email}` : 'Connected'),
       );
+    } else {
+      // Empty the chip too — its class carries `display: flex`, which
+      // outranks the `hidden` attribute, so stale contents stayed
+      // painted after Disconnect (fixed in CSS as well; this keeps the
+      // DOM honest regardless).
+      connectedInfo.replaceChildren();
     }
     lapseNotice.hidden = !st.lapsed;
   }

@@ -7112,6 +7112,13 @@ body.pmd-steady-cursor .pmd-italic-caret,
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+/* The author `display: flex` above outranks the UA's `[hidden]` rule,
+   so without this the "Connected as …" chip kept showing after
+   Disconnect until the dialog was rebuilt. */
+.pmd-pairing-account-connected[hidden] {
+  display: none;
   font-size: 0.85rem;
   color: var(--pmd-c-text-muted);
 }
