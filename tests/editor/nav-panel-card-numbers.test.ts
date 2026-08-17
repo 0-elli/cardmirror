@@ -70,8 +70,8 @@ describe('NavigationPanel — card number glyphs', () => {
       ['First', '1.'],
       ['Skip', null],
       ['Second', '2.'],
-      // Note the default separators differ by kind: number `period`, sub `paren`.
-      ['Sub under second', 'a)'],
+      // Both kinds default to `period` (sub was `paren` until 2026-08-18).
+      ['Sub under second', 'a.'],
     ]);
     view.destroy();
   });

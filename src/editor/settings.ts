@@ -1627,7 +1627,7 @@ const DEFAULTS: Settings = {
   showCardNumbering: true,
   showNumberingButtons: true,
   cardNumberingFormat: 'period',
-  cardNumberingSubFormat: 'paren',
+  cardNumberingSubFormat: 'period',
   cardNumberingSubCapitalized: false,
   cardNumberingSubBold: true,
   cardNumberingIndent: 'off',
@@ -4112,7 +4112,7 @@ function sanitize(s: Settings): Settings {
       s.cardNumberingSubFormat as NumberingSeparator,
     )
       ? (s.cardNumberingSubFormat as NumberingSeparator)
-      : 'paren',
+      : 'period',
     cardNumberingSubCapitalized: !!s.cardNumberingSubCapitalized,
     cardNumberingSubBold: s.cardNumberingSubBold === false ? false : true,
     cardNumberingIndent:

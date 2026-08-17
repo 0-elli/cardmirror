@@ -4,18 +4,21 @@
  * A coach-marks overlay: dimmed viewport with a rounded cutout over
  * the current target and a floating card beside it (Back / Next /
  * Skip, step dots, ←/→/Esc). Sequenced as a first session's arc:
- * editor → styles → nav → files → read mode → speech → timer → learn
- * → settings → command bar (the one interactive step) → finish.
+ * editor → structural styles → character styles → outline → files →
+ * speech → read mode → word count → timer → learn → command bar
+ * (interactive: open it, run "settings", tour the opened dialog) →
+ * the ⚙ button → finish. A first boot that lands on the home screen
+ * gets a leading step that has the user create their first document.
  *
- * Availability adapter (the ribbon clips at narrow widths, and some
- * clusters are structurally absent — the speech stack renders only in
- * three-pane): every step resolves its target at entry. A missing or
- * invisible target NEVER dead-ends or silently skips the step — the
- * card renders centered with adapted copy so the user still learns
- * the feature exists, and a resize listener upgrades it to a real
- * spotlight if the element becomes visible mid-step. A renamed id
- * degrades the same way (plus a console warning), so ribbon
- * refactors can't crash the tour.
+ * Availability adapter: every step resolves its target at entry and
+ * on a 250ms reposition tick (animated panes, the palette growing,
+ * dialogs opening — none of it goes stale). Visibility is judged by
+ * ancestor-clip intersection, not just viewport bounds — the ribbon
+ * clips clusters at narrow widths without moving them off-screen. A
+ * missing or invisible target NEVER dead-ends or silently skips the
+ * step: the card renders centered with adapted copy, and upgrades to
+ * a real spotlight if the element becomes visible mid-step. A
+ * renamed id degrades the same way plus a console warning.
  *
  * Auto-runs once per FRESH profile (recent-files empty); existing
  * profiles are marked seen without touring — they rerun it via the
@@ -32,7 +35,7 @@ export interface TourStep {
   title: string;
   body: string;
   /** Resolve the spotlight target; null = centered card. Re-resolved
-   *  on resize. */
+   *  on every reposition tick. */
   target?: () => HTMLElement | null;
   /** Copy used when the target is structurally absent (e.g. the
    *  speech stack outside three-pane). Falls back to `hiddenBody`. */
@@ -44,17 +47,22 @@ export interface TourStep {
   prepare?: () => void;
   /** Secondary highlight ring inside/near the main target. */
   ring?: () => HTMLElement | null;
-  /** Interactive step: advance automatically on this hook. */
+  /** Steps the user acts through (clicks/keys reach the app). */
   interactive?: boolean;
+  /** Checked on the reposition tick; true advances to the next step
+   *  (e.g. the create-doc step completing when an editor mounts). */
+  advanceWhen?: () => boolean;
 }
 
 function el(id: string): () => HTMLElement | null {
   return () => document.getElementById(id);
 }
 
-function buildSteps(): TourStep[] {
+const COMMAND_BAR_STEP_ID = 'command-bar';
+
+function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
   const mod = (k: string) => formatKeyForDisplay(k);
-  return [
+  const steps: TourStep[] = [
     {
       id: 'welcome',
       title: 'Welcome to CardMirror',
@@ -63,6 +71,18 @@ function buildSteps(): TourStep[] {
         'and Esc to skip. You can rerun it any time: it lives in the command bar as ' +
         '"Take the UI Tour".',
     },
+  ];
+  if (opts.includeCreateDoc) {
+    steps.push({
+      id: 'create-doc',
+      title: 'Create your first document',
+      body: 'This is the home screen. Click "New document" — the tour continues inside.',
+      target: () => document.querySelector<HTMLElement>('.pmd-home-action'),
+      interactive: true,
+      advanceWhen: () => document.querySelector('.ProseMirror') !== null,
+    });
+  }
+  steps.push(
     {
       id: 'editor',
       title: 'The editor',
@@ -75,10 +95,19 @@ function buildSteps(): TourStep[] {
       id: 'styles',
       title: 'Structural styles',
       body:
-        'The heart of cutting: turn a paragraph into a Pocket, Hat, Block, Tag, Analytic, ' +
-        'or Undertag with one click — or one keystroke (F4–F7 and friends; the 📖 button ' +
-        'lists them all).',
+        'Turn a paragraph into a Pocket, Hat, Block, Tag, Analytic, or Undertag with one ' +
+        'click — or one keystroke (F4–F7 and friends; the 📖 button lists them all).',
       target: el('formatting-panel'),
+    },
+    {
+      id: 'char-styles',
+      title: 'Evidence marks',
+      body:
+        'The marks that cut a card: F9 underlines, F10 emphasizes, F11 highlights, F8 ' +
+        'marks the cite — and the color panel beside them handles highlight colors, ' +
+        'background shading, and font color.',
+      target: el('cite-panel'),
+      ring: el('color-panel'),
     },
     {
       id: 'nav',
@@ -86,7 +115,9 @@ function buildSteps(): TourStep[] {
       body:
         'Every heading those styles create shows up here. Click to jump, double-click to ' +
         'fold, drag to reorder — and the 1 · 2 · 3 · 4 buttons set how deep the outline goes.',
-      target: el('nav-panel'),
+      // #nav-panel is a zero-size wrapper (the visible pane is a
+      // position:fixed child) — target the pane itself.
+      target: () => document.querySelector<HTMLElement>('.pmd-nav-panel'),
       ring: () => document.querySelector<HTMLElement>('.pmd-nav-level-group'),
       prepare: () => {
         if (!settings.get('navPaneVisible')) settings.set('navPaneVisible', true);
@@ -101,14 +132,6 @@ function buildSteps(): TourStep[] {
       target: el('file-stack'),
     },
     {
-      id: 'read-mode',
-      title: 'Read mode',
-      body:
-        'The eye reads at the podium: everything but tags, cites, analytics, and ' +
-        'highlighted text hides, and typing is locked so a stray key can’t edit the doc.',
-      target: el('read-mode-btn'),
-    },
-    {
       id: 'speech',
       title: 'Speech docs',
       body:
@@ -119,6 +142,23 @@ function buildSteps(): TourStep[] {
         'cluster — start a speech doc and send cards into it from your prep as you go. ' +
         'Turn on three panes in ⚙ → General → "Three-pane workspace" to see it.',
       target: el('speech-stack'),
+    },
+    {
+      id: 'read-mode',
+      title: 'Read mode',
+      body:
+        'And this is how you read that speech doc: everything but tags, cites, analytics, ' +
+        'and highlighted text hides, and typing is locked so a stray key can’t edit the ' +
+        'doc at the podium.',
+      target: el('read-mode-btn'),
+    },
+    {
+      id: 'word-count',
+      title: 'Read time, live',
+      body:
+        'The status bar keeps a running read-aloud word count and per-reader read-time ' +
+        'estimate as you edit — set your readers and their speeds in Settings.',
+      target: el('word-count-display'),
     },
     {
       id: 'timer',
@@ -137,15 +177,7 @@ function buildSteps(): TourStep[] {
       target: () => document.getElementById('manage-flashcards-btn')?.parentElement ?? null,
     },
     {
-      id: 'settings',
-      title: 'Settings',
-      body:
-        'Everything is adjustable — appearance, editing behavior, keybindings, ' +
-        'collaboration. Worth a browse once you’ve settled in.',
-      target: el('settings-btn'),
-    },
-    {
-      id: 'command-bar',
+      id: COMMAND_BAR_STEP_ID,
       title: 'One shortcut to rule them all',
       body:
         `Press ${mod('Mod-Shift-Space')} now. It opens the command bar — it searches ` +
@@ -154,29 +186,75 @@ function buildSteps(): TourStep[] {
       interactive: true,
     },
     {
+      id: 'settings-btn',
+      title: 'Settings, the clickable way',
+      body:
+        'The ⚙ button gets you back to Settings any time — and 📖 beside it opens the ' +
+        'full keyboard reference.',
+      target: el('settings-btn'),
+    },
+    {
       id: 'finish',
       title: 'That’s the tour',
       body:
-        'The document below walks the editing side — styles, cards, shortcuts — and 📖 ' +
-        'opens the full keyboard reference. Rerun this tour any time from the command ' +
-        'bar: "Take the UI Tour". Welcome aboard!',
+        'The document in the editor walks the cutting side — styles, cards, shortcuts. ' +
+        'Rerun this tour any time from the command bar: "Take the UI Tour". Welcome aboard!',
     },
-  ];
+  );
+  return steps;
 }
 
-/** Visible-enough to spotlight: rendered, non-zero, and inside the
- *  viewport (the ribbon clips clusters at narrow widths). */
-function measurable(target: HTMLElement): DOMRect | null {
+/** Rect visible after clipping by every overflow-clipping ancestor
+ *  and the viewport. Returns null unless a solid majority of the
+ *  element survives — the ribbon clips clusters at narrow widths
+ *  without moving them off-screen, so viewport bounds alone lie. */
+function visibleRect(target: HTMLElement): DOMRect | null {
   const r = target.getBoundingClientRect();
   if (r.width < 2 || r.height < 2) return null;
-  if (r.right < 0 || r.bottom < 0 || r.left > window.innerWidth || r.top > window.innerHeight) {
-    return null;
+  let left = r.left;
+  let top = r.top;
+  let right = r.right;
+  let bottom = r.bottom;
+  let node = target.parentElement;
+  while (node && node !== document.body) {
+    const cs = getComputedStyle(node);
+    // OR every source: in real browsers the longhands are authoritative,
+    // but jsdom leaves them at the default 'visible' while the shorthand
+    // (or inline style) carries the truth.
+    const clips = (v: string) =>
+      v === 'hidden' || v === 'clip' || v === 'auto' || v === 'scroll';
+    const shorthand = clips(cs.overflow) || clips(node.style.overflow);
+    const ox = clips(cs.overflowX) || clips(node.style.overflowX) || shorthand;
+    const oy = clips(cs.overflowY) || clips(node.style.overflowY) || shorthand;
+    if (ox || oy) {
+      const cr = node.getBoundingClientRect();
+      if (ox) {
+        left = Math.max(left, cr.left);
+        right = Math.min(right, cr.right);
+      }
+      if (oy) {
+        top = Math.max(top, cr.top);
+        bottom = Math.min(bottom, cr.bottom);
+      }
+    }
+    node = node.parentElement;
   }
-  return r;
+  left = Math.max(left, 0);
+  top = Math.max(top, 0);
+  right = Math.min(right, window.innerWidth);
+  bottom = Math.min(bottom, window.innerHeight);
+  const w = right - left;
+  const h = bottom - top;
+  if (w < 2 || h < 2) return null;
+  if (w * h < r.width * r.height * 0.5) return null; // mostly clipped
+  return new DOMRect(left, top, w, h);
 }
 
 const GENERIC_HIDDEN_NOTE =
   ' (Your window is currently too narrow to show it — widen the window and it appears in the ribbon.)';
+
+/** Interactive command-bar phases. */
+type CmdPhase = 'ask' | 'palette' | 'settings';
 
 export class UiTourController {
   private steps: TourStep[];
@@ -186,26 +264,36 @@ export class UiTourController {
   private ring: HTMLElement | null = null;
   private card: HTMLElement | null = null;
   private offPaletteOpen: (() => void) | null = null;
-  private paletteOpened = false;
+  private cmdPhase: CmdPhase = 'ask';
+  private tick: number | null = null;
+  private renderedKey = '';
   private readonly onResize = () => this.position();
   private readonly onKey = (e: KeyboardEvent) => {
     if (!this.root) return;
+    const step = this.steps[this.index];
     if (e.key === 'Escape') {
-      // On the interactive step, Esc first belongs to the palette.
-      if (this.steps[this.index]?.interactive && quickCardSearchUI.isOpen()) return;
+      // On interactive steps Esc belongs to whatever the user opened
+      // (palette, settings dialog) before it means "skip the tour".
+      if (step?.interactive && (quickCardSearchUI.isOpen() || settingsDialogEl() !== null)) return;
       e.preventDefault();
       this.end();
-    } else if (e.key === 'ArrowRight') {
+    } else if (e.key === 'ArrowRight' && !step?.interactive) {
       e.preventDefault();
       this.next();
-    } else if (e.key === 'ArrowLeft') {
+    } else if (e.key === 'ArrowLeft' && !step?.interactive) {
       e.preventDefault();
       this.back();
     }
   };
 
-  constructor(steps: TourStep[] = buildSteps()) {
-    this.steps = steps;
+  constructor(steps?: TourStep[]) {
+    this.steps =
+      steps ??
+      buildSteps({
+        includeCreateDoc:
+          document.querySelector('.pmd-home-screen') !== null &&
+          document.querySelector('.ProseMirror') === null,
+      });
   }
 
   get running(): boolean {
@@ -218,7 +306,7 @@ export class UiTourController {
     const root = document.createElement('div');
     root.className = 'pmd-tour';
     // Click-catcher: swallows app clicks while touring. Disabled on
-    // the interactive step so the palette stays reachable.
+    // interactive steps so the target UI stays reachable.
     const catcher = document.createElement('div');
     catcher.className = 'pmd-tour-catcher';
     root.appendChild(catcher);
@@ -236,6 +324,9 @@ export class UiTourController {
     this.root = root;
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKey, { capture: true });
+    // Live reposition: animated panes, the palette growing as results
+    // render, dialogs opening — a one-shot measure goes stale fast.
+    this.tick = window.setInterval(() => this.onTick(), 250);
     this.enter();
   }
 
@@ -243,6 +334,8 @@ export class UiTourController {
     if (!this.root) return;
     this.offPaletteOpen?.();
     this.offPaletteOpen = null;
+    if (this.tick !== null) window.clearInterval(this.tick);
+    this.tick = null;
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKey, { capture: true });
     this.root.remove();
@@ -250,6 +343,14 @@ export class UiTourController {
   }
 
   next(): void {
+    const step = this.steps[this.index];
+    // Leaving the interactive step tidies up whatever is still open.
+    if (step?.id === COMMAND_BAR_STEP_ID) {
+      if (quickCardSearchUI.isOpen()) quickCardSearchUI.close();
+      if (settingsDialogEl() !== null) {
+        void import('./settings-ui.js').then((m) => m.closeSettings());
+      }
+    }
     if (this.index >= this.steps.length - 1) {
       this.end();
       return;
@@ -270,23 +371,43 @@ export class UiTourController {
     const step = this.steps[this.index]!;
     this.offPaletteOpen?.();
     this.offPaletteOpen = null;
-    this.paletteOpened = false;
+    this.cmdPhase = 'ask';
+    this.renderedKey = '';
     try {
       step.prepare?.();
     } catch (err) {
       console.warn('[ui-tour] step prepare failed:', err);
     }
-    if (step.interactive) {
+    if (step.id === COMMAND_BAR_STEP_ID) {
       this.offPaletteOpen = onQuickCardSearchOpen(() => {
-        // The user pressed the shortcut — celebrate and let them see
-        // the palette, then Next closes it.
-        this.paletteOpened = true;
-        this.renderCard(step, 'interactive-open');
+        this.cmdPhase = 'palette';
         this.position();
       });
     }
     this.root.classList.toggle('pmd-tour-interactive', !!step.interactive);
-    this.renderCard(step, 'normal');
+    this.position();
+  }
+
+  /** Reposition tick: dynamic advance conditions + live layout. */
+  private onTick(): void {
+    const step = this.steps[this.index];
+    if (!step) return;
+    if (step.advanceWhen?.()) {
+      this.next();
+      return;
+    }
+    if (step.id === COMMAND_BAR_STEP_ID) {
+      const settingsOpen = settingsDialogEl() !== null;
+      if (this.cmdPhase !== 'settings' && settingsOpen) {
+        this.cmdPhase = 'settings';
+      } else if (this.cmdPhase === 'settings' && !settingsOpen) {
+        // They closed Settings — the natural hand-off to the ⚙ step.
+        this.next();
+        return;
+      } else if (this.cmdPhase === 'palette' && !quickCardSearchUI.isOpen() && !settingsOpen) {
+        this.cmdPhase = 'ask'; // palette dismissed without running anything
+      }
+    }
     this.position();
   }
 
@@ -295,49 +416,52 @@ export class UiTourController {
     if (!this.root || !this.card || !this.shade || !this.ring) return;
     const step = this.steps[this.index]!;
 
-    // Interactive follow-up anchors to the open palette.
-    const paletteEl =
-      step.interactive && this.paletteOpened
-        ? document.querySelector<HTMLElement>('.pmd-qcs')
-        : null;
-
+    // The interactive step's target follows its phase: the palette,
+    // then the opened Settings dialog (both render BELOW the tour's
+    // z-layer, so the cutout is what lifts them out of the dim).
     let target: HTMLElement | null = null;
-    let state: 'visible' | 'hidden' | 'absent' | 'center' = 'center';
-    if (paletteEl) {
-      target = paletteEl;
-      state = 'visible';
+    let mode: 'normal' | 'hidden' | 'absent' | CmdPhase = 'normal';
+    if (step.id === COMMAND_BAR_STEP_ID) {
+      mode = this.cmdPhase;
+      if (this.cmdPhase === 'palette') {
+        target = document.querySelector<HTMLElement>('.pmd-qcs');
+      } else if (this.cmdPhase === 'settings') {
+        target = settingsDialogEl();
+      }
     } else if (step.target) {
       target = step.target();
       if (target === null) {
-        state = 'absent';
+        mode = 'absent';
         console.warn(`[ui-tour] step "${step.id}": target missing — showing adapted card`);
-      } else {
-        let rect = measurable(target);
-        if (!rect) {
-          try {
-            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-          } catch {
-            /* non-scrollable context */
-          }
-          rect = measurable(target);
-        }
-        state = rect ? 'visible' : 'hidden';
       }
     }
 
-    this.root.dataset['state'] = state;
+    let rect: DOMRect | null = null;
+    if (target) {
+      rect = visibleRect(target);
+      if (!rect) {
+        try {
+          target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        } catch {
+          /* non-scrollable context */
+        }
+        rect = visibleRect(target);
+      }
+      if (!rect && mode === 'normal') mode = 'hidden';
+    }
+
+    this.renderCard(step, mode);
+
     const pad = 6;
-    if (state === 'visible' && target) {
-      const r = target.getBoundingClientRect();
+    if (rect) {
       Object.assign(this.shade.style, {
-        display: '',
-        left: `${r.left - pad}px`,
-        top: `${r.top - pad}px`,
-        width: `${r.width + pad * 2}px`,
-        height: `${r.height + pad * 2}px`,
+        left: `${rect.left - pad}px`,
+        top: `${rect.top - pad}px`,
+        width: `${rect.width + pad * 2}px`,
+        height: `${rect.height + pad * 2}px`,
       });
       const ringTarget = step.ring?.() ?? null;
-      const rr = ringTarget ? measurable(ringTarget) : null;
+      const rr = ringTarget ? visibleRect(ringTarget) : null;
       this.ring.hidden = !rr;
       if (rr) {
         Object.assign(this.ring.style, {
@@ -347,15 +471,12 @@ export class UiTourController {
           height: `${rr.height + 6}px`,
         });
       }
-      this.placeCardNear(r);
+      this.placeCardNear(rect);
     } else {
-      // Centered card over a uniform dim (shade collapses to nothing
-      // off-screen so its shadow still paints the dim).
-      this.shade.style.display = '';
+      // Centered card over a uniform dim (the shade collapses off-
+      // screen so its shadow still paints the dim).
       Object.assign(this.shade.style, { left: '-20px', top: '-20px', width: '0px', height: '0px' });
       this.ring.hidden = true;
-      // Adapted copy first, THEN center — the card's size depends on it.
-      if (state === 'hidden' || state === 'absent') this.renderCard(step, state);
       Object.assign(this.card.style, {
         left: `${Math.max(12, (window.innerWidth - this.card.offsetWidth) / 2)}px`,
         top: `${Math.max(12, (window.innerHeight - this.card.offsetHeight) / 2)}px`,
@@ -378,18 +499,28 @@ export class UiTourController {
     this.card.style.top = `${top}px`;
   }
 
-  private renderCard(
-    step: TourStep,
-    mode: 'normal' | 'hidden' | 'absent' | 'interactive-open',
-  ): void {
+  private renderCard(step: TourStep, mode: 'normal' | 'hidden' | 'absent' | CmdPhase): void {
     if (!this.card) return;
+    // Re-rendering every tick would eat button focus/clicks — only
+    // rebuild when the content actually changes.
+    const key = `${this.index}:${mode}`;
+    if (key === this.renderedKey) return;
+    this.renderedKey = key;
+
     let body = step.body;
-    if (mode === 'absent') body = step.absentBody ?? step.hiddenBody ?? step.body + GENERIC_HIDDEN_NOTE;
-    else if (mode === 'hidden') body = step.hiddenBody ?? step.body + GENERIC_HIDDEN_NOTE;
-    else if (mode === 'interactive-open') {
+    if (mode === 'absent') {
+      body = step.absentBody ?? step.hiddenBody ?? step.body + GENERIC_HIDDEN_NOTE;
+    } else if (mode === 'hidden') {
+      body = step.hiddenBody ?? step.body + GENERIC_HIDDEN_NOTE;
+    } else if (mode === 'palette') {
       body =
-        'That’s the command bar. Plain text searches everything; prefixes narrow it — ' +
-        '"c " commands, "s " settings, "f " files, "q " quick cards. Esc closes it.';
+        'That’s the command bar. Now type "settings" and press Enter — the top result ' +
+        'opens Settings. (Prefixes narrow the search: "c " commands, "s " settings, ' +
+        '"f " files, "q " quick cards.)';
+    } else if (mode === 'settings') {
+      body =
+        'Settings, opened from the keyboard. Everything is adjustable — have a look ' +
+        'around, then press Esc to close it and the tour continues.';
     }
 
     this.card.replaceChildren();
@@ -427,23 +558,24 @@ export class UiTourController {
     }
     if (this.index > 0) mkBtn('Back', 'pmd-tour-back', () => this.back());
     const last = this.index === this.steps.length - 1;
-    const nextBtn = mkBtn(last ? 'Done' : 'Next', 'pmd-tour-next', () => {
-      if (step.interactive && quickCardSearchUI.isOpen()) quickCardSearchUI.close();
-      this.next();
-    });
+    const nextBtn = mkBtn(last ? 'Done' : 'Next', 'pmd-tour-next', () => this.next());
     this.card.appendChild(row);
-    nextBtn.focus({ preventScroll: true });
-    // The interactive step needs the app to receive the shortcut, so
-    // hand focus back to the document body instead of the card.
-    if (step.interactive && mode === 'normal') nextBtn.blur();
+    // Interactive steps need the app to receive clicks/keys — leave
+    // focus where it is instead of stealing it into the card.
+    if (!step.interactive) nextBtn.focus({ preventScroll: true });
   }
+}
+
+function settingsDialogEl(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.pmd-settings-dialog');
 }
 
 let controller: UiTourController | null = null;
 
 /** Start (or restart) the tour. */
 export function startUiTour(): void {
-  if (!controller) controller = new UiTourController();
+  controller?.end();
+  controller = new UiTourController();
   settings.set('hasSeenUiTour', true);
   controller.start();
 }
@@ -451,8 +583,9 @@ export function startUiTour(): void {
 /** Auto-start once for fresh profiles. Existing profiles (anything in
  *  the recent-files list) are marked seen without touring — the tour
  *  postdates them, and unprompted overlays on upgrade are rude. Waits
- *  for the editor chrome to exist (first boot may land on the home
- *  screen; the tour begins when a document does). */
+ *  for either the editor chrome or the home screen (a first boot
+ *  lands on home; the tour's leading step then walks creating the
+ *  first document). */
 export function maybeAutoStartUiTour(): void {
   if (settings.get('hasSeenUiTour')) return;
   try {
@@ -472,14 +605,13 @@ export function maybeAutoStartUiTour(): void {
       return;
     }
     const ready =
-      document.querySelector('.ProseMirror') !== null &&
-      document.getElementById('formatting-panel') !== null;
+      (document.querySelector('.ProseMirror') !== null &&
+        document.getElementById('formatting-panel') !== null) ||
+      document.querySelector('.pmd-home-screen') !== null;
     if (ready) {
       window.clearInterval(poll);
       startUiTour();
     } else if (tries > 240) {
-      // ~2 minutes on the home screen — stop polling; the next boot
-      // (or the ribbon command) can still start it.
       window.clearInterval(poll);
     }
   }, 500);

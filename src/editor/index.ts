@@ -5020,7 +5020,7 @@ function makeStarterDoc(): PMNode {
     ),
     blank(),
     paraText(
-      'Drag a nav entry to reorder — it carries the whole heading and its contents. Ctrl-click and Shift-click extend the selection; hold Ctrl (Alt on macOS) while dragging to copy instead of move.',
+      'Drag a nav entry to reorder — it carries the whole heading and its contents. Mod-click and Shift-click extend the selection; hold Ctrl (Alt on macOS) while dragging to copy instead of move.',
     ),
     blank(),
     paraText(

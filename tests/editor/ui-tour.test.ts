@@ -2,29 +2,41 @@
 
 /**
  * UI tour (spotlight onboarding, 2026-08-18). Pinned:
- *  - sequencing: next/back/skip/Esc, dots, Done ends
+ *  - sequencing: next/back/skip/Esc, Done ends; new order (styles →
+ *    char styles → outline → files → speech → read mode → word count
+ *    → timer → learn → command bar → ⚙ → finish)
  *  - availability adapter: absent target → adapted centered card (the
- *    single-pane speech-stack case), never a crash or a silent skip
+ *    single-pane speech-stack case), never a crash or a silent skip;
+ *    a target clipped by an overflow ancestor counts as hidden
  *  - null/renamed target degrades to the adapted card (resilience)
- *  - interactive step advances its card when the palette opens
+ *  - interactive command-bar step: palette open → "type settings"
+ *    card; settings dialog open → settings card; dialog close →
+ *    auto-advance to the ⚙ step
+ *  - home-screen boot: leading create-doc step advances when an
+ *    editor mounts
  *  - auto-start policy: fresh profile tours once; a profile with
  *    recent files is marked seen WITHOUT touring
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
+const qcsState = vi.hoisted(() => ({ open: false }));
+
 vi.mock('../../src/editor/quick-card-search-ui.js', () => {
   const listeners = new Set<() => void>();
   return {
     quickCardSearchUI: {
-      isOpen: () => false,
-      close: vi.fn(),
+      isOpen: () => qcsState.open,
+      close: vi.fn(() => {
+        qcsState.open = false;
+      }),
     },
     onQuickCardSearchOpen: (cb: () => void) => {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
     __fireOpen: () => {
+      qcsState.open = true;
       for (const cb of listeners) cb();
     },
   };
@@ -34,41 +46,55 @@ import { UiTourController, startUiTour, maybeAutoStartUiTour } from '../../src/e
 import { settings } from '../../src/editor/settings.js';
 import * as qcs from '../../src/editor/quick-card-search-ui.js';
 
+function fakeRect(el: HTMLElement, r: Partial<DOMRect>): void {
+  el.getBoundingClientRect = () =>
+    ({
+      left: 10,
+      top: 10,
+      width: 80,
+      height: 40,
+      right: (r.left ?? 10) + (r.width ?? 80),
+      bottom: (r.top ?? 10) + (r.height ?? 40),
+      ...r,
+    }) as DOMRect;
+}
+
 function buildChrome(opts: { speech?: boolean } = {}): void {
   const ids = [
     'file-stack',
     'formatting-panel',
-    'nav-panel',
+    'cite-panel',
+    'color-panel',
     'read-mode-btn',
+    'word-count-display',
     'timer-toggle-btn',
     'settings-btn',
   ];
   for (const id of ids) {
     const el = document.createElement('div');
     el.id = id;
-    // jsdom has no layout — give rects manually.
-    el.getBoundingClientRect = () =>
-      ({ left: 10, top: 10, width: 80, height: 40, right: 90, bottom: 50 }) as DOMRect;
+    fakeRect(el, {});
     document.body.appendChild(el);
   }
   if (opts.speech) {
     const s = document.createElement('div');
     s.id = 'speech-stack';
-    s.getBoundingClientRect = () =>
-      ({ left: 100, top: 10, width: 80, height: 40, right: 180, bottom: 50 }) as DOMRect;
+    fakeRect(s, { left: 100 });
     document.body.appendChild(s);
   }
+  const nav = document.createElement('div');
+  nav.className = 'pmd-nav-panel';
+  fakeRect(nav, { left: 0, top: 60, width: 240, height: 400 });
+  document.body.appendChild(nav);
   const learn = document.createElement('div');
   const manage = document.createElement('button');
   manage.id = 'manage-flashcards-btn';
   learn.appendChild(manage);
-  learn.getBoundingClientRect = () =>
-    ({ left: 200, top: 10, width: 60, height: 40, right: 260, bottom: 50 }) as DOMRect;
+  fakeRect(learn, { left: 200 });
   document.body.appendChild(learn);
   const pm = document.createElement('div');
   pm.className = 'ProseMirror';
-  pm.getBoundingClientRect = () =>
-    ({ left: 10, top: 100, width: 500, height: 400, right: 510, bottom: 500 }) as DOMRect;
+  fakeRect(pm, { left: 10, top: 100, width: 500, height: 400 });
   document.body.appendChild(pm);
 }
 
@@ -79,6 +105,7 @@ const btn = (label: string) =>
   );
 
 beforeEach(() => {
+  qcsState.open = false;
   settings.set('hasSeenUiTour', false);
   settings.set('navPaneVisible', true);
 });
@@ -90,31 +117,45 @@ afterEach(() => {
 });
 
 describe('UI tour', () => {
-  it('walks forward and back through the full sequence and ends on Done', () => {
+  it('walks the full sequence in the settled order and ends on Done', () => {
     buildChrome({ speech: true });
     const tour = new UiTourController();
     tour.start();
     expect(tour.running).toBe(true);
-    expect(card()!.textContent).toContain('Welcome');
 
-    btn('Next')!.click();
-    expect(card()!.textContent).toContain('The editor');
-    btn('Back')!.click();
-    expect(card()!.textContent).toContain('Welcome');
-
-    // Forward through everything: welcome + 11 more steps.
-    for (let i = 0; i < 11; i++) btn('Next')!.click();
-    expect(card()!.textContent).toContain('That’s the tour');
+    const expected = [
+      'Welcome',
+      'The editor',
+      'Structural styles',
+      'Evidence marks',
+      'The outline',
+      'Open, new, save',
+      'Speech docs',
+      'Read mode',
+      'Read time, live',
+      'Timer',
+      'Study your evidence',
+      'One shortcut',
+      'Settings, the clickable way',
+      'That’s the tour',
+    ];
+    for (const [i, title] of expected.entries()) {
+      expect(card()!.textContent).toContain(title);
+      if (i < expected.length - 1) btn('Next')!.click();
+    }
     btn('Done')!.click();
     expect(tour.running).toBe(false);
     expect(document.querySelector('.pmd-tour')).toBeNull();
   });
 
-  it('Escape skips out at any step', () => {
+  it('Back returns to the previous step; Escape skips out', () => {
     buildChrome();
     const tour = new UiTourController();
     tour.start();
     btn('Next')!.click();
+    expect(card()!.textContent).toContain('The editor');
+    btn('Back')!.click();
+    expect(card()!.textContent).toContain('Welcome');
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(tour.running).toBe(false);
   });
@@ -123,13 +164,26 @@ describe('UI tour', () => {
     buildChrome({ speech: false }); // single-pane: no speech stack
     const tour = new UiTourController();
     tour.start();
-    // welcome → editor → styles → nav → files → read mode → speech
     for (let i = 0; i < 6; i++) btn('Next')!.click();
     expect(card()!.textContent).toContain('Speech docs');
     expect(card()!.textContent).toContain('three-pane workspace');
-    // and the tour continues normally
     btn('Next')!.click();
-    expect(card()!.textContent).toContain('Timer');
+    expect(card()!.textContent).toContain('Read mode');
+  });
+
+  it('a target mostly clipped by an overflow ancestor counts as hidden', () => {
+    buildChrome();
+    const clipper = document.createElement('div');
+    clipper.style.overflow = 'hidden';
+    fakeRect(clipper, { left: 0, top: 0, width: 30, height: 50 });
+    const panel = document.getElementById('formatting-panel')!;
+    clipper.appendChild(panel); // panel rect 10..90 x, clipper cuts at 30
+    document.body.appendChild(clipper);
+    const tour = new UiTourController();
+    tour.start();
+    btn('Next')!.click(); // editor
+    btn('Next')!.click(); // styles
+    expect(card()!.textContent).toContain('too narrow');
   });
 
   it('a missing/renamed target degrades to the adapted card, not a crash', () => {
@@ -138,35 +192,76 @@ describe('UI tour', () => {
     const tour = new UiTourController();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     tour.start();
-    btn('Next')!.click(); // editor
-    btn('Next')!.click(); // styles — target gone
+    btn('Next')!.click();
+    btn('Next')!.click();
     expect(card()!.textContent).toContain('Structural styles');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('target missing'));
     warn.mockRestore();
   });
 
-  it('the interactive step advances its card when the palette opens', () => {
+  it('the command-bar step: palette → type-settings card → settings card → auto-advance on close', () => {
+    vi.useFakeTimers();
     buildChrome({ speech: true });
     const tour = new UiTourController();
     tour.start();
-    for (let i = 0; i < 10; i++) btn('Next')!.click();
-    expect(card()!.textContent).toContain('command bar');
+    for (let i = 0; i < 11; i++) btn('Next')!.click();
+    expect(card()!.textContent).toContain('One shortcut');
+
     (qcs as unknown as { __fireOpen: () => void }).__fireOpen();
-    expect(card()!.textContent).toContain('prefixes narrow it');
+    const palette = document.createElement('div');
+    palette.className = 'pmd-qcs';
+    fakeRect(palette, { left: 100, top: 300, width: 540, height: 60 });
+    document.body.appendChild(palette);
+    vi.advanceTimersByTime(300);
+    expect(card()!.textContent).toContain('type "settings"');
+
+    // The "command" ran: palette closes, the settings dialog appears.
+    qcsState.open = false;
+    palette.remove();
+    const dialog = document.createElement('div');
+    dialog.className = 'pmd-settings-dialog';
+    fakeRect(dialog, { left: 100, top: 50, width: 500, height: 400 });
+    document.body.appendChild(dialog);
+    vi.advanceTimersByTime(300);
+    expect(card()!.textContent).toContain('press Esc to close');
+
+    dialog.remove();
+    vi.advanceTimersByTime(300);
+    expect(card()!.textContent).toContain('Settings, the clickable way');
+  });
+
+  it('home-screen boot: create-doc step leads and advances when an editor mounts', () => {
+    vi.useFakeTimers();
+    // Home screen, no editor yet.
+    const home = document.createElement('div');
+    home.className = 'pmd-home-screen';
+    const action = document.createElement('button');
+    action.className = 'pmd-home-action';
+    fakeRect(action, { left: 300, top: 200, width: 200, height: 80 });
+    home.appendChild(action);
+    document.body.appendChild(home);
+
+    const tour = new UiTourController();
+    tour.start();
+    btn('Next')!.click();
+    expect(card()!.textContent).toContain('Create your first document');
+
+    // "User clicks New document": chrome + editor mount.
+    buildChrome({ speech: true });
+    vi.advanceTimersByTime(600);
+    expect(card()!.textContent).toContain('The editor');
   });
 
   it('auto-start tours a fresh profile once and marks upgraders seen without touring', () => {
     vi.useFakeTimers();
     buildChrome({ speech: true });
 
-    // Upgrader: recent files exist → marked seen, no overlay.
     localStorage.setItem('pmd-recent-files', JSON.stringify(['/some/file.docx']));
     maybeAutoStartUiTour();
     vi.advanceTimersByTime(2000);
     expect(document.querySelector('.pmd-tour')).toBeNull();
     expect(settings.get('hasSeenUiTour')).toBe(true);
 
-    // Fresh profile: tours once the chrome exists, and only once.
     settings.set('hasSeenUiTour', false);
     localStorage.removeItem('pmd-recent-files');
     maybeAutoStartUiTour();
