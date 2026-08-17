@@ -15357,13 +15357,25 @@ body.pmd-multi-doc #collab-chip {
    The durable home for errors/diagnostics: a chip in the status bar
    (nothing floats over the page — user decision) opening a panel
    anchored above it. Chip reuses .status-segment sizing. */
+/* The shared --pmd-c-warning (#b45309) read as orange on the chip —
+   notices use a slightly lighter, yellower tone (user call). Local to
+   the notice surfaces so the "saving…" amber elsewhere is untouched. */
+:root {
+  --pmd-c-notice-warning: #ca8a04;
+}
+/* dark: nudged the same direction off the #f59e0b amber (JS always
+   stamps data-theme, system mode included — no media query needed) */
+:root[data-theme='dark'] {
+  --pmd-c-notice-warning: #eab308;
+}
+
 #notice-chip[data-severity='error'] {
   color: var(--pmd-c-error);
   font-weight: 600;
 }
 
 #notice-chip[data-severity='warning'] {
-  color: var(--pmd-c-warning);
+  color: var(--pmd-c-notice-warning);
   font-weight: 600;
 }
 
@@ -15413,7 +15425,7 @@ body.pmd-multi-doc #collab-chip {
 }
 
 .pmd-notice-warning {
-  border-left-color: var(--pmd-c-warning);
+  border-left-color: var(--pmd-c-notice-warning);
 }
 
 .pmd-notice-top {
