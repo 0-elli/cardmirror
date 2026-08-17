@@ -116,7 +116,8 @@ function buildSteps(opts: { includeCreateDoc: boolean }): TourStep[] {
       title: 'The outline',
       body:
         'Every heading those styles create shows up here. Click to jump, double-click to ' +
-        'fold, drag to reorder — and the 1 · 2 · 3 · 4 buttons set how deep the outline goes.',
+        'collapse or expand a heading, drag to reorder — and the 1 · 2 · 3 · 4 buttons ' +
+        'set how many heading levels you can see in the outline.',
       // #nav-panel is a zero-size wrapper (the visible pane is a
       // position:fixed child) — target the pane itself.
       target: () => document.querySelector<HTMLElement>('.pmd-nav-panel'),
