@@ -3457,8 +3457,8 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'pairingConnectedUntil',
     label: 'Debate Decoded account',
     description:
-      'Links this machine to your Debate Decoded membership, which collaboration features on ' +
-      'the official relay will soon require. To link, open ' +
+      'Links this machine to your paid Debate Decoded membership, required for card sharing ' +
+      'and co-editing on the official relay. To link, open ' +
       'debate-decoded.ghost.io/cardmirror-connect, sign in, and paste the code it shows you ' +
       'here. Each membership covers two machines; linking a third asks before unlinking the ' +
       'oldest.',

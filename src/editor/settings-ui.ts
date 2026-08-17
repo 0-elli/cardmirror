@@ -2433,10 +2433,9 @@ function buildReadersEditor(): HTMLElement {
   return wrap;
 }
 
-/** Blog-account row: account linking. While the relay runs ungated an
- *  entitlement gates nothing, but enforcement is an imminent
- *  server-side flip — the copy says "soon required" without promising
- *  a date. Paste-a-connect-code UI with the seat-limit
+/** Blog-account row: account linking, required for card sharing and
+ *  co-editing on the official relay (gating flipped on server-side
+ *  2026-08-17). Paste-a-connect-code UI with the seat-limit
  *  confirm flow: a 409 names the oldest seat and carries a fresh
  *  retryCode (codes are single-use), so the confirm retry never bounces
  *  the user back to the blog page. The row waits for the main process
@@ -2454,7 +2453,7 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
   const helper = document.createElement('div');
   helper.className = 'pmd-pairing-account-status';
   helper.textContent =
-    'Not linked. Collaboration features on the official relay will soon require a linked ' +
+    'Not linked. Card sharing and co-editing on the official relay require a linked paid ' +
     'membership; everything else works without one.';
   wrap.appendChild(helper);
 

@@ -1161,7 +1161,7 @@ relay server that passes traffic along sees only scrambled data.
    - **Blocked senders** — cards and invites from these codes are dropped
      silently.
 
-**Debate Decoded account.** Collaboration features on the official relay will soon require a linked membership; machines already linked will keep collaborating without interruption when that begins. Self-hosted relays will never require an account. To link: click **Open the connect page** in the settings row (or visit
+**Debate Decoded account.** A linked paid membership is required for card sharing and co-editing on the official relay. To link: click **Open the connect page** in the settings row (or visit
 [debate-decoded.ghost.io/cardmirror-connect](https://debate-decoded.ghost.io/cardmirror-connect/)),
 sign in, and paste the code the page shows into the settings row. Codes are
 single-use and expire after ten minutes. A membership covers **two
