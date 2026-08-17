@@ -1020,6 +1020,7 @@ class QuickCardSearchUI {
              placeholder="${SEARCH_PLACEHOLDER}" aria-label="Search" />
       <div class="pmd-qcs-hints"></div>`;
     this.root = root;
+    for (const cb of openListeners) cb();
     this.resultsEl = root.querySelector('.pmd-qcs-results')!;
     // The search input owns the keyboard, but modern Chromium makes
     // scrollable containers CLICK-FOCUSABLE — any click in the results
@@ -2240,6 +2241,14 @@ class QuickCardSearchUI {
 }
 
 export const quickCardSearchUI = new QuickCardSearchUI();
+
+/** Palette-opened hook (the UI tour's interactive step advances on
+ *  it). Returns an unsubscribe. */
+const openListeners = new Set<() => void>();
+export function onQuickCardSearchOpen(cb: () => void): () => void {
+  openListeners.add(cb);
+  return () => openListeners.delete(cb);
+}
 
 // ── Shared tag-picker (inline + ribbon dropdown) ─────────────────────
 

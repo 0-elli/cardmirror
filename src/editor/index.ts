@@ -355,6 +355,14 @@ setSaveHealListener(({ error, healed }) => {
 // GitHub buttons in the ribbon's right-hand grid (no-op under Electron).
 wireWebEditionHeaderButtons();
 
+// UI tour auto-start for fresh profiles (desktop layout only — the
+// mobile UI has no ribbon to tour). The module polls for the editor
+// chrome itself, so first boots that land on the home screen tour on
+// the first opened document instead.
+if (!isMobileLayout()) {
+  void import('./ui-tour.js').then((m) => m.maybeAutoStartUiTour());
+}
+
 // Tag the body with the host kind so CSS can gate platform-specific chrome
 // (e.g. the Paste Text button appears only in the browser edition).
 document.body.classList.add('pmd-host-' + getHost().kind);

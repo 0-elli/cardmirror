@@ -4340,6 +4340,7 @@ export type RibbonCommandId =
   | 'manageFlashcards'
   | 'wordCountSelection'
   | 'openShortcutsReference'
+  | 'startUiTour'
   | 'selectSimilar'
   | 'removeHyperlinks'
   | 'convertAnalyticsToTags'
@@ -4568,6 +4569,7 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'manageFlashcards',
   'wordCountSelection',
   'openShortcutsReference',
+  'startUiTour',
   'selectSimilar',
   'removeHyperlinks',
   'convertAnalyticsToTags',
@@ -4748,6 +4750,7 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   manageFlashcards: 'Manage Flashcards',
   wordCountSelection: 'Word Count Selection',
   openShortcutsReference: 'Open Keyboard Shortcuts',
+  startUiTour: 'Take the UI Tour',
   selectSimilar: 'Select Similar Formatting',
   removeHyperlinks: 'Remove Hyperlinks',
   convertAnalyticsToTags: 'Convert Analytics to Tags',
@@ -4917,6 +4920,7 @@ export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly st
   moveContainerDown: ['move down', 'move card down', 'move section down', 'reorder down', 'shift down'],
   goHome: ['start screen', 'welcome screen', 'dashboard'],
   openShortcutsReference: ['hotkeys', 'key bindings', 'shortcuts'],
+  startUiTour: ['tour', 'onboarding', 'walkthrough', 'coach marks', 'tutorial'],
   zoomReset: ['actual size'],
   cycleTheme: ['dark mode', 'light mode', 'toggle theme', 'switch theme', 'appearance'],
   cycleTimerPreset: ['switch timer preset', 'toggle timer preset', 'next timer preset', 'change timer preset', 'timer profile', 'timer preset'],
@@ -5088,6 +5092,7 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   manageFlashcards: '',
   wordCountSelection: '',
   openShortcutsReference: '',
+  startUiTour: '',
   selectSimilar: '',
   removeHyperlinks: '',
   convertAnalyticsToTags: '',
@@ -5893,6 +5898,14 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
       return (_state, dispatch) => {
         if (!dispatch) return true;
         ctx.openShortcutsReference();
+        return true;
+      };
+    case 'startUiTour':
+      // Chrome-level side effect, doc-independent; lazy import keeps
+      // the tour module out of the boot path.
+      return (_state, dispatch) => {
+        if (!dispatch) return true;
+        void import('./ui-tour.js').then((m) => m.startUiTour());
         return true;
       };
     case 'selectSimilar':

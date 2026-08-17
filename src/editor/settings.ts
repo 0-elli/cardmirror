@@ -395,6 +395,9 @@ export interface Settings {
    *  every fresh window opens with, so this also governs the
    *  initial content of newly spawned windows. */
   showOnboardingStarter: boolean;
+  /** UI tour (coach marks) shown/acknowledged. Auto-set on any run;
+   *  no settings row — reruns go through the `startUiTour` command. */
+  hasSeenUiTour: boolean;
   /** Desktop-only. When set, "New Speech Document" saves into this
    *  directory by default (instead of leaving the doc unsaved until
    *  the user picks a location). Empty string means no default — the
@@ -1558,6 +1561,7 @@ const DEFAULTS: Settings = {
   navMaxLevel: 3,
   copyPreviousCiteNearestOnly: true,
   showOnboardingStarter: true,
+  hasSeenUiTour: false,
   defaultSpeechDocFolder: '',
   defaultSpeechDocFormat: 'docx',
   speechDocFilenameTemplate: DEFAULT_SPEECH_FILENAME_TEMPLATE,
@@ -3978,6 +3982,7 @@ function sanitize(s: Settings): Settings {
     // onboarding shows up for new installs and survives upgrades
     // from before this setting existed.
     showOnboardingStarter: s.showOnboardingStarter === false ? false : true,
+    hasSeenUiTour: s.hasSeenUiTour === true,
     defaultSpeechDocFolder:
       typeof s.defaultSpeechDocFolder === 'string'
         ? s.defaultSpeechDocFolder

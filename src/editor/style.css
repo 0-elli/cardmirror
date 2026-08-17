@@ -15236,3 +15236,99 @@ body.pmd-multi-doc .pmd-cardcutter-trim {
 body.pmd-multi-doc #collab-chip {
   display: none;
 }
+
+/* ── UI tour (spotlight onboarding) ──────────────────────────────────
+   Full-viewport overlay: a click-catcher swallows app interaction, the
+   shade element paints the dim via a huge box-shadow around its cutout
+   rect, and the card floats beside the target. The interactive step
+   (command bar) disables the catcher so the shortcut and palette stay
+   reachable. */
+.pmd-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  pointer-events: none;
+}
+
+.pmd-tour-catcher {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.pmd-tour-interactive .pmd-tour-catcher {
+  pointer-events: none;
+}
+
+.pmd-tour-shade {
+  position: absolute;
+  border-radius: 8px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+  transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+
+.pmd-tour-ring {
+  position: absolute;
+  border: 2px solid var(--pmd-c-accent);
+  border-radius: 6px;
+  transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+
+.pmd-tour-card {
+  position: absolute;
+  width: min(23rem, calc(100vw - 24px));
+  background: var(--pmd-c-bg);
+  color: var(--pmd-c-text);
+  border: 1px solid var(--pmd-c-border-soft);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  padding: 0.85rem 1rem;
+  pointer-events: auto;
+  transition: left 0.25s ease, top 0.25s ease;
+}
+
+.pmd-tour-title {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.pmd-tour-body {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--pmd-c-text-muted);
+}
+
+.pmd-tour-dots {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0.7rem 0 0.6rem;
+}
+
+.pmd-tour-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--pmd-c-border-soft);
+}
+
+.pmd-tour-dot-active {
+  background: var(--pmd-c-accent);
+}
+
+.pmd-tour-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.pmd-tour-skip {
+  margin-right: auto;
+  color: var(--pmd-c-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pmd-tour-shade,
+  .pmd-tour-ring,
+  .pmd-tour-card {
+    transition: none;
+  }
+}

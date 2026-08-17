@@ -178,6 +178,7 @@ export const RIBBON_GROUPS: RibbonGroup[] = [
       'cycleTheme',
       'minimizeWindow',
       'openShortcutsReference',
+      'startUiTour',
     ],
   },
   {
