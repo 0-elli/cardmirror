@@ -338,15 +338,18 @@ export class UiTourController {
     this.root = this.shade = this.ring = this.card = null;
   }
 
-  next(): void {
-    const step = this.steps[this.index];
-    // Leaving the interactive step tidies up whatever is still open.
-    if (step?.id === COMMAND_BAR_STEP_ID) {
-      if (quickCardSearchUI.isOpen()) quickCardSearchUI.close();
-      if (settingsDialogEl() !== null) {
-        void import('./settings-ui.js').then((m) => m.closeSettings());
-      }
+  /** Leaving the interactive step in EITHER direction tidies up
+   *  whatever the user still has open (palette, Settings dialog). */
+  private leaveCommandBarCleanup(): void {
+    if (this.steps[this.index]?.id !== COMMAND_BAR_STEP_ID) return;
+    if (quickCardSearchUI.isOpen()) quickCardSearchUI.close();
+    if (settingsDialogEl() !== null) {
+      void import('./settings-ui.js').then((m) => m.closeSettings());
     }
+  }
+
+  next(): void {
+    this.leaveCommandBarCleanup();
     if (this.index >= this.steps.length - 1) {
       this.end();
       return;
@@ -357,6 +360,7 @@ export class UiTourController {
 
   back(): void {
     if (this.index === 0) return;
+    this.leaveCommandBarCleanup();
     this.index--;
     this.enter();
   }
