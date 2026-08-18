@@ -741,7 +741,7 @@ async function startSessionFlowInner(
   await ensureBakedRelay();
   const client = relayClient();
   if (!client) {
-    showToast('Set the relay URL and token in Settings → Collaboration first');
+    showToast(`No relay connection — ${RELAY_FIX_PATH}`);
     return;
   }
   try {
@@ -865,7 +865,7 @@ export async function joinSessionWithCode(
   const client =
     relayClient() ?? (opts?.guestPass ? relayClientWithGuestPass(opts.guestPass) : null);
   if (!client) {
-    showToast('Set the relay URL and token in Settings → Collaboration first');
+    showToast(`No relay connection — ${RELAY_FIX_PATH}`);
     return false;
   }
   const decoded = decodeShareCode(code);
@@ -1033,7 +1033,7 @@ export async function resumeSessionFlow(
     relayClient() ??
     (record.guestPass ? relayClientWithGuestPass(record.guestPass) : null);
   if (!client) {
-    showToast('Set the relay URL and token in Settings → Collaboration first');
+    showToast(`No relay connection — ${RELAY_FIX_PATH}`);
     return false;
   }
   const decoded = decodeShareCode(record.shareCode);
