@@ -1973,10 +1973,18 @@ export class CommentsColumn {
     if (local) fillBadge(badge, author, aiPersonaInitials(author));
     else badge.textContent = 'AI';
     header.appendChild(badge);
+    // Same stacked-identity structure as a real comment header (the
+    // panel redesign moved names into .pmd-comment-idcol; a bare name
+    // span here left the placeholder mis-aligned against every real
+    // block around it — field find, 2026-08-18). No date: the reply
+    // doesn't exist yet.
+    const idcol = document.createElement('span');
+    idcol.className = 'pmd-comment-idcol';
     const name = document.createElement('span');
     name.className = 'pmd-comment-author';
     name.textContent = author;
-    header.appendChild(name);
+    idcol.appendChild(name);
+    header.appendChild(idcol);
     block.appendChild(header);
     const body = document.createElement('div');
     body.className = 'pmd-comment-body';
