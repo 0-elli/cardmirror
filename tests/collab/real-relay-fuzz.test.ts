@@ -33,6 +33,14 @@ import type { EditorView } from 'prosemirror-view';
 
 const URL_ = (process.env['REAL_RELAY_URL'] ?? '').trim();
 const TOKEN = (process.env['REAL_RELAY_TOKEN'] ?? '').trim();
+/** REAL_RELAY_GUEST=1: joiners authenticate with the room's GUEST PASS
+ *  (the account-less web joiner's credential) instead of the token,
+ *  and every peer randomly drops fully OFFLINE mid-round (its base
+ *  URL points at a dead port), then recovers with a stream restart —
+ *  the travel-day cycle on the guest credential path. Requires a
+ *  relay with the guest_pass flip ON (create must return a pass). */
+const GUEST_MODE = process.env['REAL_RELAY_GUEST'] === '1';
+const DEAD_URL = 'http://127.0.0.1:9/relay';
 const SEEDS = Number(process.env['FUZZ_SEEDS'] ?? 3);
 const SEED_START = Number(process.env['FUZZ_SEED_START'] ?? 1);
 const ROUNDS = Number(process.env['FUZZ_ROUNDS'] ?? 6);
@@ -132,14 +140,24 @@ describe.skipIf(!URL_ || !TOKEN)('real-relay session fuzz (web prototype stack)'
     async () => {
       for (let seed = SEED_START; seed < SEED_START + SEEDS; seed++) {
         const rnd = mulberry32(seed);
-        const mkClient = () =>
-          new RoomsClient({ baseUrl: () => URL_.replace(/\/+$/, ''), token: () => TOKEN });
+        // Per-peer offline switches: while true, the peer's client
+        // resolves to a dead port and every request fails — a REAL
+        // offline window, not a simulated one.
+        const offline: boolean[] = Array.from({ length: PEERS }, () => false);
+        const mkClient = (peerIdx: number, bearer: string = TOKEN) =>
+          new RoomsClient({
+            baseUrl: () => (offline[peerIdx] ? DEAD_URL : URL_.replace(/\/+$/, '')),
+            token: () => bearer,
+          });
 
-        const { session: host, shareCode } = await CollabSession.host({
+        const { session: host, shareCode, guestPass } = await CollabSession.host({
           pmDoc: seedDoc(),
-          client: mkClient(),
+          client: mkClient(0),
           ...FAST,
         });
+        if (GUEST_MODE && !guestPass) {
+          throw new Error('REAL_RELAY_GUEST=1 needs a relay with guest_pass ON');
+        }
         const sessions = [host];
         const views = [mkView(host.plugins())];
         await settle();
@@ -147,7 +165,8 @@ describe.skipIf(!URL_ || !TOKEN)('real-relay session fuzz (web prototype stack)'
 
         const decoded = decodeShareCode(shareCode)!;
         for (let p = 1; p < PEERS; p++) {
-          const joiner = await CollabSession.join({ ...decoded, client: mkClient(), ...FAST });
+          const client = GUEST_MODE ? mkClient(p, guestPass!) : mkClient(p);
+          const joiner = await CollabSession.join({ ...decoded, client, ...FAST });
           sessions.push(joiner);
           views.push(mkView(joiner.plugins()));
           await settle();
@@ -159,10 +178,27 @@ describe.skipIf(!URL_ || !TOKEN)('real-relay session fuzz (web prototype stack)'
           for (let p = 0; p < PEERS; p++) {
             const ops = 1 + Math.floor(rnd() * 3);
             for (let k = 0; k < ops; k++) applyRandomOp(views[p]!, rnd);
-            // Reconnect churn: the travel-day cycle, compressed.
-            if (rnd() < 0.15) sessions[p]!.restart();
+            if (offline[p]) {
+              // Recover from an offline window: back online + stream
+              // restart (what visibilitychange/online handlers do).
+              if (rnd() < 0.6) {
+                offline[p] = false;
+                sessions[p]!.restart();
+              }
+            } else if (rnd() < (GUEST_MODE ? 0.2 : 0)) {
+              offline[p] = true; // drop fully offline mid-edit
+            } else if (rnd() < 0.15) {
+              sessions[p]!.restart(); // plain reconnect churn
+            }
           }
           await sleep(60 + Math.floor(rnd() * 120));
+        }
+        // Everyone back online for the convergence phase.
+        for (let p = 0; p < PEERS; p++) {
+          if (offline[p]) {
+            offline[p] = false;
+            sessions[p]!.restart();
+          }
         }
 
         const converged = await waitForConvergence(views, 20_000);
@@ -176,7 +212,7 @@ describe.skipIf(!URL_ || !TOKEN)('real-relay session fuzz (web prototype stack)'
         views[0]!.state.doc.check(); // throws on schema-invalid content
 
         for (const s of sessions) await s.stop();
-        const roomClient = mkClient();
+        const roomClient = mkClient(0);
         await roomClient.deleteRoom(decoded.roomId).catch(() => {});
         for (const v of views) v.destroy();
       }
