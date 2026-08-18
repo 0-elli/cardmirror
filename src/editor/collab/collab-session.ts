@@ -174,6 +174,11 @@ export class CollabSession {
   }
 
   private stream: RoomStream | null = null;
+  /** Room guest pass (web-collab Phase 3): minted at host-create when
+   *  the relay's flip is on, carried in invite links, persisted with
+   *  the session record so resume keeps the credential. Null when the
+   *  feature is dormant or this peer joined with its own credentials. */
+  guestPass: string | null = null;
   private lastSeq = 0;
   private lastSentVersion: ReturnType<LoroDoc['version']>;
   /** What the relay has CONFIRMED receiving (post succeeded), unlike
@@ -281,10 +286,10 @@ export class CollabSession {
     maxBackoffMs?: number;
     snapshotEvery?: number;
     updateByteLimit?: number;
-  }): Promise<{ session: CollabSession; shareCode: string }> {
+  }): Promise<{ session: CollabSession; shareCode: string; guestPass: string | null }> {
     const keyBytes = generateRoomKeyBytes();
     const key = await importRoomKey(keyBytes);
-    const roomId = await opts.client.createRoom();
+    const { roomId, guestPass } = await opts.client.createRoom();
 
     const loroDoc = new LoroDoc();
     configTextStyle(loroDoc);
@@ -317,7 +322,8 @@ export class CollabSession {
     // old builds can keep joining them.
     const floor =
       session.childrenFormat() === 'movable' ? MOVABLE_ROOMS_MIN_VERSION : undefined;
-    return { session, shareCode: encodeShareCode(roomId, keyBytes, floor) };
+    session.guestPass = guestPass;
+    return { session, shareCode: encodeShareCode(roomId, keyBytes, floor), guestPass };
   }
 
   /** Join an existing session; resolves once the backlog (seed + tail)

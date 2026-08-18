@@ -4396,6 +4396,7 @@ export type RibbonCommandId =
   | 'collabStartSession'
   | 'collabJoinSession'
   | 'collabCopyShareCode'
+  | 'collabCopyInviteLink'
   | 'collabInviteStarred'
   | 'collabEndSession'
   | 'insertImage'
@@ -4617,6 +4618,7 @@ export const RIBBON_COMMAND_IDS: RibbonCommandId[] = [
   'collabStartSession',
   'collabJoinSession',
   'collabCopyShareCode',
+  'collabCopyInviteLink',
   'collabInviteStarred',
   'collabEndSession',
   'insertImage',
@@ -4798,6 +4800,7 @@ export const RIBBON_COMMAND_LABELS: Record<RibbonCommandId, string> = {
   collabStartSession: 'Start Collaboration Session',
   collabJoinSession: 'Join Collaboration Session',
   collabCopyShareCode: 'Copy Session Share Code',
+  collabCopyInviteLink: 'Copy Session Invite Link',
   collabInviteStarred: 'Invite Starred Partner to Session',
   collabEndSession: 'End or Leave Collaboration Session',
   insertImage: 'Insert Image at Cursor',
@@ -4876,6 +4879,7 @@ export const RIBBON_COMMAND_ALIASES: Partial<Record<RibbonCommandId, readonly st
   collabStartSession: ['collaborate', 'coedit', 'co-edit', 'share session', 'live edit'],
   collabJoinSession: ['join session', 'share code', 'coedit'],
   collabCopyShareCode: ['share code', 'invite code', 'session code'],
+  collabCopyInviteLink: ['invite link', 'share link', 'join link', 'session link'],
   collabInviteStarred: ['invite partner', 'session invite', 'invite to session'],
   openDevConsole: ['devtools', 'dev console', 'debug console', 'inspect', 'developer tools'],
   collabEndSession: ['leave session', 'stop session', 'stop collaborating'],
@@ -5151,6 +5155,7 @@ export const DEFAULT_RIBBON_KEYS: Record<RibbonCommandId, string | string[]> = {
   collabStartSession: '',
   collabJoinSession: '',
   collabCopyShareCode: '',
+  collabCopyInviteLink: '',
   collabInviteStarred: '',
   collabEndSession: '',
   newSpeechDocument: '',
@@ -5394,6 +5399,7 @@ export interface RibbonContext {
   collabStartSession: () => void;
   collabJoinSession: () => void;
   collabCopyShareCode: () => void;
+  collabCopyInviteLink: () => void;
   collabInviteStarred: () => void;
   collabEndSession: () => void;
   /** Open the file picker that prompts for an image to insert at
@@ -5539,6 +5545,7 @@ const DEFAULT_RIBBON_CONTEXT: RibbonContext = {
   collabStartSession: () => {},
   collabJoinSession: () => {},
   collabCopyShareCode: () => {},
+  collabCopyInviteLink: () => {},
   collabInviteStarred: () => {},
   collabEndSession: () => {},
   insertImage: () => {},
@@ -6173,6 +6180,12 @@ function commandFor(id: RibbonCommandId, ctx: RibbonContext): Command {
       return (_state, dispatch) => {
         if (!dispatch) return true;
         ctx.collabCopyShareCode();
+        return true;
+      };
+    case 'collabCopyInviteLink':
+      return (_state, dispatch) => {
+        if (!dispatch) return true;
+        ctx.collabCopyInviteLink();
         return true;
       };
     case 'collabInviteStarred':

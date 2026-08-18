@@ -49,6 +49,17 @@ export function relayBaseUrl(): string {
   ).replace(/\/+$/, '');
 }
 
+/** A rooms client authenticating with a room GUEST PASS instead of a
+ *  token/entitlement — the account-less joiner's credential (Phase 3).
+ *  Scope matches the server's: room-data endpoints only, so joins and
+ *  live sync work while create/delete stay closed. Null when no relay
+ *  URL resolves. */
+export function relayClientWithGuestPass(pass: string): RoomsClient | null {
+  const url = relayBaseUrl();
+  if (!url || !pass) return null;
+  return new RoomsClient({ baseUrl: () => url, token: () => pass, routingCode: () => '' });
+}
+
 export function relayClient(): RoomsClient | null {
   const dev = collabDevRelay();
   const url = relayBaseUrl();

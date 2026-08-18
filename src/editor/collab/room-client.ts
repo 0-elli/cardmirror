@@ -130,11 +130,28 @@ export class RoomsClient {
     }
   }
 
-  async createRoom(): Promise<string> {
+  async createRoom(): Promise<{ roomId: string; guestPass: string | null }> {
     const res = await this.request('/rooms', { method: 'POST', headers: this.headers() });
-    const body = await this.readJson<{ roomId?: string }>(res, '/rooms');
+    const body = await this.readJson<{ roomId?: string; guestPass?: string }>(res, '/rooms');
     if (!body.roomId) throw new RoomsError(0, 'malformed createRoom response');
-    return body.roomId;
+    // guestPass rides along only when the relay's guest_pass flip is on
+    // (web-collab Phase 1); absence is the dormant default, not an error.
+    return { roomId: body.roomId, guestPass: body.guestPass ?? null };
+  }
+
+  /** Re-mint a guest pass for a live room (host resume path). Null when
+   *  the feature is off server-side (404) or the relay predates it. */
+  async fetchGuestPass(roomId: string): Promise<string | null> {
+    try {
+      const res = await this.request(`/rooms/${roomId}/guest-pass`, {
+        method: 'GET',
+        headers: this.headers(),
+      });
+      const body = await this.readJson<{ guestPass?: string }>(res, 'guest-pass');
+      return body.guestPass ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async postUpdate(roomId: string, blob: Uint8Array): Promise<number> {

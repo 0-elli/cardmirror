@@ -74,6 +74,9 @@ export function attachSessionPersistence(
       // Sticky: once a docId is known it stays on the record (the
       // resolver can answer null transiently, e.g. before first save).
       const docId = getDocId() ?? record?.docId ?? null;
+      // Sticky like docId: the pass arrives once (host-create or a
+      // link join) and must survive every rewrite of the record.
+      const guestPass = session.guestPass ?? record?.guestPass ?? null;
       if (record && title && title !== record.docTitle) {
         try {
           session.loroDoc.getMap('meta').set('title', title);
@@ -104,6 +107,7 @@ export function attachSessionPersistence(
           sentVersion: meta.sentVersion,
           docTitle: getDocTitle(),
           docId,
+          guestPass,
           updatedAt: Date.now(),
         };
         await saveSessionRecord(record);
@@ -119,6 +123,7 @@ export function attachSessionPersistence(
           sentVersion: meta.sentVersion,
           docTitle: getDocTitle(),
           docId,
+          guestPass,
           updatedAt: Date.now(),
         };
       } else {
@@ -134,6 +139,7 @@ export function attachSessionPersistence(
           persistedVersion: session.encodedVersion(),
           docTitle: getDocTitle(),
           docId,
+          guestPass,
           updatedAt: Date.now(),
         };
       }

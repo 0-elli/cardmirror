@@ -160,6 +160,18 @@ export function collabActiveShareCode(): string | null {
   return shareCodeGetter?.() ?? null;
 }
 
+/** Focused doc's session INVITE LINK (share code + guest pass packed
+ *  for the web joiner) — same registration pattern as the share code. */
+let inviteLinkGetter: (() => string | null) | null = null;
+
+export function setCollabInviteLinkGetter(fn: (() => string | null) | null): void {
+  inviteLinkGetter = fn;
+}
+
+export function collabActiveInviteLink(): string | null {
+  return inviteLinkGetter?.() ?? null;
+}
+
 /** Live copresence for one open doc's session — connection status + who's here —
  *  read by the multi-pane shell to paint each slot's footer with ITS visible
  *  doc's session state. Provided by the lazily-loaded collab-ui once it's up;

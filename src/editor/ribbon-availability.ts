@@ -40,6 +40,7 @@ const COLLAB_COMMANDS = new Set<RibbonCommandId>([
   'collabStartSession',
   'collabJoinSession',
   'collabCopyShareCode',
+  'collabCopyInviteLink',
   'collabInviteStarred',
   'collabEndSession',
 ]);

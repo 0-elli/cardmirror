@@ -26,6 +26,9 @@ export interface RoomsMock {
   /** Delay before the stream's hello frame (simulates handshake latency
    *  so restart-thrash bugs are reproducible). 0 disables. */
   setHelloDelay(ms: number): void;
+  /** When set, createRoom responses carry this guestPass — simulates
+   *  the relay's guest_pass flip for web-collab tests. */
+  setGuestPass(value: string | null): void;
   close(): Promise<void>;
   streamCount(roomId: string): number;
   updateCount(roomId: string): number;
@@ -46,6 +49,7 @@ export function startRoomsMock(): Promise<RoomsMock> {
   let seqCounter = 0;
   let paused = false;
   let helloDelayMs = 0;
+  let guestPassValue: string | null = null;
   let streamAttempts = 0;
   let pushMuted = false;
 
@@ -89,7 +93,11 @@ export function startRoomsMock(): Promise<RoomsMock> {
     if (req.method === 'POST' && !roomId) {
       const id = randomUUID().replace(/-/g, '');
       rooms.set(id, { updates: [], snapshot: null, tombstoned: false, streams: new Set() });
-      return json(res, 201, { roomId: id });
+      return json(
+        res,
+        201,
+        guestPassValue ? { roomId: id, guestPass: guestPassValue } : { roomId: id },
+      );
     }
     if (!roomId) return json(res, 404, { error: 'not found' });
 
@@ -221,6 +229,9 @@ export function startRoomsMock(): Promise<RoomsMock> {
         },
         setHelloDelay: (ms) => {
           helloDelayMs = ms;
+        },
+        setGuestPass: (value) => {
+          guestPassValue = value;
         },
         mutePush: (on) => {
           pushMuted = on;

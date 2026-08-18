@@ -36,11 +36,13 @@ import {
   setCollabLiveRoomProbe,
   setCollabFocusChangeHandler,
   setCollabShareCodeGetter,
+  setCollabInviteLinkGetter,
   collabRoomClaimKey,
 } from './collab-hooks.js';
 import { RoomsError } from './room-client.js';
 import { getElectronHost } from '../host/index.js';
-import { ensureBakedRelay, relayClient, endRoomOnRelay } from './collab-relay.js';
+import { ensureBakedRelay, relayClient, relayClientWithGuestPass, endRoomOnRelay } from './collab-relay.js';
+import { buildJoinLink } from './join-link.js';
 import { relayClient as pairingRelayClient } from '../pairing/relay-client.js';
 import { resolveStarredTarget } from '../pairing/send-to-starred.js';
 import { buildRoomInviteItem, roomInviteFloor } from '../pairing/room-invite.js';
@@ -253,6 +255,11 @@ function actionSession(): ActiveSession | null {
 // code") keys off the FOCUSED doc's live session — an action, so it
 // uses actionSession(), never the display fallback (see above).
 setCollabShareCodeGetter(() => actionSession()?.shareCode ?? null);
+setCollabInviteLinkGetter(() => {
+  const s = actionSession();
+  if (!s) return null;
+  return buildJoinLink({ shareCode: s.shareCode, guestPass: s.session.guestPass });
+});
 
 function chipEl(): HTMLElement | null {
   return document.getElementById('collab-chip');
@@ -744,13 +751,22 @@ async function startSessionFlowInner(
     }
     sess.lastStatus = { connected: true, queuedUpdates: 0 };
     updateChip({ connected: true, queuedUpdates: 0 });
-    const copied = await navigator.clipboard?.writeText(shareCode).then(
+    // Web hosts copy the INVITE LINK (their partner most likely joins in
+    // a browser; the link carries the guest pass so an account-less
+    // joiner works). Desktop keeps the bare code — its partners are
+    // other installs, and the code paste-flow is muscle memory there.
+    const inviteText = getElectronHost()
+      ? shareCode
+      : buildJoinLink({ shareCode, guestPass: session.guestPass });
+    const copied = await navigator.clipboard?.writeText(inviteText).then(
       () => true,
       () => false,
     );
     showToast(
       copied
-        ? 'Session started — share code copied, send it to your partner'
+        ? getElectronHost()
+          ? 'Session started — share code copied, send it to your partner'
+          : 'Session started — invite link copied, send it to your partner'
         : 'Session started — use "Copy Session Share Code" to invite',
     );
   } catch (err) {
@@ -776,7 +792,11 @@ export async function joinSessionFlow(deps: CollabUiDeps): Promise<void> {
  *  doesn't burn the share code. No view is required up front: the flow
  *  creates its own doc via deps.newSessionDoc (multi-pane may be an empty
  *  workspace at this point). */
-export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Promise<boolean> {
+export async function joinSessionWithCode(
+  deps: CollabUiDeps,
+  code: string,
+  opts?: { guestPass?: string | null },
+): Promise<boolean> {
   if (!collabEnabled()) return false;
   // Don't overwrite the doc you're working in — or bump the session you're
   // already in: unless this window holds the disposable starter, hand the
@@ -794,7 +814,11 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
     return false;
   }
   await ensureBakedRelay();
-  const client = relayClient();
+  // Own credentials (baked token / linked account / self-host settings)
+  // outrank a guest pass — they're strictly more capable. The pass is
+  // the fallback that lets an account-less browser join at all.
+  const client =
+    relayClient() ?? (opts?.guestPass ? relayClientWithGuestPass(opts.guestPass) : null);
   if (!client) {
     showToast('Set the relay URL and token in Settings → Collaboration first');
     return false;
@@ -832,6 +856,7 @@ export async function joinSessionWithCode(deps: CollabUiDeps, code: string): Pro
         client,
         callbacks: sessionCallbacks(deps, () => sessRef),
       });
+      session.guestPass = opts?.guestPass ?? null;
     } catch (err) {
       // An ENDED (410) or expired/GC'd (404) room is not an offline
       // condition — the seed would resume a session that no longer exists.
@@ -959,7 +984,9 @@ export async function resumeSessionFlow(
     return false;
   }
   await ensureBakedRelay();
-  const client = relayClient();
+  const client =
+    relayClient() ??
+    (record.guestPass ? relayClientWithGuestPass(record.guestPass) : null);
   if (!client) {
     showToast('Set the relay URL and token in Settings → Collaboration first');
     return false;
@@ -982,6 +1009,15 @@ export async function resumeSessionFlow(
       client,
       callbacks: sessionCallbacks(deps, () => sessRef),
     });
+    session.guestPass = record.guestPass ?? null;
+    // Host resume without a stored pass: re-mint so fresh invite links
+    // stay possible (no-op 404 while the relay flip is off, and guests
+    // never pass the send-auth gate on this endpoint).
+    if (record.role === 'host' && !session.guestPass) {
+      void client.fetchGuestPass(record.roomId).then((p) => {
+        if (p) session.guestPass = p;
+      });
+    }
     // Fresh doc first — its uid owns the session. A false return keeps the
     // record (still resumable) — no seams installed yet, so nothing to unwind.
     // EXCEPT `existingDoc`: bind into an ALREADY-open doc under its uid instead
@@ -1014,6 +1050,23 @@ export async function resumeSessionFlow(
     showToast(relayFailureMessage(err, { initiating: false, verb: 'resume' }));
     return false;
   }
+}
+
+export async function copyInviteLinkFlow(): Promise<void> {
+  const sess = actionSession();
+  if (!sess) {
+    showToast('This document has no active session');
+    return;
+  }
+  const link = buildJoinLink({
+    shareCode: sess.shareCode,
+    guestPass: sess.session.guestPass,
+  });
+  const ok = await navigator.clipboard?.writeText(link).then(
+    () => true,
+    () => false,
+  );
+  showToast(ok ? 'Invite link copied' : 'Could not copy the invite link');
 }
 
 export async function copyShareCodeFlow(): Promise<void> {

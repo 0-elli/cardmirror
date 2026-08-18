@@ -51,6 +51,11 @@ export interface PersistedSessionRecord {
    *  path detect "this file has a session" and offer rejoin-or-leave
    *  instead of silently diverging. Absent on older records. */
   docId?: string | null;
+  /** Room guest pass (web-collab Phase 3) — the account-less joiner's
+   *  credential, persisted so resume authenticates the same way the
+   *  original join did. Absent on older records and on peers that
+   *  joined with their own credentials. */
+  guestPass?: string | null;
   updatedAt: number;
 }
 

@@ -234,6 +234,7 @@ import { setViewDocPath, getViewDocPath } from './transclusion-doc-path.js';
 import { isSyncOrigin } from './sync-origin.js';
 import { listSessionRecords, deleteSessionRecord } from './collab/collab-store.js';
 import { collabEnabled } from './collab/collab-gate.js';
+import { parseJoinLinkHash } from './collab/join-link.js';
 import { setRePickOpener, setOpenSourceOpener } from './transclusion-actions.js';
 import { isTransclusionNode, fragmentHasZone } from './transclusion.js';
 import { showConfirm } from './confirm-dialog.js';
@@ -383,6 +384,38 @@ if (collabEnabled() && !getElectronHost()) {
       status: () => account.webAccountStatus(),
     };
   })();
+}
+
+// Session invite links (#join=<shareCode>&pass=…): parse and CLEAR the
+// fragment immediately — the share code carries the room's E2E key and
+// must not linger in the address bar or history — then offer the join
+// once the editor shell is up. The guest pass (when present) is what
+// lets a browser with no account and no token authenticate; joiners
+// with their own credentials simply don't need it.
+if (collabEnabled() && !getElectronHost() && window.location.hash.includes('join=')) {
+  const joinParts = parseJoinLinkHash(window.location.hash);
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  if (joinParts) {
+    const offerJoin = async (): Promise<void> => {
+      const go = await confirmDialog(
+        'Join the shared session from this link? You will edit the document live with its host.',
+        { okLabel: 'Join Session' },
+      );
+      if (!go) return;
+      const m = await loadCollabUi();
+      await m.joinSessionWithCode(
+        multiDocActive ? makeMultiPaneSessionDeps() : collabDeps,
+        joinParts.shareCode,
+        { guestPass: joinParts.guestPass },
+      );
+    };
+    // Late bindings (collabDeps etc.) resolve by the time this fires.
+    const joinPoll = setInterval(() => {
+      if (!document.getElementById('editor')) return;
+      clearInterval(joinPoll);
+      void offerJoin();
+    }, 250);
+  }
 }
 
 // UI tour auto-start for fresh profiles (desktop layout only — the
@@ -1491,6 +1524,9 @@ const ribbonContext: RibbonContext = {
   },
   collabCopyShareCode: () => {
     void loadCollabUi().then((m) => m.copyShareCodeFlow());
+  },
+  collabCopyInviteLink: () => {
+    void loadCollabUi().then((m) => m.copyInviteLinkFlow());
   },
   collabInviteStarred: () => {
     void loadCollabUi().then((m) => m.inviteStarredFlow());
@@ -4240,6 +4276,7 @@ const VIEWLESS_RIBBON_COMMANDS = new Set<AnyCommandId>([
   'collabStartSession',
   'collabJoinSession',
   'collabCopyShareCode',
+  'collabCopyInviteLink',
   'collabInviteStarred',
   'collabEndSession',
   'openDevConsole',
@@ -4269,6 +4306,7 @@ function runViewlessRibbon(id: AnyCommandId): void {
     case 'collabStartSession': ribbonContext.collabStartSession(); return;
     case 'collabJoinSession': ribbonContext.collabJoinSession(); return;
     case 'collabCopyShareCode': ribbonContext.collabCopyShareCode(); return;
+    case 'collabCopyInviteLink': ribbonContext.collabCopyInviteLink(); return;
     case 'collabInviteStarred': ribbonContext.collabInviteStarred(); return;
     case 'openDevConsole': ribbonContext.openDevConsole(); return;
     case 'collabEndSession': ribbonContext.collabEndSession(); return;

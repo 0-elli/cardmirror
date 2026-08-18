@@ -25,7 +25,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('RoomsClient', () => {
   it('creates rooms, appends updates, pages them back', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     const s1 = await client.postUpdate(roomId, bytes('one'));
     const s2 = await client.postUpdate(roomId, bytes('two'));
     expect(s2).toBeGreaterThan(s1);
@@ -37,7 +37,7 @@ describe('RoomsClient', () => {
   });
 
   it('serves the snapshot to joiners and truncates the log', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     const s1 = await client.postUpdate(roomId, bytes('seed'));
     await client.postUpdate(roomId, bytes('after-snap'));
     await client.postSnapshot(roomId, btoa('SNAP'), s1);
@@ -49,7 +49,7 @@ describe('RoomsClient', () => {
 
   it('maps 404/410 to typed errors', async () => {
     await expect(client.fetchUpdates('nope', 0)).rejects.toMatchObject({ status: 404 });
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     await client.deleteRoom(roomId);
     const err = await client.fetchUpdates(roomId, 0).catch((e: RoomsError) => e);
     expect(err).toBeInstanceOf(RoomsError);
@@ -81,7 +81,7 @@ describe('RoomsClient', () => {
 
 describe('RoomStream', () => {
   it('delivers hello, live updates, presence, and end', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     await client.postUpdate(roomId, bytes('pre'));
     const events: string[] = [];
     const updates: RoomUpdate[] = [];
@@ -114,7 +114,7 @@ describe('RoomStream', () => {
   });
 
   it('reconnects after a transport outage and re-hellos', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     const hellos: number[] = [];
     const stream = new RoomStream({
       baseUrl: () => mock.url,
@@ -148,7 +148,7 @@ describe('RoomStream', () => {
     // connection before its hello (the field-observed starvation).
     mock.setHelloDelay(150);
     try {
-      const roomId = await client.createRoom();
+      const { roomId } = await client.createRoom();
       let hellos = 0;
       const stream = new RoomStream({
         baseUrl: () => mock.url,
@@ -184,7 +184,7 @@ describe('RoomStream', () => {
   });
 
   it('reports room-full as terminal', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     const holders: RoomStream[] = [];
     const mkStream = (cb: { onFull?: () => void } = {}) =>
       new RoomStream({
@@ -220,7 +220,7 @@ describe('RoomStream', () => {
 
 describe('egress protocol additions (2026-07-24)', () => {
   it('fetchUpdates: haveSnap suppresses an unchanged snapshot; a different tag ships it', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     await client.postUpdate(roomId, bytes('a'));
     await client.postUpdate(roomId, bytes('b'));
     const full = await client.fetchUpdates(roomId, 0);
@@ -245,7 +245,7 @@ describe('egress protocol additions (2026-07-24)', () => {
   });
 
   it('presence with ?from= is not echoed to the stream that declared that sid', async () => {
-    const roomId = await client.createRoom();
+    const { roomId } = await client.createRoom();
     const seen = { a: [] as string[], b: [] as string[] };
     const mkStream = (sid: string, sink: string[]) =>
       new RoomStream({
