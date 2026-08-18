@@ -203,26 +203,63 @@ setCollabLiveRoomProbe((roomId) =>
 );
 setCollabFocusChangeHandler(() => refreshChipForFocus());
 
-// Cross-window live-session claims ride the duplicate-open path registry.
-// All three are best-effort and swallow everything: an old preload (or a
-// test harness) without the openPath API must not break session flows.
+// Cross-window live-session claims. Desktop rides the duplicate-open
+// path registry in main; web (Phase 3) rides the WEB LOCKS API — an
+// exclusive lock named by the claim key, held for the tab's lifetime
+// (the browser releases it automatically when the tab dies, crash
+// included, which is exactly the lifetime a claim should have).
+// All three are best-effort and swallow everything: an old preload, a
+// lockless browser, or a test harness must not break session flows.
+const webHeldClaims = new Map<string, () => void>();
+
 function claimRoom(roomId: string): void {
+  const key = collabRoomClaimKey(roomId);
   try {
-    void getElectronHost()?.openPathRegister(collabRoomClaimKey(roomId)).catch(() => {});
+    const electron = getElectronHost();
+    if (electron) {
+      void electron.openPathRegister(key).catch(() => {});
+      return;
+    }
+    if (webHeldClaims.has(key) || typeof navigator.locks?.request !== 'function') return;
+    void navigator.locks
+      .request(key, { mode: 'exclusive', ifAvailable: true }, (lock) => {
+        // null = another tab holds it. We proceed unclaimed (the join
+        // guard runs BEFORE the session starts; this path is reached
+        // only for sessions already being created here).
+        if (!lock) return undefined;
+        return new Promise<void>((resolve) => {
+          webHeldClaims.set(key, resolve);
+        });
+      })
+      .catch(() => {});
   } catch {
     /* API absent — no cross-window guard, sessions still work */
   }
 }
 function releaseRoomClaim(roomId: string): void {
+  const key = collabRoomClaimKey(roomId);
   try {
-    void getElectronHost()?.openPathRelease(collabRoomClaimKey(roomId)).catch(() => {});
+    const electron = getElectronHost();
+    if (electron) {
+      void electron.openPathRelease(key).catch(() => {});
+      return;
+    }
+    webHeldClaims.get(key)?.();
+    webHeldClaims.delete(key);
   } catch {
     /* API absent */
   }
 }
 async function roomLiveElsewhere(roomId: string): Promise<boolean> {
+  const key = collabRoomClaimKey(roomId);
   try {
-    return (await getElectronHost()?.openPathCheck(collabRoomClaimKey(roomId)))?.takenByOther ?? false;
+    const electron = getElectronHost();
+    if (electron) {
+      return (await electron.openPathCheck(key))?.takenByOther ?? false;
+    }
+    if (typeof navigator.locks?.query !== 'function') return false;
+    const held = (await navigator.locks.query()).held ?? [];
+    return held.some((l) => l.name === key) && !webHeldClaims.has(key);
   } catch {
     return false;
   }

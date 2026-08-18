@@ -105,7 +105,12 @@ export default defineConfig(({ command }) => {
             workbox: {
               // The editor bundle is large; raise the precache cap so the main
               // chunk is cached (else the app won't open offline).
-              globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,ttf,json}'],
+              // `wasm` = the Loro CRDT engine (~3MB): precached so a
+              // persisted collab session can RESUME offline — without it,
+              // a guest reopening the app on dead tournament wifi has a
+              // session record they can't load (web-collab decision,
+              // 2026-08-18). Collab JS chunks ride the js glob already.
+              globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,ttf,json,wasm}'],
               maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
               cleanupOutdatedCaches: true,
             },

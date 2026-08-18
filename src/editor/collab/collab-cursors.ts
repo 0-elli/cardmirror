@@ -30,6 +30,24 @@ import { settings } from '../settings.js';
 import type { CollabSession } from './collab-session.js';
 import { leasedRanges } from '../ai/edit-coordinator.js';
 
+/** Fallback presence name when no display name is set. Desktop keeps
+ *  the old 'Partner'; web guests get a STABLE per-browser 'Guest NNN'
+ *  (persisted) so two link-joiners in one room are tellable apart. */
+function defaultPresenceName(): string {
+  try {
+    if (!window.localStorage || (window as { electronAPI?: unknown }).electronAPI) {
+      return 'Partner';
+    }
+    const existing = window.localStorage.getItem('pmd-web-guest-name');
+    if (existing) return existing;
+    const name = `Guest ${100 + Math.floor(Math.random() * 900)}`;
+    window.localStorage.setItem('pmd-web-guest-name', name);
+    return name;
+  } catch {
+    return 'Partner';
+  }
+}
+
 const FRAME_CURSOR = 0x01;
 const FRAME_LEASE = 0x02;
 // 250ms: a cursor that repaints four times a second still reads as live
@@ -208,7 +226,7 @@ export function installCursorPresence(
   }, KEEPALIVE_MS);
 
   const user = {
-    name: settings.get('pairingDisplayName').trim() || 'Partner',
+    name: settings.get('pairingDisplayName').trim() || defaultPresenceName(),
     color: peerColor(peerId),
   };
 
