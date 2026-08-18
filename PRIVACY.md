@@ -43,6 +43,11 @@ Almost everything CardMirror knows about you stays on your own computer:
 - Your recent‑files list, pinned items, quick cards, and study annotations.
 - If you use card sharing: a cryptographic key pair generated on your device,
   and an inbox of cards others have sent you.
+- If you use the **web editor**: the items above live in your browser's site
+  storage for cardmirror.app — and, if you link a membership there, a sign‑in
+  credential plus a **non‑exportable key pair** that identifies your browser
+  to the relay (the private key cannot be read or copied out, even by
+  CardMirror's own code — see §9). Clearing the site's data removes all of it.
 - If you use co‑editing: a local record of your collaboration sessions, and a
   **session history file** per session — the document's edit history, kept so
   you can recover an earlier version if a shared document is damaged
@@ -84,17 +89,25 @@ on** in Settings.
 
 ---
 
-## 4. Co‑editing / live collaboration (optional — desktop only)
+## 4. Co‑editing / live collaboration (optional)
 
-Co‑editing lets people edit the same document together in real time. It is a
-desktop‑only feature, and it is **used only when you choose to** — nothing is
-shared until you deliberately start or join a session. A session holds up to 10
-participants.
+Co‑editing lets people edit the same document together in real time. It works
+in the desktop app and in the **web editor** at cardmirror.app, and it is
+**used only when you choose to** — nothing is shared until you deliberately
+start or join a session. A session holds up to 10 participants.
 
 - **How it's protected.** Everything exchanged in a session — document edits,
   comments, and cursor presence — is **end‑to‑end encrypted** with a key that
   exists only in the invite/share link and on the participants' devices. The
   relay stores and forwards encrypted data it cannot read.
+- **Invite links.** A session can be shared as a clickable link. The link's
+  payload — the session's encryption key and, when enabled, a room‑scoped
+  **guest pass** that lets the recipient's browser connect without any
+  account — travels in the link's *fragment* (the part after `#`), which
+  browsers do not send to servers, so it stays out of server logs and
+  referrer headers. Treat an invite link the way you'd treat the share code:
+  **anyone holding it can join while the session lasts.** Ending the session
+  invalidates it.
 - **What's stored while a session runs.** So that someone can join or reconnect,
   the relay temporarily holds the session's **encrypted** edit history and
   periodic **encrypted** snapshots. **Live presence** (cursors and display names)
@@ -183,6 +196,11 @@ The optional card‑sharing and co‑editing features connect to a **relay serve
 The official relay is operated by us and hosted on **Railway** (a cloud provider
 in the United States). Because the relay only ever handles **end‑to‑end‑encrypted**
 data, it cannot read your cards, documents, comments, or messages.
+
+Linking a membership from a browser works the same way as from the desktop
+app, with one addition: the browser proves it holds its key pair by signing
+each linking request, and the relay stores only the key's fingerprint — never
+the key.
 
 Like any internet service, the relay and its hosting provider necessarily see
 **connection metadata** — most notably your **IP address** and the time and
