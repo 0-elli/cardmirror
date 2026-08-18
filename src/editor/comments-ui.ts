@@ -1984,25 +1984,22 @@ export class CommentsColumn {
     name.className = 'pmd-comment-author';
     name.textContent = author;
     idcol.appendChild(name);
-    header.appendChild(idcol);
-    block.appendChild(header);
-    const body = document.createElement('div');
-    body.className = 'pmd-comment-body';
-    // Wrap the activity text in a paragraph for layout parity with
-    // a real comment body. The stage element provides its own
-    // fixed-height clipping so the slide-in/out animation has room
-    // to play without pushing surrounding content around.
-    const line = document.createElement('p');
+    // The activity text sits WHERE A REAL COMMENT'S TIMESTAMP sits —
+    // the second identity line beside the avatar's lower half. A body
+    // block below left a hole there (the avatar is two lines tall and
+    // nothing filled line two), which read as the text floating
+    // mis-aligned below its box (field find, 2026-08-18).
+    const line = document.createElement('span');
     line.className = 'pmd-comment-ai-thinking-dots';
     const stage = makeActivityStage(this.inFlightActivityText());
-    // The comments column already constrains the placeholder's
-    // width; opt out of the activity-cycler's auto-width so
-    // long activity strings wrap inside the column instead of
-    // making the stage push past it.
+    // The identity column constrains the width; opt out of the
+    // activity-cycler's auto-width so long activity strings wrap
+    // inside the column instead of pushing past it.
     stage.classList.add('pmd-activity-stage-fixed-width');
     line.appendChild(stage);
-    body.appendChild(line);
-    block.appendChild(body);
+    idcol.appendChild(line);
+    header.appendChild(idcol);
+    block.appendChild(header);
     // Tag with `data-activity-target` so the activity-cycling tick
     // can find this stage without re-rendering the whole column.
     stage.dataset['activityTarget'] = '1';
