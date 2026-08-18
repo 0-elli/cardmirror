@@ -22,6 +22,7 @@ async function loadGate(): Promise<() => boolean> {
 
 afterEach(() => {
   delete (window as unknown as WinStub).electronAPI;
+  window.localStorage.clear();
 });
 
 describe('collabEnabled — desktop-only, on by default', () => {
@@ -33,5 +34,22 @@ describe('collabEnabled — desktop-only, on by default', () => {
   it('desktop host → enabled by default (no flag needed)', async () => {
     (window as unknown as WinStub).electronAPI = {}; // Electron host
     expect((await loadGate())()).toBe(true);
+  });
+
+  it('browser host + the web-prototype flip → enabled (console opt-in only)', async () => {
+    delete (window as unknown as WinStub).electronAPI; // browser host
+    window.localStorage.setItem('pmd-collab-web', '1');
+    expect((await loadGate())()).toBe(true);
+    // Anything but the exact '1' stays closed — the shipped default.
+    window.localStorage.setItem('pmd-collab-web', 'true');
+    expect((await loadGate())()).toBe(false);
+  });
+
+  it('prototype relay pair feeds collabDevRelay at runtime', async () => {
+    vi.resetModules();
+    window.localStorage.setItem('pmd-collab-web-relay-url', 'http://localhost:8787/relay/');
+    window.localStorage.setItem('pmd-collab-web-relay-token', 'tok');
+    const mod = await import('../../src/editor/collab/collab-gate.js');
+    expect(mod.collabDevRelay()).toEqual({ url: 'http://localhost:8787/relay/', token: 'tok' });
   });
 });
