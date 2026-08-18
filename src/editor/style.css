@@ -8928,7 +8928,14 @@ body:has(#comments-column:not([hidden])) :is(#editor, .pmd-pane-editor) .pmd-com
    indicator in the comments column so the persona reads
    consistently. */
 .pmd-ai-cite-tooltip {
-  position: absolute;
+  /* FIXED, not absolute: every coordinate the pill's layout computes
+     (getBoundingClientRect bands, window.innerHeight floors) is
+     VIEWPORT-space. Desktop's app shell never scrolls the window so
+     absolute happened to coincide; anywhere the window itself scrolls
+     (web), absolute re-based those viewport numbers against the page
+     and the pill landed scrollY px too high — "pinned to the top of
+     the document" (field find, 2026-08-18). */
+  position: fixed;
   z-index: 900;
   /* Width tracks the inner activity-stage, which itself tracks
      the current rest line's measured width — so the pill is
