@@ -14,6 +14,8 @@ see `DETAILED_CHANGELOG.md`.
   restart it, so separate lists rendered as one continuous 1, 2, 3…
   sequence across the whole file when opened in Word — even though
   CardMirror displayed them correctly. Each list now restarts at 1.
+  Exported substructure letters also match the editor's default
+  separator now ("a." instead of "a)").
 
 ## 1.1.0 — 2026-08-17
 

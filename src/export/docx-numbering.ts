@@ -8,7 +8,11 @@
  *     pocket/hat) starts a fresh `numId`, and each numId is an independent Word
  *     counter — so Word restarts exactly where CardMirror does. A "continue"
  *     block simply keeps the running numId across its (numPr-less) heading.
- * All numIds share one abstractNum, whose two levels render `1.` and `a)` and
+ * All numIds share one abstractNum, whose two levels render `1.` and `a.`
+ * — the CANONICAL glyphs (the app's display defaults), deliberately NOT the
+ * exporting user's separator settings: those are display-only (see the
+ * `cardNumberingFormat` doc in settings.ts), so the same doc exports
+ * identically no matter whose machine writes it — and
  * whose level-1 counter auto-restarts under level 0 (Word's default), matching
  * the app's "sub resets under each number".
  *
@@ -93,7 +97,7 @@ export function buildNumberingXml(numIds: number[]): string {
   const abstractNum =
     '<w:abstractNum w:abstractNumId="0">' +
     '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl>' +
-    '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2)"/><w:lvlJc w:val="left"/></w:lvl>' +
+    '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/><w:lvlJc w:val="left"/></w:lvl>' +
     '</w:abstractNum>';
   // Each num instance needs an explicit startOverride: Word runs ONE
   // counter per abstractNum across the whole document, so distinct

@@ -53,7 +53,9 @@ describe('export — numbered cards get numPr', () => {
     expect(numberingXml).toContain('<w:numFmt w:val="decimal"/>');
     expect(numberingXml).toContain('<w:numFmt w:val="lowerLetter"/>');
     expect(numberingXml).toContain('<w:lvlText w:val="%1."/>');
-    expect(numberingXml).toContain('<w:lvlText w:val="%2)"/>');
+    // Canonical glyphs = the app's display DEFAULTS (1. / a.), never the
+    // exporting user's separator settings — same doc, same file, any machine.
+    expect(numberingXml).toContain('<w:lvlText w:val="%2."/>');
     expect(numCount(numberingXml)).toBe(1);
   });
 
