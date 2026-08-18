@@ -1454,8 +1454,8 @@ export interface Settings {
    *  prevented. Re-armed into main each boot; enforcement lives there. */
   pluginCommunityInstalls: boolean;
   /** Pairing: master switch for cross-machine card sharing (the send /
-   *  receive pills + the background poller). Off by default. Desktop only
-   *  for v1. */
+   *  receive pills + the delivery channel). Off by default. Desktop +
+   *  web (web since the Phase-4 renderer mailbox). */
   pairingEnabled: boolean;
   /** Pairing: fallback poll cadence in seconds. New cards arrive by live
    *  push; this paces the interval polling used against relays without
@@ -3526,7 +3526,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'pairingEnabled',
     label: 'Enable collaboration',
     description:
-      'Turn on cross-machine collaboration — both card sharing and real-time co-editing. Card sharing adds a Send and a Receive pill next to the dropzone (drag a card onto Send to push it to a recipient; cards others send you land in Receive). Co-editing lets you share a document and edit it together live. Desktop only.',
+      'Turn on cross-machine collaboration — both card sharing and real-time co-editing. Card sharing adds a Send and a Receive pill next to the dropzone (drag a card onto Send to push it to a recipient; cards others send you land in Receive). Co-editing lets you share a document and edit it together live.',
     kind: 'toggle',
     category: 'pairing',
     aliases: ['share', 'send card', 'recipient', 'to', 'pairing', 'card sharing', 'collaboration', 'co-edit', 'coedit', 'co-editing'],
