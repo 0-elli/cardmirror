@@ -51,6 +51,11 @@ describe('Collaboration tab on web', () => {
     const webRows = SETTING_METADATA.filter(
       (m) => m.category === 'pairing' && !m.electronOnly && !m.windowsOnly,
     ).map((m) => m.key);
-    expect(webRows).toEqual(['pairingConnectedUntil', 'pairingRelayUrl', 'pairingRelayToken']);
+    expect(webRows).toEqual([
+      'pairingConnectedUntil',
+      'pairingDisplayName',
+      'pairingRelayUrl',
+      'pairingRelayToken',
+    ]);
   });
 });

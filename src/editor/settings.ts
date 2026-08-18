@@ -3570,11 +3570,12 @@ export const SETTING_METADATA: SettingMeta[] = [
   {
     key: 'pairingDisplayName',
     label: 'Your display name',
+    // Web too (not electronOnly): co-editing presence cursors carry
+    // this name — without the row, web users are stuck as "Guest NNN".
     description:
-      "Optional name stamped on cards you send, so someone who hasn't named you yet still sees who it's from. Leave empty to send just your code.",
+      "Optional name shown to collaborators — on your live cursor in co-editing sessions, and stamped on cards you send. Leave empty for a generic name.",
     kind: 'text',
     category: 'pairing',
-    electronOnly: true,
     dependsOn: 'pairingEnabled',
   },
   {
