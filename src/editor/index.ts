@@ -233,7 +233,7 @@ import { editorNodeViews } from './image-resize-nodeview.js';
 import { setViewDocPath, getViewDocPath } from './transclusion-doc-path.js';
 import { isSyncOrigin } from './sync-origin.js';
 import { listSessionRecords, deleteSessionRecord } from './collab/collab-store.js';
-import { collabEnabled } from './collab/collab-gate.js';
+import { collabEnabled, enableWebCollabForJoinLink } from './collab/collab-gate.js';
 import { parseJoinLinkHash } from './collab/join-link.js';
 import { setRePickOpener, setOpenSourceOpener } from './transclusion-actions.js';
 import { isTransclusionNode, fragmentHasZone } from './transclusion.js';
@@ -363,6 +363,13 @@ setSaveHealListener(({ error, healed }) => {
 // GitHub buttons in the ribbon's right-hand grid (no-op under Electron).
 wireWebEditionHeaderButtons();
 wireStatusNotices();
+
+// A session invite link opens the collab gate for THIS window before
+// anything below consults it — the link is the invitation (an
+// incognito joiner has no flag and needs none).
+if (!getElectronHost() && window.location.hash.includes('join=')) {
+  enableWebCollabForJoinLink();
+}
 
 // Web-collab prototype (Phase 2): account linking from the browser.
 // Console-driven until the Phase-3 UI lands — with the prototype flag

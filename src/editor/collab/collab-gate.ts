@@ -31,13 +31,24 @@ export function webCollabPrototypeEnabled(): boolean {
   }
 }
 
+/** Set (for THIS window only, never persisted) when the page was
+ *  opened through a session invite link — the link IS the invitation,
+ *  so a joiner needs no flag, no account, no setup. Without this, the
+ *  account-less joiner story dies at the gate. */
+let webJoinLinkOverride = false;
+
+export function enableWebCollabForJoinLink(): void {
+  webJoinLinkOverride = true;
+}
+
 export function collabEnabled(): boolean {
   // On desktop (Electron / a future non-browser host) co-editing is on.
-  // A browser host stays closed unless the prototype flip is set — the
-  // browser exclusion remains the shipped-default guarantee.
+  // A browser host stays closed unless the prototype flip is set or
+  // this window was opened via an invite link — the browser exclusion
+  // remains the shipped-default guarantee for ordinary web visits.
   try {
     if (getHost().kind !== 'browser') return true;
-    return webCollabPrototypeEnabled();
+    return webCollabPrototypeEnabled() || webJoinLinkOverride;
   } catch {
     /* no host resolvable → treat as not-desktop, stay closed */
     return false;

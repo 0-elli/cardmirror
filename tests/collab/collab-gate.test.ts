@@ -45,6 +45,20 @@ describe('collabEnabled — desktop-only, on by default', () => {
     expect((await loadGate())()).toBe(false);
   });
 
+  it('a join-link override opens the gate for the window, unpersisted', async () => {
+    delete (window as unknown as WinStub).electronAPI; // browser host
+    vi.resetModules();
+    const mod = await import('../../src/editor/collab/collab-gate.js');
+    expect(mod.collabEnabled()).toBe(false);
+    mod.enableWebCollabForJoinLink();
+    expect(mod.collabEnabled()).toBe(true);
+    // Nothing written: a fresh module registry (= a fresh window) is closed again.
+    expect(window.localStorage.getItem('pmd-collab-web')).toBeNull();
+    vi.resetModules();
+    const fresh = await import('../../src/editor/collab/collab-gate.js');
+    expect(fresh.collabEnabled()).toBe(false);
+  });
+
   it('prototype relay pair feeds collabDevRelay at runtime', async () => {
     vi.resetModules();
     window.localStorage.setItem('pmd-collab-web-relay-url', 'http://localhost:8787/relay/');
