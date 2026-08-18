@@ -23,7 +23,6 @@ import {
   type Settings,
   type SettingCondition,
   evalDependsOn,
-  BROWSER_HELD_CONDITIONS,
   type ReaderConfig,
   type DisplaySizes,
   DEFAULT_DISPLAY_SIZES,
@@ -676,14 +675,11 @@ class SettingsModal {
    *  disables every input / button inside those rows so the controls
    *  don't fire events while the row reads as "off". */
   private refreshDependents(): void {
-    // Browser hosts: conditions on desktop-only master switches count
-    // as held (see BROWSER_HELD_CONDITIONS) — evaluated here at render
-    // time, when the host is resolvable.
-    const browser = !getElectronHost();
-    const get = (k: keyof Settings): unknown =>
-      browser && BROWSER_HELD_CONDITIONS.has(k) ? true : settings.get(k);
+    // (A Phase-3 special case held 'pairingEnabled' true on browser
+    // hosts while its toggle was desktop-only; Phase 4 surfaced the
+    // toggle on web, so the dependency greys identically everywhere.)
     for (const { row, dependsOn } of this.dependentRows) {
-      const enabled = evalDependsOn(dependsOn, get);
+      const enabled = evalDependsOn(dependsOn);
       row.classList.toggle('pmd-settings-row-disabled', !enabled);
       const controls = row.querySelectorAll<
         HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement

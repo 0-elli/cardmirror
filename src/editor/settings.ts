@@ -1875,17 +1875,6 @@ export type SettingCondition =
 
 /** Evaluate a row's `dependsOn` against current settings. Bare key →
  *  truthy check; object → equality; array → conjunction. Undefined → true. */
-/** Conditions the settings UI treats as HELD on a browser host: the
- *  desktop "Enable collaboration" master switch gates card sharing,
- *  whose toggle row is electronOnly — on web the dependent rows
- *  (account linking, self-host relay) stand alone rather than render
- *  permanently greyed against a hidden, default-off toggle. Checked at
- *  RENDER time by the dialog, never at module load (host detection
- *  caches, and this module loads before test harnesses stub the host). */
-export const BROWSER_HELD_CONDITIONS: ReadonlySet<keyof Settings> = new Set([
-  'pairingEnabled',
-] as const);
-
 export function evalDependsOn(
   dependsOn: SettingCondition | readonly SettingCondition[] | undefined,
   get: (key: keyof Settings) => unknown = (k) => settings.get(k),
