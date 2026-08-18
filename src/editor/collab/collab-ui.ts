@@ -42,7 +42,7 @@ import {
 import { RoomsError } from './room-client.js';
 import { getElectronHost } from '../host/index.js';
 import { ensureBakedRelay, relayClient, relayClientWithGuestPass, endRoomOnRelay } from './collab-relay.js';
-import { buildJoinLink } from './join-link.js';
+import { buildJoinLink, parseJoinLinkHash } from './join-link.js';
 import { relayClient as pairingRelayClient } from '../pairing/relay-client.js';
 import { resolveStarredTarget } from '../pairing/send-to-starred.js';
 import { buildRoomInviteItem, roomInviteFloor } from '../pairing/room-invite.js';
@@ -776,13 +776,21 @@ async function startSessionFlowInner(
 
 export async function joinSessionFlow(deps: CollabUiDeps): Promise<void> {
   if (!collabEnabled()) return;
-  const code = await promptForText({
-    message: 'Paste the share code from your partner',
-    placeholder: 'cmshare…',
+  const entered = await promptForText({
+    message: 'Paste the share code — or the invite link — from your partner',
+    placeholder: 'cmshare… or https://cardmirror.app/#join=…',
     okLabel: 'Join',
   });
-  if (!code) return;
-  await joinSessionWithCode(deps, code);
+  if (!entered) return;
+  // A full invite link pastes here too (the Chromebook path: link
+  // received in a chat, app already open). Extract code + guest pass.
+  const hashIdx = entered.indexOf('#');
+  const fromLink = hashIdx >= 0 ? parseJoinLinkHash(entered.slice(hashIdx)) : null;
+  if (fromLink) {
+    await joinSessionWithCode(deps, fromLink.shareCode, { guestPass: fromLink.guestPass });
+    return;
+  }
+  await joinSessionWithCode(deps, entered);
 }
 
 /** Join with a code in hand — the prompt flow above and the Receive
