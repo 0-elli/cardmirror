@@ -9,6 +9,7 @@
 import { settings } from '../settings.js';
 import { getElectronHost } from '../host/index.js';
 import { collabDevRelay } from './collab-gate.js';
+import { webEntitlementToken, webRoutingCodeSync } from './web-account.js';
 import { RoomsClient, RoomsError } from './room-client.js';
 
 /** Baked relay endpoint from the desktop main process — resolved once,
@@ -28,20 +29,39 @@ export async function ensureBakedRelay(): Promise<void> {
   }
 }
 
-export function relayClient(): RoomsClient | null {
+/** The resolved relay base URL ('' when nothing is configured) —
+ *  shared by the rooms client and the web account-connect flow. */
+export function relayBaseUrl(): string {
   const dev = collabDevRelay();
-  const url = (
+  return (
     settings.get('pairingRelayUrl').trim() ||
     dev?.url ||
     bakedRelay?.url ||
     ''
   ).replace(/\/+$/, '');
-  const customToken = settings.get('pairingRelayToken').trim() || dev?.token || '';
-  const token = customToken || bakedRelay?.token || '';
-  // The routing code is bound to the ENTITLEMENT the main process handed
-  // us alongside it; a settings/dev token override is never one, so the
+}
+
+export function relayClient(): RoomsClient | null {
+  const dev = collabDevRelay();
+  const url = relayBaseUrl();
+  // A linked web account's entitlement outranks the dev/prototype
+  // token: it's the real credential class, and it carries the wk1
+  // routing code the relay's machine binding expects. Settings-field
+  // overrides (self-host) still win over everything.
+  const webToken = webEntitlementToken();
+  const settingsToken = settings.get('pairingRelayToken').trim();
+  const token = settingsToken || webToken || dev?.token || bakedRelay?.token || '';
+  // The routing code is bound to the ENTITLEMENT that minted it — the
+  // web account's wk1 code, or the one the desktop main process handed
+  // us. A settings/dev token override is never an entitlement, so the
   // header must not ride along there.
-  const routingCode = customToken ? '' : (bakedRelay?.routingCode ?? '');
+  const routingCode = settingsToken
+    ? ''
+    : webToken
+      ? webRoutingCodeSync()
+      : dev?.token
+        ? ''
+        : (bakedRelay?.routingCode ?? '');
   if (!url || !token) return null;
   return new RoomsClient({ baseUrl: () => url, token: () => token, routingCode: () => routingCode });
 }
