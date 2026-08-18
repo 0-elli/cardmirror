@@ -165,13 +165,12 @@ export function initPairingWiring(): void {
       m.onWebPairingAccountRequired(() => {
         postNotice({
           severity: 'warning',
-          title: 'Card sharing needs your account',
+          title: 'Receiving cards in-browser needs your account',
           body:
             'Card sharing is turned on, but this browser is not connected ' +
-            'to a Debate Decoded account — cards sent to you are waiting ' +
-            'on the relay, unseen, and expire after about 3 hours (the ' +
-            'sender is not told). Connect in Settings → Collaboration to ' +
-            'receive them.',
+            'to a Debate Decoded account or private relay — cards sent to ' +
+            'you will not be delivered and will expire after 3 hours. ' +
+            'Connect in Settings → Collaboration to receive them.',
           key: 'pairing-account-required',
         });
       });

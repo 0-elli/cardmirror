@@ -32,6 +32,7 @@ import {
   type SealedBundle,
 } from './web-pairing-crypto.js';
 import { webEntitlementToken, webRoutingCodeSync, onWebAccountChanged } from '../collab/web-account.js';
+import { settings } from '../settings.js';
 import { relayBaseUrl } from '../collab/collab-relay.js';
 import {
   RELAY_CLIENT_ROUTING_HEADER,
@@ -78,7 +79,7 @@ let accountRequiredFired = false;
 
 function checkAccountRequired(): void {
   if (!config?.enabled) return;
-  if (webEntitlementToken()) {
+  if (mailboxToken().token) {
     accountRequiredFired = false; // linked (again) — re-arm for a future lapse
     return;
   }
@@ -86,14 +87,26 @@ function checkAccountRequired(): void {
   accountRequiredFired = true;
   for (const fn of accountRequiredListeners) fn();
 }
+/** The mailbox credential: a self-hosted relay token from settings
+ *  outranks the account entitlement (mirrors relayClient's resolution
+ *  — the settings pair points at a PRIVATE relay, whose token is the
+ *  right key for it). '' = no way to receive. */
+function mailboxToken(): { token: string; isEntitlement: boolean } {
+  const settingsToken = settings.get('pairingRelayToken').trim();
+  if (settingsToken) return { token: settingsToken, isEntitlement: false };
+  return { token: webEntitlementToken(), isEntitlement: true };
+}
+
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const token = webEntitlementToken();
+  const { token, isEntitlement } = mailboxToken();
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     [RELAY_CLIENT_VERSION_HEADER]: appVersion,
     ...extra,
   };
-  const rc = webRoutingCodeSync();
+  // The routing header is bound to the ENTITLEMENT; a self-host token
+  // has no rc claim to match.
+  const rc = isEntitlement ? webRoutingCodeSync() : '';
   if (rc) headers[RELAY_CLIENT_ROUTING_HEADER] = rc;
   return headers;
 }
@@ -108,7 +121,7 @@ function relayUrl(): string {
 // socket open indefinitely). Reconnect/link: catch up right away.
 onWebAccountChanged(() => {
   if (stopped || !config?.enabled) return;
-  if (!webEntitlementToken()) {
+  if (!mailboxToken().token) {
     streamAbort?.abort(); // loop re-checks the token and idles
     return;
   }
@@ -179,7 +192,7 @@ async function processMessages(messages: RelayMessage[]): Promise<void> {
 let pollInFlight = false;
 async function pollOnce(): Promise<void> {
   checkAccountRequired();
-  if (pollInFlight || !config?.enabled || !webEntitlementToken()) return;
+  if (pollInFlight || !config?.enabled || !mailboxToken().token) return;
   pollInFlight = true;
   try {
     const recipient = await webOwnRoutingId();
@@ -206,7 +219,7 @@ async function pollOnce(): Promise<void> {
 async function streamLoop(): Promise<void> {
   let backoff = 1000;
   while (!stopped && config?.enabled) {
-    if (!webEntitlementToken()) {
+    if (!mailboxToken().token) {
       await new Promise((r) => setTimeout(r, 15_000));
       continue;
     }
