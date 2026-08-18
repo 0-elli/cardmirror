@@ -96,9 +96,20 @@ async function postConnect(
     const err = new Error(detail || `connect failed (${res.status})`) as Error & {
       status?: number;
       detail?: string;
+      detailObj?: Record<string, unknown>;
     };
     err.status = res.status;
     err.detail = detail;
+    // Structured 409 bodies (seatLimit / youWereEvicted) ride through
+    // for the settings UI's confirm-evict flow.
+    try {
+      const parsed = JSON.parse(detail) as unknown;
+      if (parsed && typeof parsed === 'object') {
+        err.detailObj = parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* plain-string detail */
+    }
     throw err;
   }
   return (await res.json()) as ConnectResponse;

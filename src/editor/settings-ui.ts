@@ -2598,6 +2598,90 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
     });
   });
 
+  // Web edition (web-collab Phase 3): same row, same chip, backed by
+  // the browser's WebCrypto identity + web-account store instead of
+  // Electron IPC. Reveals whenever a relay endpoint resolves — the
+  // account is exactly what makes that relay usable from a browser.
+  if (!getElectronHost()) {
+    void (async () => {
+      const [account, relay] = await Promise.all([
+        import('./collab/web-account.js'),
+        import('./collab/collab-relay.js'),
+      ]);
+      if (!relay.relayBaseUrl()) return; // no relay configured → keep hidden
+      row.style.display = '';
+      const st = account.webAccountStatus();
+      renderStatus({ connected: st.connected, expiresAt: st.expiresAt ?? 0, email: st.email });
+
+      const webConnect = async (code: string, confirmEvict: boolean): Promise<void> => {
+        connectBtn.disabled = true;
+        message.textContent = 'Connecting…';
+        try {
+          const got = await account.webAccountConnect(relay.relayBaseUrl(), code, {
+            confirmEvict,
+          });
+          message.textContent = '';
+          input.value = '';
+          renderStatus({
+            connected: got.connected,
+            expiresAt: got.expiresAt ?? 0,
+            email: got.email,
+          });
+          showToast('Connected to Debate Decoded');
+        } catch (err) {
+          const e = err as { status?: number; detailObj?: Record<string, unknown> };
+          const d = e.detailObj ?? {};
+          if (e.status === 409 && d['error'] === 'seatLimit' && typeof d['retryCode'] === 'string') {
+            const wouldEvict = d['wouldEvict'] as { boundAt?: string } | undefined;
+            const when = wouldEvict?.boundAt
+              ? new Date(wouldEvict.boundAt).toLocaleDateString()
+              : 'earlier';
+            const go = await confirmDialog(
+              `Your membership covers ${String(d['limit'] ?? 2)} machines and both seats are taken. ` +
+                `Link this browser anyway and unlink the machine added ${when}?`,
+              { okLabel: 'Link This Browser' },
+            );
+            if (go) {
+              await webConnect(d['retryCode'], false);
+            } else {
+              message.textContent = 'Not linked — your existing machines keep their seats.';
+            }
+            return;
+          }
+          if (e.status === 409 && d['error'] === 'youWereEvicted') {
+            message.textContent = ERROR_TEXT['evicted']!;
+            return;
+          }
+          if (e.status === 401) {
+            message.textContent = ERROR_TEXT['badCode']!;
+            return;
+          }
+          if (e.status === 403) {
+            message.textContent = ERROR_TEXT['subscription']!;
+            return;
+          }
+          message.textContent = ERROR_TEXT['network']!;
+        } finally {
+          connectBtn.disabled = false;
+        }
+      };
+
+      connectBtn.addEventListener('click', () => {
+        const code = input.value.trim();
+        if (code) void webConnect(code, false);
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && input.value.trim()) void webConnect(input.value.trim(), false);
+      });
+      disconnectBtn.addEventListener('click', () => {
+        account.webAccountDisconnect();
+        renderStatus({ connected: false, expiresAt: 0 });
+        message.textContent = '';
+      });
+    })();
+    return wrap;
+  }
+
   // Reveal the row only when main reports the flow enabled; keep the
   // status live while the dialog is open.
   const electron = getElectronHost();

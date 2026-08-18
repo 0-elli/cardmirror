@@ -29,15 +29,23 @@ export async function ensureBakedRelay(): Promise<void> {
   }
 }
 
+/** The official relay endpoint, baked for BROWSER hosts only. Desktop
+ *  gets its baked URL from the main process (alongside the shared
+ *  token, which must never appear here). Safe to hardcode: the relay
+ *  stays on this domain permanently (user decision 2026-08-17 — it's
+ *  in shipped builds and on school-network allowlists). */
+const WEB_DEFAULT_RELAY_URL = 'https://scouting-assistant.up.railway.app/relay';
+
 /** The resolved relay base URL ('' when nothing is configured) —
  *  shared by the rooms client and the web account-connect flow. */
 export function relayBaseUrl(): string {
   const dev = collabDevRelay();
+  const webDefault = getElectronHost() ? '' : WEB_DEFAULT_RELAY_URL;
   return (
     settings.get('pairingRelayUrl').trim() ||
     dev?.url ||
     bakedRelay?.url ||
-    ''
+    webDefault
   ).replace(/\/+$/, '');
 }
 

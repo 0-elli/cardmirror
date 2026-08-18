@@ -1875,6 +1875,19 @@ export type SettingCondition =
 
 /** Evaluate a row's `dependsOn` against current settings. Bare key →
  *  truthy check; object → equality; array → conjunction. Undefined → true. */
+/** Collab rows that hang off the desktop "Enable collaboration" master
+ *  switch. On a browser host that switch does not exist (card sharing
+ *  is desktop-only, and its toggle row is electronOnly), so the account
+ *  and self-host-relay rows stand alone there instead of rendering
+ *  permanently greyed against a hidden, default-off toggle. */
+const DESKTOP_PAIRING_DEP: { dependsOn?: SettingCondition } = (() => {
+  try {
+    return getHost().kind === 'browser' ? {} : { dependsOn: 'pairingEnabled' };
+  } catch {
+    return { dependsOn: 'pairingEnabled' };
+  }
+})();
+
 export function evalDependsOn(
   dependsOn: SettingCondition | readonly SettingCondition[] | undefined,
   get: (key: keyof Settings) => unknown = (k) => settings.get(k),
@@ -3553,8 +3566,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       'oldest.',
     kind: 'pairingAccount',
     category: 'pairing',
-    electronOnly: true,
-    dependsOn: 'pairingEnabled',
+    ...DESKTOP_PAIRING_DEP,
     aliases: ['account', 'auth', 'authorize', 'debate decoded', 'connect code', 'membership'],
   },
   {
@@ -3635,8 +3647,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Point card sharing at your own relay server instead of the official one — e.g. https://relay.example.com/relay. The relay server ships in the CardMirror repo\'s relay/ folder (see its README); everyone sharing cards must use the same relay. Leave empty for the official relay.',
     kind: 'text',
     category: 'pairing',
-    electronOnly: true,
-    dependsOn: 'pairingEnabled',
+    ...DESKTOP_PAIRING_DEP,
     aliases: ['self-hosted relay', 'relay server', 'custom server'],
   },
   {
@@ -3646,7 +3657,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       "The RELAY_TOKEN configured on your self-hosted relay. Only used when a custom relay URL is set; stored locally on this machine. Leave empty when using the official relay.",
     kind: 'password',
     category: 'pairing',
-    electronOnly: true,
+    ...DESKTOP_PAIRING_DEP,
     dependsOn: 'pairingEnabled',
     aliases: ['relay token', 'relay password'],
   },

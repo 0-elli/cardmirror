@@ -9,6 +9,7 @@
  */
 
 import { getHost } from './host/index.js';
+import { collabEnabled } from './collab/collab-gate.js';
 import type { Settings, SettingsCategory } from './settings.js';
 
 /** Tab labels shown in the settings dialog, in display order. */
@@ -45,7 +46,13 @@ export const CATEGORY_TABS: {
  *  palette results). */
 export function visibleCategoryTabs(): { id: SettingsCategory; label: string }[] {
   const hostKind = getHost().kind;
-  return CATEGORY_TABS.filter((t) => !t.electronOnly || hostKind === 'electron');
+  return CATEGORY_TABS.filter((t) => {
+    if (!t.electronOnly || hostKind === 'electron') return true;
+    // Web-collab: the Collaboration tab surfaces on a browser host once
+    // the collab gate is open — it shows only the non-electronOnly rows
+    // (account linking + self-host relay), not the card-sharing set.
+    return t.id === 'pairing' && collabEnabled();
+  });
 }
 
 /** Deep-link target for `openSettings(target)` — jump to a tab and
