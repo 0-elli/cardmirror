@@ -328,8 +328,9 @@ describe('runReformatAllCites', () => {
     // wraps stages as "<persona> is <stage>…", so "Cite 1 of 2" would
     // render as the nonsense "Clod is Cite 1 of 2…".
     expect(progress).toEqual([
-      'reformatting cite 1 of 2 · Esc to stop',
-      'reformatting cite 2 of 2 · Esc to stop',
+      // jsdom = browser host → the web-specific double-tap hint.
+      'reformatting cite 1 of 2 · double-tap Esc to stop',
+      'reformatting cite 2 of 2 · double-tap Esc to stop',
     ]);
     expect(sentTexts()).toEqual(['Smith 24, a', 'Jones 23, b']);
   });

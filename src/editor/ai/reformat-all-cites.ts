@@ -40,6 +40,7 @@ import { AiActivity } from './ai-activity.js';
 import { claimRegion } from './edit-coordinator.js';
 import { showConfirm } from '../confirm-dialog.js';
 import { isAnyOverlayOpen } from '../overlay-stack.js';
+import { getElectronHost } from '../host/index.js';
 import { showToast } from '../toast.js';
 import { postNotice } from '../status-notices.js';
 import {
@@ -160,6 +161,14 @@ function ownsKey(view: EditorView, target: EventTarget | null): boolean {
  *  one never stops the other. (Both handlers sit on `window`, and
  *  `stopPropagation` does not stop listeners on the same node, so
  *  without this check a single Escape would cancel every pass at once.) */
+/** The stop-key hint, host-aware: on web a single Escape doesn't
+ *  reliably stop the pass (field-tested repeatedly, 2026-08-18 —
+ *  cause undiagnosed; the user-accepted behavior is a double tap),
+ *  so the UI says what actually works there. */
+function escStopHint(): string {
+  return getElectronHost() ? 'Esc to stop' : 'double-tap Esc to stop';
+}
+
 function installCancelKey(view: EditorView, onCancel: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
   const onKey = (e: KeyboardEvent): void => {
@@ -223,7 +232,9 @@ export async function runReformatAllCites(view: EditorView): Promise<void> {
         `one at a time and rewritten in place.\n\n` +
         `That is ${total} model request${total === 1 ? '' : 's'}, so it costs ${total} ` +
         `call${total === 1 ? '' : 's'} against your API key and can take a while. ` +
-        `Each cite is its own undo step, and Escape stops the pass.`,
+        `Each cite is its own undo step, and ${
+          getElectronHost() ? 'Escape stops the pass' : 'double-tapping Escape stops the pass'
+        }.`,
       confirmLabel: `Reformat ${total} cite${total === 1 ? '' : 's'}`,
       cancelLabel: 'Cancel',
     });
@@ -305,7 +316,7 @@ async function reformatAllCites(
           activity = new AiActivity(view, range, 'selection');
           activity.start();
         }
-        activity.setStage(`reformatting cite ${n} of ${total} · Esc to stop`);
+        activity.setStage(`reformatting cite ${n} of ${total} · ${escStopHint()}`);
 
         const reply = await callLlm({
           apiKey,
