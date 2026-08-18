@@ -367,8 +367,26 @@ wireStatusNotices();
 // A session invite link opens the collab gate for THIS window before
 // anything below consults it — the link is the invitation (an
 // incognito joiner has no flag and needs none).
-if (!getElectronHost() && window.location.hash.includes('join=')) {
+if (!getElectronHost() && !isMobileLayout() && window.location.hash.includes('join=')) {
   enableWebCollabForJoinLink();
+}
+
+// So does having BEEN in a session: a guest who closed the tab and
+// came back flag-less still owns a resumable record, and hiding the
+// Sessions list from them stranded their session (field find,
+// 2026-08-18). Records only exist in profiles that collabed before,
+// so ordinary web visits still boot fully closed.
+if (!getElectronHost() && !isMobileLayout() && !collabEnabled()) {
+  void import('./collab/collab-store.js').then(async (store) => {
+    try {
+      if ((await store.listSessionRecords()).length > 0) {
+        enableWebCollabForJoinLink();
+        store.notifySessionRecordListeners(); // home screen re-checks the gate
+      }
+    } catch {
+      /* storage unavailable — stay closed */
+    }
+  });
 }
 
 // Web-collab prototype (Phase 2): account linking from the browser.
@@ -402,7 +420,17 @@ if (collabEnabled() && !getElectronHost()) {
 if (collabEnabled() && !getElectronHost() && window.location.hash.includes('join=')) {
   const joinParts = parseJoinLinkHash(window.location.hash);
   window.history.replaceState(null, '', window.location.pathname + window.location.search);
-  if (joinParts) {
+  if (joinParts && isMobileLayout()) {
+    // Deliberately unsupported (user decision 2026-08-18): co-editing
+    // is a desktop-layout feature. A clean refusal beats the mobile
+    // shell's script error — and beats silently ignoring the link.
+    setTimeout(() => {
+      void alertDialog(
+        'This invite link opens a live co-editing session, which needs the ' +
+          'desktop layout — open it on a computer (or a Chromebook) instead.',
+      );
+    }, 600);
+  } else if (joinParts) {
     const offerJoin = async (): Promise<void> => {
       const go = await confirmDialog(
         'Join the shared session from this link? You will edit the document live with its host.',

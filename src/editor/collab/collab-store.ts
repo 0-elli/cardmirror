@@ -90,6 +90,13 @@ function notify(): void {
 }
 
 /** Fires on any session-record change, local or from another window. */
+/** Re-fire every subscriber without a record change — used when the
+ *  collab GATE opens after boot (a guest's records become visible)
+ *  so already-rendered surfaces like the home screen re-check. */
+export function notifySessionRecordListeners(): void {
+  for (const fn of listeners) fn();
+}
+
 export function subscribeSessionRecords(fn: Listener): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
