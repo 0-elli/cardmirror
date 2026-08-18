@@ -31,7 +31,7 @@ import {
   webOpen,
   type SealedBundle,
 } from './web-pairing-crypto.js';
-import { webEntitlementToken, webRoutingCodeSync } from '../collab/web-account.js';
+import { webEntitlementToken, webRoutingCodeSync, onWebAccountChanged } from '../collab/web-account.js';
 import { relayBaseUrl } from '../collab/collab-relay.js';
 import {
   RELAY_CLIENT_ROUTING_HEADER,
@@ -101,6 +101,20 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 function relayUrl(): string {
   return relayBaseUrl();
 }
+
+// Credential transitions cut the long-lived stream immediately:
+// disconnect must not keep receiving on a connection authorized by the
+// discarded credential (auth is connection-time; the server holds the
+// socket open indefinitely). Reconnect/link: catch up right away.
+onWebAccountChanged(() => {
+  if (stopped || !config?.enabled) return;
+  if (!webEntitlementToken()) {
+    streamAbort?.abort(); // loop re-checks the token and idles
+    return;
+  }
+  checkAccountRequired(); // re-arms + clears the warning state
+  void pollOnce(); // rescue anything queued while unlinked
+});
 
 // ── Receive path ─────────────────────────────────────────────────────
 

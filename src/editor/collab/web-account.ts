@@ -27,6 +27,21 @@ const RENEW_CHECK_MS = 30 * 60 * 1000;
 
 let renewTimer: ReturnType<typeof setInterval> | null = null;
 
+/** Fired on every credential transition (connect, disconnect, renewal
+ *  outcome) so long-lived consumers — the mailbox push stream — can
+ *  re-check instead of riding a connection authorized by a credential
+ *  the user has since discarded. */
+const changeListeners = new Set<() => void>();
+
+export function onWebAccountChanged(fn: () => void): () => void {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+function fireChanged(): void {
+  for (const fn of changeListeners) fn();
+}
+
 function ls(): Storage | null {
   try {
     return window.localStorage;
@@ -122,6 +137,7 @@ function store(rc: string, got: ConnectResponse): void {
   s.setItem(LS_EXP, String(got.expiresAt));
   if (got.email) s.setItem(LS_EMAIL, got.email);
   s.setItem(LS_RC, rc);
+  fireChanged();
 }
 
 /** Link this browser to a membership with a one-time connect code from
@@ -178,6 +194,7 @@ export function webAccountDisconnect(): void {
   s.removeItem(LS_EXP);
   s.removeItem(LS_EMAIL);
   // The routing code stays: it's the KEY's identity, not the link's.
+  fireChanged();
 }
 
 export function scheduleWebRenewal(relayBase: string): void {
