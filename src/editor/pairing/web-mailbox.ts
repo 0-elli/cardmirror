@@ -68,6 +68,24 @@ const mismatchListeners = new Set<
   (info: { partnerVersion: string; localVersion: string; requiredVersion: string }) => void
 >();
 const unauthorizedListeners = new Set<() => void>();
+/** Fired (once per missing-account streak) when card sharing is ON but
+ *  no entitlement is live — the state where this browser silently
+ *  cannot send or receive. The sender's "Sent" is relay-delivery and
+ *  cannot know this; the RECEIVER's own client is the only place the
+ *  mismatch is visible, so it must say so. */
+const accountRequiredListeners = new Set<() => void>();
+let accountRequiredFired = false;
+
+function checkAccountRequired(): void {
+  if (!config?.enabled) return;
+  if (webEntitlementToken()) {
+    accountRequiredFired = false; // linked (again) — re-arm for a future lapse
+    return;
+  }
+  if (accountRequiredFired) return;
+  accountRequiredFired = true;
+  for (const fn of accountRequiredListeners) fn();
+}
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token = webEntitlementToken();
   const headers: Record<string, string> = {
@@ -146,6 +164,7 @@ async function processMessages(messages: RelayMessage[]): Promise<void> {
 
 let pollInFlight = false;
 async function pollOnce(): Promise<void> {
+  checkAccountRequired();
   if (pollInFlight || !config?.enabled || !webEntitlementToken()) return;
   pollInFlight = true;
   try {
@@ -338,6 +357,11 @@ export function onWebPairingUnauthorized(handler: () => void): () => void {
   return () => unauthorizedListeners.delete(handler);
 }
 
+export function onWebPairingAccountRequired(handler: () => void): () => void {
+  accountRequiredListeners.add(handler);
+  return () => accountRequiredListeners.delete(handler);
+}
+
 /** Test hook: reset module state (not stored data). */
 export function __resetWebMailboxForTests(): void {
   stopped = true;
@@ -347,6 +371,8 @@ export function __resetWebMailboxForTests(): void {
   pollTimer = null;
   config = null;
   consumed.clear();
+  accountRequiredFired = false;
+  accountRequiredListeners.clear();
   mismatchListeners.clear();
   unauthorizedListeners.clear();
   leaderHeld = false;

@@ -162,6 +162,19 @@ export function initPairingWiring(): void {
           `A shared card needs a newer CardMirror version${need} — update to receive it.`,
         );
       });
+      m.onWebPairingAccountRequired(() => {
+        postNotice({
+          severity: 'warning',
+          title: 'Card sharing needs your account',
+          body:
+            'Card sharing is turned on, but this browser is not connected ' +
+            'to a Debate Decoded account — cards sent to you are waiting ' +
+            'on the relay, unseen, and expire after about 3 hours (the ' +
+            'sender is not told). Connect in Settings → Collaboration to ' +
+            'receive them.',
+          key: 'pairing-account-required',
+        });
+      });
       m.onWebPairingUnauthorized(() => {
         postNotice({
           severity: 'error',
