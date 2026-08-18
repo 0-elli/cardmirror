@@ -14,6 +14,7 @@
 
 import type { EditorView } from 'prosemirror-view';
 import { getElectronHost } from '../host/index.js';
+import { collabEnabled } from '../collab/collab-gate.js';
 import { settings } from '../settings.js';
 import { appVersion, CARD_COMPAT_MIN_VERSION } from '../install-info.js';
 import { showToast } from '../toast.js';
@@ -43,35 +44,50 @@ export function mountPairingPills(
  *  process owns this machine's keypair and returns its public code, which we
  *  mirror into settings for display + sharing. */
 function applyConfig(): void {
+  const cfg = {
+    enabled: settings.get('pairingEnabled'),
+    displayName: settings.get('pairingDisplayName'),
+    schemaVersion: appVersion,
+    minReceiverVersion: CARD_COMPAT_MIN_VERSION,
+    pollSeconds: settings.get('pairingPollSeconds'),
+    relayUrl: settings.get('pairingRelayUrl'),
+    relayToken: settings.get('pairingRelayToken'),
+  };
+  const mirrorOwnCode = ({ ownCode }: { ownCode: string }): void => {
+    // Setting it re-fires the subscriber, but the value is now unchanged so
+    // configure is a no-op next time — no loop.
+    if (ownCode && settings.get('pairingOwnCode') !== ownCode) {
+      settings.set('pairingOwnCode', ownCode);
+    }
+  };
   const electron = getElectronHost();
-  if (!electron?.pairingConfigure) return;
-
-  void electron
-    .pairingConfigure({
-      enabled: settings.get('pairingEnabled'),
-      displayName: settings.get('pairingDisplayName'),
-      schemaVersion: appVersion,
-      minReceiverVersion: CARD_COMPAT_MIN_VERSION,
-      pollSeconds: settings.get('pairingPollSeconds'),
-      relayUrl: settings.get('pairingRelayUrl'),
-      relayToken: settings.get('pairingRelayToken'),
-    })
-    .then(({ ownCode }) => {
-      // Setting it re-fires the subscriber, but the value is now unchanged so
-      // configure is a no-op next time — no loop.
-      if (ownCode && settings.get('pairingOwnCode') !== ownCode) {
-        settings.set('pairingOwnCode', ownCode);
-      }
-    });
+  if (electron?.pairingConfigure) {
+    void electron.pairingConfigure(cfg).then(mirrorOwnCode);
+    return;
+  }
+  // Web (Phase 4): the renderer mailbox is the poller/sender, gated on
+  // the collab gate so plain web visits stay inert as before.
+  if (!electron && collabEnabled()) {
+    void import('./web-mailbox.js').then((m) =>
+      m.webPairingConfigure(cfg).then(mirrorOwnCode).catch(() => {}),
+    );
+  }
 }
 
 /** Mint a fresh keypair in main and mirror the new code into settings.
  *  Invalidates the old code for partners (they must re-add the new one). */
 export async function regenerateOwnCode(): Promise<void> {
   const electron = getElectronHost();
-  if (!electron?.pairingRegenerateKey) return;
-  const { ownCode } = await electron.pairingRegenerateKey();
-  if (ownCode) settings.set('pairingOwnCode', ownCode);
+  if (electron?.pairingRegenerateKey) {
+    const { ownCode } = await electron.pairingRegenerateKey();
+    if (ownCode) settings.set('pairingOwnCode', ownCode);
+    return;
+  }
+  if (!electron && collabEnabled()) {
+    const m = await import('./web-mailbox.js');
+    const { ownCode } = await m.webPairingRegenerateKey();
+    if (ownCode) settings.set('pairingOwnCode', ownCode);
+  }
 }
 
 let lastMismatchToast = 0;
@@ -130,6 +146,29 @@ export function initPairingWiring(): void {
         title: 'Card sharing needs credentials',
         body: 'Card sharing: the relay rejected your credentials. ' + RELAY_FIX_PATH,
         key: 'pairing-401',
+      });
+    });
+  }
+
+  // Web mismatch/decline surfaces mirror the desktop handlers above.
+  if (!electron && collabEnabled()) {
+    void import('./web-mailbox.js').then((m) => {
+      m.onWebPairingVersionMismatch((info) => {
+        const now = Date.now();
+        if (now - lastMismatchToast < 8000) return;
+        lastMismatchToast = now;
+        const need = info.requiredVersion ? ` (${info.requiredVersion} or newer)` : '';
+        showToast(
+          `A shared card needs a newer CardMirror version${need} — update to receive it.`,
+        );
+      });
+      m.onWebPairingUnauthorized(() => {
+        postNotice({
+          severity: 'error',
+          title: 'Card sharing needs credentials',
+          body: 'Card sharing: the relay rejected your credentials. ' + RELAY_FIX_PATH,
+          key: 'pairing-401',
+        });
       });
     });
   }

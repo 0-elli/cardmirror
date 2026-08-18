@@ -120,6 +120,18 @@ class InboxStore {
     return n;
   }
 
+  /** WEB receive path (web-mailbox): add freshly delivered cards. The
+   *  desktop path never calls this — main owns ingest there and pushes
+   *  via onPairingInboxChanged. Dedupe by id (a failed relay DELETE
+   *  redelivers on the next poll). */
+  addIncoming(fresh: InboxItem[]): void {
+    const additions = fresh.filter((f) => !this.items.some((it) => it.id === f.id));
+    if (additions.length === 0) return;
+    this.items = [...additions, ...this.items];
+    writeLocal(this.items);
+    this.fire();
+  }
+
   async remove(id: string): Promise<void> {
     this.items = this.items.filter((it) => it.id !== id);
     const electron = getElectronHost();

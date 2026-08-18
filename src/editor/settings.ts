@@ -3540,7 +3540,6 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Turn on cross-machine collaboration — both card sharing and real-time co-editing. Card sharing adds a Send and a Receive pill next to the dropzone (drag a card onto Send to push it to a recipient; cards others send you land in Receive). Co-editing lets you share a document and edit it together live. Desktop only.',
     kind: 'toggle',
     category: 'pairing',
-    electronOnly: true,
     aliases: ['share', 'send card', 'recipient', 'to', 'pairing', 'card sharing', 'collaboration', 'co-edit', 'coedit', 'co-editing'],
   },
   {
@@ -3550,7 +3549,6 @@ export const SETTING_METADATA: SettingMeta[] = [
       "This machine's code. Share it with anyone you want to be able to send you cards. Anyone with this code (and the app) can send to you; regenerate it to cut off old shares.",
     kind: 'pairingOwnCode',
     category: 'pairing',
-    electronOnly: true,
     dependsOn: 'pairingEnabled',
   },
   {
@@ -3585,7 +3583,6 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Machines you can send to. Add one by pasting the code it shared with you and giving it a name (shown in the To list when sending, and on cards you receive from it). Hide a recipient from the Send pill (the eye button) without deleting it.',
     kind: 'pairingPartners',
     category: 'pairing',
-    electronOnly: true,
     dependsOn: 'pairingEnabled',
   },
   {
@@ -3595,7 +3592,6 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Named sets of recipients for one-drop sends — e.g. a "Smith/Jones" team. Dropping a card on a group sends it to every member.',
     kind: 'pairingGroups',
     category: 'pairing',
-    electronOnly: true,
     dependsOn: 'pairingEnabled',
   },
   {
@@ -3605,7 +3601,6 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Cards and room invites from these senders never appear — they are dropped silently from the Receive inbox and its unread count. Paste a code to block it, or block someone who recently shared with you. The sender code is self-declared, so this is a convenience filter, not a security guarantee.',
     kind: 'pairingBlocked',
     category: 'pairing',
-    electronOnly: true,
     dependsOn: 'pairingEnabled',
     aliases: ['block', 'blocklist', 'ignore sender', 'mute sender'],
   },
@@ -3626,7 +3621,6 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Flash the Receive pill green when a card arrives. "Flash once" pulses a single time; "Keep flashing" re-pulses every 10 seconds until you open the Receive pill and see the new card(s); "Off" never flashes.',
     kind: 'pairingReceiveFlash',
     category: 'pairing',
-    electronOnly: true,
     dependsOn: 'pairingEnabled',
   },
   {

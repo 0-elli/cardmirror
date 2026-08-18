@@ -57,8 +57,10 @@ describe('toggleableSettingMetas', () => {
     const win = toggleableSettingMetas(mkEnv({ hostKind: 'electron', isWindows: true })).map((m) =>
       String(m.key),
     );
-    expect(el).toContain('pairingEnabled'); // electronOnly → present on electron
-    expect(web).not.toContain('pairingEnabled'); // hidden on web
+    // pluginsEnabled stands in for electronOnly here — pairingEnabled
+    // opened up on web with Phase 4 card sharing.
+    expect(el).toContain('pluginsEnabled'); // electronOnly → present on desktop
+    expect(web).not.toContain('pluginsEnabled'); // hidden on web
     expect(el).not.toContain('flowHostOnLaunch'); // windowsOnly → hidden off Windows
     expect(win).toContain('flowHostOnLaunch'); // present on Windows
   });

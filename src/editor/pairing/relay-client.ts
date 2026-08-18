@@ -12,6 +12,8 @@
  */
 
 import { getElectronHost } from '../host/index.js';
+import { collabEnabled } from '../collab/collab-gate.js';
+import { webEntitlementToken } from '../collab/web-account.js';
 import { RELAY_FIX_PATH } from '../relay-decline.js';
 
 /** The minimal card shape sent over the wire — the dropzone's existing
@@ -53,7 +55,10 @@ class RelayClient {
    *  poller). The send pill also gates on having partners. */
   canSend(): boolean {
     const electron = getElectronHost();
-    return !!electron?.pairingSend;
+    if (electron) return !!electron.pairingSend;
+    // Web (Phase 4): account-required both ways — sending exists once
+    // the collab gate is open and a linked entitlement is live.
+    return collabEnabled() && !!webEntitlementToken();
   }
 
   /** Push one card to each recipient code. Returns per-recipient tallies
@@ -71,7 +76,20 @@ class RelayClient {
 
     const electron = getElectronHost();
     if (!electron?.pairingSend) {
-      // Web edition has no main-process sender yet (deferred).
+      if (!getElectronHost() && collabEnabled()) {
+        // Web sender: same wire, sealed in the renderer.
+        try {
+          const m = await import('./web-mailbox.js');
+          return await m.webPairingSend({
+            recipientCodes: targets,
+            item,
+            via: opts?.via,
+            minReceiverVersion: opts?.minReceiverVersion,
+          });
+        } catch {
+          return { ok: 0, fail: targets.length, authFail: 0 };
+        }
+      }
       return { ok: 0, fail: targets.length, authFail: 0 };
     }
     try {

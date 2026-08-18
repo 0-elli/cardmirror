@@ -44,16 +44,24 @@ describe('Collaboration tab on web', () => {
     expect(tabs.some((t) => t.id === 'pairing')).toBe(true);
   });
 
-  it('web-visible pairing rows are exactly the account + self-host relay set', async () => {
+  it('web-visible pairing rows: everything except the desktop-only cadence knob', async () => {
     vi.resetModules();
     delete (window as unknown as WinStub).electronAPI;
     const { SETTING_METADATA } = await import('../../src/editor/settings.js');
     const webRows = SETTING_METADATA.filter(
       (m) => m.category === 'pairing' && !m.electronOnly && !m.windowsOnly,
     ).map((m) => m.key);
+    // Phase 4: the contacts system + master toggle surface on web; only
+    // the poll-cadence knob stays desktop (web uses a fixed cadence).
     expect(webRows).toEqual([
+      'pairingEnabled',
+      'pairingOwnCode',
       'pairingConnectedUntil',
       'pairingDisplayName',
+      'pairingPartners',
+      'pairingGroups',
+      'pairingBlockedCodes',
+      'pairingReceiveFlash',
       'pairingRelayUrl',
       'pairingRelayToken',
     ]);
