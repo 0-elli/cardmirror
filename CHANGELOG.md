@@ -5,6 +5,21 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **Collaboration works on the web.** Card sharing and co-editing are no
+  longer desktop-only: the web editor on any desktop-layout browser —
+  Chromebooks included — now has the full Collaboration settings tab,
+  session hosting and joining, and card sharing. Sessions started on
+  the web copy an **invite link** anyone can join from a browser with
+  no account and no setup, and every edition has a **Copy Session
+  Invite Link** command. Hosting sessions and sharing cards on the web
+  use the same linked account as desktop. Everything stays off until
+  you turn on **Enable collaboration**; the mobile layout and
+  CardMirror Lite have no collaboration.
+
 ## 1.2.0 — 2026-08-18
 
 ### Added

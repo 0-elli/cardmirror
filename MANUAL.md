@@ -78,9 +78,8 @@ A few capabilities still need the **desktop app**: the background
 **[file-library search](#the-search-everything-palette-mod-shift-space)**,
 **folder-wide** bulk operations (the web app runs Clean / Convert one
 file at a time instead),
-**[Send to Verbatim Flow](#14-send-to-verbatim-flow)**,
-**[voice control](#15-voice-control)**, and
-**[collaboration](#9-collaboration)** (card sharing and co-editing). And saving in
+**[Send to Verbatim Flow](#14-send-to-verbatim-flow)**, and
+**[voice control](#15-voice-control)**. And saving in
 place needs a Chromium browser — in **Firefox and Safari** the editor runs
 but **[Save](#saving)** downloads a copy instead.
 
@@ -1174,10 +1173,13 @@ it does nothing and tells you so.
 
 ## 9. Collaboration
 
-*Desktop only.* There are two collaboration features: **card sharing** (send cards to
+There are two collaboration features: **card sharing** (send cards to
 another machine) and **co-editing** (edit a document together in real time).
 Both are off until you enable them, and both are end-to-end encrypted — the
-relay server that passes traffic along sees only scrambled data.
+relay server that passes traffic along sees only scrambled data. Both work
+in the desktop app and the web editor (see
+**[Collaboration on the web](#collaboration-on-the-web)** below); the web
+edition's mobile layout has neither.
 
 ### Setting up
 
@@ -1310,6 +1312,39 @@ keeps their current copy. Closing a co-edited document asks whether to keep
 the session (rejoin later from the Sessions list) or end/leave it now. The
 ✕ on a home-screen Sessions row: as host, asks whether to end for everyone
 or just forget your copy; as guest, forgets your copy.
+
+### Collaboration on the web
+
+Everything above works in the web editor on a desktop-layout browser —
+including a Chromebook, and including the installed web app. The
+differences:
+
+- **Invite links.** Starting a session on the web copies an **invite
+  link** (`https://cardmirror.app/#join=…`) instead of a bare share
+  code; on any edition, **Copy Session Invite Link** produces one for
+  the current session. Opening the link in a desktop-layout browser
+  offers the join directly — no account, no setup; pasting it into the
+  **Join Collaboration Session** dialog works too, so a Chromebook with
+  the app already open can join from a link received in a chat. Treat
+  the link like the document itself: it carries the session's
+  encryption key, and anyone holding it can join. A guest who closes
+  the tab can rejoin later from **Sessions** on the home screen — same
+  browser, same profile.
+- **Your account lives in the browser profile.** Card sharing (both
+  sending and receiving) and *hosting* sessions on the web need your
+  Debate Decoded account linked from Settings → Collaboration — the
+  same connect-code flow as desktop, and a linked browser counts as one
+  of your membership's machines. The link is stored in that browser
+  profile, so a private/incognito window or clearing site data leaves
+  it behind (relink to recover; the seat is reclaimed, not lost).
+- **Tabs coordinate.** With several CardMirror tabs open, incoming
+  cards arrive exactly once — whichever tab is leading receives for all
+  of them, the same way the timer and send-to-speech already cooperate
+  across tabs.
+
+Phones and small screens get the mobile layout, which has no
+collaboration; an invite link opened there explains it needs a
+computer. CardMirror Lite has no collaboration in either edition.
 
 ### Privacy and self-hosting
 

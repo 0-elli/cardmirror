@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Co-editing is desktop-only and now ON by default there. On a browser
- * host the gate is categorically closed (the web edition has no
- * server-dependent capabilities); on a desktop host it's open with no
- * flag required — the old build-time `VITE_COLLAB` / runtime
- * `localStorage['pmd-collab']` toggles are gone now that it ships.
+ * The collab gate is open everywhere collaboration can exist: every
+ * desktop host, and — since the 2026-08-19 soft launch — desktop-layout
+ * browser hosts too, no flag required (the old `pmd-collab-web`
+ * prototype flip is retired). Closed only where collab can't exist:
+ * the mobile shell (co-editing is a desktop-layout feature) and Lite
+ * builds (pinned in tests/editor/lite-build.test.ts). Whether collab
+ * is ACTIVE stays behind the 'Enable collaboration' master toggle —
+ * the gate only decides that the surfaces exist.
  *
  * getHost() caches the resolved host at module scope, so each case
  * resets the module registry and re-imports the gate with the desired
@@ -25,38 +28,31 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe('collabEnabled — desktop-only, on by default', () => {
-  it('browser host → disabled (no server-dependent capability on web)', async () => {
-    delete (window as unknown as WinStub).electronAPI; // browser host
-    expect((await loadGate())()).toBe(false);
-  });
-
-  it('desktop host → enabled by default (no flag needed)', async () => {
+describe('collabEnabled — open by default, mobile shell excluded', () => {
+  it('desktop host → enabled', async () => {
     (window as unknown as WinStub).electronAPI = {}; // Electron host
     expect((await loadGate())()).toBe(true);
   });
 
-  it('browser host + the web-prototype flip → enabled (console opt-in only)', async () => {
+  it('desktop-layout browser host → enabled, no flag needed', async () => {
     delete (window as unknown as WinStub).electronAPI; // browser host
-    window.localStorage.setItem('pmd-collab-web', '1');
+    // jsdom boots at 1024px with a fine pointer — desktop layout.
     expect((await loadGate())()).toBe(true);
-    // Anything but the exact '1' stays closed — the shipped default.
-    window.localStorage.setItem('pmd-collab-web', 'true');
+  });
+
+  it('mobile shell → disabled (co-editing is a desktop-layout feature)', async () => {
+    delete (window as unknown as WinStub).electronAPI; // browser host
+    window.localStorage.setItem('pmd-settings', JSON.stringify({ mobileLayout: 'mobile' }));
     expect((await loadGate())()).toBe(false);
   });
 
-  it('a join-link override opens the gate for the window, unpersisted', async () => {
-    delete (window as unknown as WinStub).electronAPI; // browser host
-    vi.resetModules();
-    const mod = await import('../../src/editor/collab/collab-gate.js');
-    expect(mod.collabEnabled()).toBe(false);
-    mod.enableWebCollabForJoinLink();
-    expect(mod.collabEnabled()).toBe(true);
-    // Nothing written: a fresh module registry (= a fresh window) is closed again.
-    expect(window.localStorage.getItem('pmd-collab-web')).toBeNull();
-    vi.resetModules();
-    const fresh = await import('../../src/editor/collab/collab-gate.js');
-    expect(fresh.collabEnabled()).toBe(false);
+  it('the retired prototype flag changes nothing either way', async () => {
+    delete (window as unknown as WinStub).electronAPI;
+    window.localStorage.setItem('pmd-collab-web', '1');
+    expect((await loadGate())()).toBe(true); // open — but because of the default, not the flag
+    window.localStorage.setItem('pmd-settings', JSON.stringify({ mobileLayout: 'mobile' }));
+    window.localStorage.setItem('pmd-collab-web', '1');
+    expect((await loadGate())()).toBe(false); // the flag can't reopen the mobile shell
   });
 
   it('prototype relay pair feeds collabDevRelay at runtime', async () => {

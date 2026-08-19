@@ -233,9 +233,10 @@ import { editorNodeViews } from './image-resize-nodeview.js';
 import { setViewDocPath, getViewDocPath } from './transclusion-doc-path.js';
 import { isSyncOrigin } from './sync-origin.js';
 import { listSessionRecords, deleteSessionRecord } from './collab/collab-store.js';
-import { collabEnabled, enableWebCollabForJoinLink } from './collab/collab-gate.js';
+import { collabEnabled } from './collab/collab-gate.js';
 import { parseJoinLinkHash } from './collab/join-link.js';
 import { setRePickOpener, setOpenSourceOpener } from './transclusion-actions.js';
+import { isLiteBuild } from './lite.js';
 import { isTransclusionNode, fragmentHasZone } from './transclusion.js';
 import { showConfirm } from './confirm-dialog.js';
 import { linkContextMenuPlugin } from './link-context-menu-plugin.js';
@@ -364,36 +365,14 @@ setSaveHealListener(({ error, healed }) => {
 wireWebEditionHeaderButtons();
 wireStatusNotices();
 
-// A session invite link opens the collab gate for THIS window before
-// anything below consults it — the link is the invitation (an
-// incognito joiner has no flag and needs none).
-if (!getElectronHost() && !isMobileLayout() && window.location.hash.includes('join=')) {
-  enableWebCollabForJoinLink();
-}
+// (The pre-launch join-link and session-record gate overrides lived
+// here; the 2026-08-19 ungating made them redundant — the gate itself
+// is open on every desktop-layout browser now.)
 
-// So does having BEEN in a session: a guest who closed the tab and
-// came back flag-less still owns a resumable record, and hiding the
-// Sessions list from them stranded their session (field find,
-// 2026-08-18). Records only exist in profiles that collabed before,
-// so ordinary web visits still boot fully closed.
-if (!getElectronHost() && !isMobileLayout() && !collabEnabled()) {
-  void import('./collab/collab-store.js').then(async (store) => {
-    try {
-      if ((await store.listSessionRecords()).length > 0) {
-        enableWebCollabForJoinLink();
-        store.notifySessionRecordListeners(); // home screen re-checks the gate
-      }
-    } catch {
-      /* storage unavailable — stay closed */
-    }
-  });
-}
-
-// Web-collab prototype (Phase 2): account linking from the browser.
-// Console-driven until the Phase-3 UI lands — with the prototype flag
-// on, `__cmWebAccount.connect('<code>')` links this browser's
-// WebCrypto identity to a membership, and renewal runs quietly.
-// Lazy import: the collab chunk must not load for ordinary web users.
+// Web account linking from the browser: renewal runs quietly at boot,
+// and the console handle stays for support/diagnostics (the settings
+// tab is the real UI). Lazy import: the collab chunk must not load
+// before the gate check.
 if (collabEnabled() && !getElectronHost()) {
   void (async () => {
     const [account, relay] = await Promise.all([
@@ -417,7 +396,10 @@ if (collabEnabled() && !getElectronHost()) {
 // once the editor shell is up. The guest pass (when present) is what
 // lets a browser with no account and no token authenticate; joiners
 // with their own credentials simply don't need it.
-if (collabEnabled() && !getElectronHost() && window.location.hash.includes('join=')) {
+// Gate-independent on purpose: the mobile shell's gate is CLOSED, but
+// a phone user tapping an invite link still deserves the clean
+// refusal below rather than a silently ignored hash.
+if (!getElectronHost() && !isLiteBuild() && window.location.hash.includes('join=')) {
   const joinParts = parseJoinLinkHash(window.location.hash);
   window.history.replaceState(null, '', window.location.pathname + window.location.search);
   if (joinParts && isMobileLayout()) {

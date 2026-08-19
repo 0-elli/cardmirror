@@ -1,19 +1,17 @@
 /**
  * Collaboration-session feature gate.
  *
- * Co-editing ships DESKTOP-ONLY: on a browser host the gate stays closed
- * unless the WEB-COLLAB PROTOTYPE flag is set (console flip, below). On
- * any desktop host — Electron, or a future non-`browser` kind like
- * Tauri — co-editing is ON by default.
+ * Open everywhere collaboration can exist: every desktop host, and —
+ * since the 2026-08-19 soft launch — browser hosts too. Closed only
+ * where it can't: Lite builds and the mobile shell. This gate decides
+ * whether collab SURFACES exist at all; whether they're active is the
+ * user's 'Enable collaboration' master toggle (default off), so the
+ * ungating itself changed nothing for anyone who hasn't opted in.
+ * (The old `pmd-collab-web` prototype flag is retired.)
  *
- * WEB PROTOTYPE (2026-08-17, design notes in the web-collab decision
- * memo): `localStorage['pmd-collab-web'] = '1'` opens the gate in a
- * browser, and `pmd-collab-web-relay-url` / `pmd-collab-web-relay-token`
- * supply a runtime relay endpoint (the Collaboration settings tab is
- * desktop-only, so there is no web UI for these yet). Deliberately a
- * console flip, not a setting: the shipped web posture is unchanged
- * until the account-auth/guest-pass work lands. Same pattern as the
- * old `pmd-collab` development flip and the community-installs unlock.
+ * `pmd-collab-web-relay-url` / `pmd-collab-web-relay-token` remain as
+ * a runtime relay override for dev/self-hosting on hosts without the
+ * Electron-only relay settings fields (see collabDevRelay below).
  *
  * Zero heavy imports — this module is consulted from the main editor
  * path; `host` is already on that path (types-only wrappers), and
@@ -22,24 +20,28 @@
 
 import { getHost } from '../host/index.js';
 import { isLiteBuild } from '../lite.js';
+import { settings } from '../settings.js';
+import { resolveMobileLayout } from '../mobile-layout.js';
 
-/** The web-collab prototype console flip. */
-export function webCollabPrototypeEnabled(): boolean {
+/** Mirrors `index.ts`'s boot-time mobile-shell resolution, memoized
+ *  once per page load (same reload-to-switch convention — resizing
+ *  mid-session must not flip the gate under an open session). */
+let mobileShellMemo: boolean | null = null;
+function isMobileShell(): boolean {
+  if (mobileShellMemo !== null) return mobileShellMemo;
   try {
-    return window.localStorage.getItem('pmd-collab-web') === '1';
+    mobileShellMemo = resolveMobileLayout(settings.get('mobileLayout'), {
+      hostKind: getHost().kind,
+      coarsePointer:
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches,
+      viewportWidth: window.innerWidth,
+    });
   } catch {
-    return false;
+    /* unresolvable layout → treat as mobile, gate stays closed */
+    mobileShellMemo = true;
   }
-}
-
-/** Set (for THIS window only, never persisted) when the page was
- *  opened through a session invite link — the link IS the invitation,
- *  so a joiner needs no flag, no account, no setup. Without this, the
- *  account-less joiner story dies at the gate. */
-let webJoinLinkOverride = false;
-
-export function enableWebCollabForJoinLink(): void {
-  webJoinLinkOverride = true;
+  return mobileShellMemo;
 }
 
 export function collabEnabled(): boolean {
@@ -47,13 +49,15 @@ export function collabEnabled(): boolean {
   // what removes the pills, sessions list, join links, web account
   // wiring, and every collab command in one move.
   if (isLiteBuild()) return false;
-  // On desktop (Electron / a future non-browser host) co-editing is on.
-  // A browser host stays closed unless the prototype flip is set or
-  // this window was opened via an invite link — the browser exclusion
-  // remains the shipped-default guarantee for ordinary web visits.
   try {
+    // On desktop (Electron / a future non-browser host) co-editing is on.
     if (getHost().kind !== 'browser') return true;
-    return webCollabPrototypeEnabled() || webJoinLinkOverride;
+    // Web ships ungated as of 2026-08-19 (soft launch) — everything
+    // stays opt-in behind the 'Enable collaboration' master toggle,
+    // this gate only decides whether the surfaces exist. The mobile
+    // shell is the one exclusion: co-editing is a desktop-layout
+    // feature (user decision 2026-08-18).
+    return !isMobileShell();
   } catch {
     /* no host resolvable → treat as not-desktop, stay closed */
     return false;

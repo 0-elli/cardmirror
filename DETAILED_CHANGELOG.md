@@ -5,6 +5,26 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## Unreleased
+
+### Added: web collaboration ungated (soft launch)
+
+The web-collab stack that shipped dark behind the `pmd-collab-web`
+console flag is now on by default for every desktop-layout browser
+host; the flag is retired. The gate (`collab-gate.ts`) now decides
+only where collaboration CAN exist — open on all desktop hosts and
+desktop-layout browsers, closed in the mobile shell and Lite builds —
+while whether it is ACTIVE remains the user's `Enable collaboration`
+master toggle, default off, so the ungating changes nothing for anyone
+who hasn't opted in. The pre-launch join-link and session-record gate
+overrides became redundant and were removed; invite links opened on a
+phone still get the clean "needs a desktop layout" refusal, which is
+now gate-independent. Web builds carry the official relay URL as
+their baked default, so no configuration is needed. Under the hood
+the stack is unchanged from its flagged form: WebCrypto account
+identities, room guest passes for account-less joiners, leader-tab
+mailbox delivery via Web Locks, and empty-poll 304s.
+
 ## 1.2.0 — 2026-08-18
 
 ### Added: CardMirror Lite (no-AI / no-internet edition)

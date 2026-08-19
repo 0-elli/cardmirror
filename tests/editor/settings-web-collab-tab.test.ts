@@ -22,20 +22,19 @@ afterEach(() => {
 });
 
 describe('Collaboration tab on web', () => {
-  it('hidden on a browser host with the gate closed (shipped default)', async () => {
+  it('present on a desktop-layout browser host (2026-08-19 soft launch)', async () => {
     delete (window as unknown as WinStub).electronAPI;
     const tabs = (await loadTabs())();
-    expect(tabs.some((t) => t.id === 'pairing')).toBe(false);
-    // Other electronOnly tabs stay hidden too.
+    expect(tabs.some((t) => t.id === 'pairing')).toBe(true);
+    // Other electronOnly tabs stay hidden — only pairing opens on web.
     expect(tabs.some((t) => t.id === 'plugins')).toBe(false);
   });
 
-  it('appears on a browser host once the collab gate is open', async () => {
+  it('hidden in the mobile shell (gate closed there)', async () => {
     delete (window as unknown as WinStub).electronAPI;
-    window.localStorage.setItem('pmd-collab-web', '1');
+    window.localStorage.setItem('pmd-settings', JSON.stringify({ mobileLayout: 'mobile' }));
     const tabs = (await loadTabs())();
-    expect(tabs.some((t) => t.id === 'pairing')).toBe(true);
-    expect(tabs.some((t) => t.id === 'plugins')).toBe(false); // only pairing opens
+    expect(tabs.some((t) => t.id === 'pairing')).toBe(false);
   });
 
   it('always present on Electron', async () => {
