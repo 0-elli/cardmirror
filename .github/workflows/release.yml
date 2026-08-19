@@ -275,14 +275,23 @@ jobs:
           VITE_LITE=1 npm --prefix apps/desktop run build:renderer
           npm --prefix apps/desktop run build:main
           npm --prefix apps/desktop run build:service
+          # linux.artifactName repeats the global override: the build
+          # config's per-target linux name (lowercase cardmirror-*)
+          # outranks -c.artifactName, which shipped the first Lite run
+          # with main-app names on Linux and an empty upload glob.
           (cd apps/desktop && npx electron-builder --publish never \
             -c.appId=com.cardmirror.lite \
             -c.productName="CardMirror Lite" \
-            -c.artifactName='CardMirror-Lite-${version}.${ext}')
+            -c.artifactName='CardMirror-Lite-${version}.${ext}' \
+            -c.linux.artifactName='CardMirror-Lite-${version}.${ext}')
           shopt -s nullglob
           files=(apps/desktop/release/CardMirror-Lite-*.dmg \
                  apps/desktop/release/CardMirror-Lite-*.exe \
                  apps/desktop/release/CardMirror-Lite-*.AppImage \
                  apps/desktop/release/CardMirror-Lite-*.pacman)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No CardMirror-Lite-* artifacts found — naming regression?" >&2
+            exit 1
+          fi
           echo "uploading: ${files[@]}"
           gh release upload "${GITHUB_REF_NAME}" "${files[@]}" --clobber
