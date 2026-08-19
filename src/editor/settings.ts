@@ -12,6 +12,7 @@ import { isWordHighlightName, isHex6 } from './color-palette.js';
 import { sanitizeAcronymPattern, type AcronymPattern } from './acronym-patterns.js';
 import type { IconName } from './icons.js';
 import { getHost } from './host/index.js';
+import { isLiteBuild } from './lite.js';
 import { DEFAULT_SPEECH_FILENAME_TEMPLATE } from './speech-filename-default.js';
 
 /** Body-text zoom bounds (percent). The live per-window / per-pane zoom AND the
@@ -3720,8 +3721,23 @@ function isSettingActionable(m: SettingMeta, env: ToggleEnv): boolean {
   );
 }
 
+/** Whether a settings row is hidden in a LITE build (see lite.ts):
+ *  everything AI, everything collaboration/plugins (their tabs hide
+ *  wholesale, this also covers palette/toggle surfaces), and the
+ *  dictation-model row (its download talks to the internet). Keyed by
+ *  prefix + category so new AI/pairing rows inherit the rule. */
+export function hiddenInLite(meta: SettingMeta): boolean {
+  if (!isLiteBuild()) return false;
+  if (meta.category === 'pairing' || meta.category === 'plugins') return true;
+  const k = meta.key as string;
+  if (/^(ai|clod|anthropic|openrouter)/i.test(k)) return true;
+  return k === 'voiceDictationModel';
+}
+
 export function toggleableSettingMetas(env: ToggleEnv): SettingMeta[] {
-  return SETTING_METADATA.filter((m) => m.kind === 'toggle' && isSettingActionable(m, env));
+  return SETTING_METADATA.filter(
+    (m) => m.kind === 'toggle' && isSettingActionable(m, env) && !hiddenInLite(m),
+  );
 }
 
 /** An enum/mode setting the command bar can cycle through, with each value's
@@ -4449,7 +4465,7 @@ function sanitize(s: Settings): Settings {
       typeof s.aiMaxTokens === 'number' && Number.isFinite(s.aiMaxTokens)
         ? Math.max(1024, Math.round(s.aiMaxTokens))
         : DEFAULTS.aiMaxTokens,
-    aiFeaturesEnabled: !!s.aiFeaturesEnabled,
+    aiFeaturesEnabled: !isLiteBuild() && !!s.aiFeaturesEnabled,
     clodEnabled: !!s.clodEnabled,
     clodActivitiesByTime: sanitizeClodActivitiesByTime(s.clodActivitiesByTime),
     clodTimePeriods: sanitizeClodTimePeriods(s.clodTimePeriods),
@@ -4503,9 +4519,9 @@ function sanitize(s: Settings): Settings {
         ? Math.min(120, Math.max(3, Math.round(s.cardCutterReadTimeSec)))
         : DEFAULTS.cardCutterReadTimeSec,
 
-    pluginsEnabled: s.pluginsEnabled === true,
+    pluginsEnabled: !isLiteBuild() && s.pluginsEnabled === true,
     pluginCommunityInstalls: s.pluginCommunityInstalls === true,
-    pairingEnabled: s.pairingEnabled === true,
+    pairingEnabled: !isLiteBuild() && s.pairingEnabled === true,
     pairingConnectedUntil: Number.isFinite(Number(s.pairingConnectedUntil))
       ? Math.max(0, Number(s.pairingConnectedUntil))
       : DEFAULTS.pairingConnectedUntil,

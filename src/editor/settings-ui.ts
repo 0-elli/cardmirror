@@ -23,6 +23,7 @@ import {
   type Settings,
   type SettingCondition,
   evalDependsOn,
+  hiddenInLite,
   type ReaderConfig,
   type DisplaySizes,
   DEFAULT_DISPLAY_SIZES,
@@ -486,6 +487,7 @@ class SettingsModal {
           (!m.electronOnly || hostKind === 'electron') &&
           (!m.windowsOnly || isWindowsHost()) &&
           (!m.webOnly || hostKind === 'browser') &&
+          !hiddenInLite(m) &&
           (!m.revealWhen || !!settings.get(m.revealWhen)),
       );
       let lastSection: string | undefined;

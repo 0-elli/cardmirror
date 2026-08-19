@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 // The dev server (`npm run dev`) serves from `/`, and production builds
@@ -44,10 +44,62 @@ export default defineConfig(({ command }) => {
   const enablePWA =
     command === 'build' && !isElectronRenderer && !process.env['NO_PWA'];
 
+  // CardMirror Lite (VITE_LITE=1): the no-AI / no-internet build
+  // variant (src/editor/lite.ts). The web deployment for it ships a
+  // Content-Security-Policy that makes "no outbound requests" a
+  // BROWSER-ENFORCED guarantee, emitted as a Cloudflare `_headers`
+  // file beside the build.
+  const isLite = process.env['VITE_LITE'] === '1';
+  const liteHeadersPlugin = {
+    name: 'cardmirror-lite-headers',
+    closeBundle() {
+      if (!isLite || command !== 'build') return;
+      const outDir = path.resolve(__dirname, process.env['VITE_OUT_DIR'] ?? 'dist');
+      // connect-src 'self': the app may load ITSELF (and the service
+      // worker then serves it offline) — and nothing else, ever.
+      // 'wasm-unsafe-eval' stays off: Lite ships no wasm consumers.
+      const csp = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "frame-src 'none'",
+        "object-src 'none'",
+        "base-uri 'self'",
+      ].join('; ');
+      writeFileSync(path.join(outDir, '_headers'), `/*
+  Content-Security-Policy: ${csp}
+`);
+    },
+  };
+
   return {
     base: process.env['VITE_BASE'] ?? '/',
-    resolve: { alias: { '@cardcutter/browser': cardCutterTarget } },
+    resolve: {
+      // Array form: Lite swaps the endpoint modules by SPECIFIER regex
+      // (string keys match specifiers, and these are imported
+      // relatively — './llm-endpoints.js' — so path keys never hit).
+      alias: [
+        { find: '@cardcutter/browser', replacement: cardCutterTarget },
+        ...(isLite
+          ? [
+              {
+                find: /^.*\/llm-endpoints\.js$/,
+                replacement: path.resolve(__dirname, 'src/editor/ai/llm-endpoints-lite.ts'),
+              },
+              {
+                find: /^.*\/relay-endpoint\.js$/,
+                replacement: path.resolve(__dirname, 'src/editor/collab/relay-endpoint-lite.ts'),
+              },
+            ]
+          : []),
+      ],
+    },
     plugins: [
+      liteHeadersPlugin,
       // Dev-only: loro-crdt's loader statically imports its .wasm as an
       // ES module, which the dev server rejects ("ESM integration
       // proposal for Wasm" unsupported). The PRODUCTION build already
@@ -127,6 +179,9 @@ export default defineConfig(({ command }) => {
     // editor. Also lands in the web build as a harmless dead-end
     // page nothing links to.
     build: {
+      // Lite builds land beside the normal dist (VITE_OUT_DIR=dist-lite)
+      // so the two variants never clobber each other.
+      ...(process.env['VITE_OUT_DIR'] ? { outDir: process.env['VITE_OUT_DIR'] } : {}),
       rollupOptions: {
         input: {
           main: path.resolve(__dirname, 'index.html'),

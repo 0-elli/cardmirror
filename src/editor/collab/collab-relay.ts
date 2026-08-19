@@ -11,6 +11,7 @@ import { getElectronHost } from '../host/index.js';
 import { collabDevRelay } from './collab-gate.js';
 import { webEntitlementToken, webRoutingCodeSync } from './web-account.js';
 import { RoomsClient, RoomsError } from './room-client.js';
+import { WEB_DEFAULT_RELAY_URL } from './relay-endpoint.js';
 
 /** Baked relay endpoint from the desktop main process — resolved once,
  *  used as the LAST fallback so packaged builds work with zero setup.
@@ -29,12 +30,9 @@ export async function ensureBakedRelay(): Promise<void> {
   }
 }
 
-/** The official relay endpoint, baked for BROWSER hosts only. Desktop
- *  gets its baked URL from the main process (alongside the shared
- *  token, which must never appear here). Safe to hardcode: the relay
- *  stays on this domain permanently (user decision 2026-08-17 — it's
- *  in shipped builds and on school-network allowlists). */
-const WEB_DEFAULT_RELAY_URL = 'https://scouting-assistant.up.railway.app/relay';
+// Endpoint isolated in relay-endpoint.ts so Lite builds compile the
+// hostname out (desktop still gets its baked URL from the main process
+// alongside the shared token, which must never appear here).
 
 /** The resolved relay base URL ('' when nothing is configured) —
  *  shared by the rooms client and the web account-connect flow. */

@@ -38,6 +38,7 @@ import {
   settings,
   SETTING_METADATA,
   toggleableSettingMetas,
+  hiddenInLite,
   toggleCommandName,
   settingSearchName,
   cyclableSettings,
@@ -781,6 +782,7 @@ function searchSettingsSource(query: string): PaletteResult[] {
       !m.searchHidden &&
       (!m.electronOnly || hostKind === 'electron') &&
       (!m.windowsOnly || isWindowsHost()) &&
+      !hiddenInLite(m) &&
       (!m.webOnly || hostKind === 'browser') &&
       matchSetting(m),
   );

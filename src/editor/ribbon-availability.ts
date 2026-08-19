@@ -23,6 +23,7 @@ import { RIBBON_COMMAND_IDS, type AnyCommandId, type RibbonCommandId } from './r
 import { pluginCommandIds } from './plugin-registry.js';
 import { settings } from './settings.js';
 import { collabEnabled } from './collab/collab-gate.js';
+import { isLiteBuild } from './lite.js';
 import { getElectronHost, isWindowsHost } from './host/index.js';
 
 const FLOW_COMMANDS = new Set<RibbonCommandId>([
@@ -45,7 +46,19 @@ const COLLAB_COMMANDS = new Set<RibbonCommandId>([
   'collabEndSession',
 ]);
 
+/** Commands that exist to talk to an AI provider — absent in Lite.
+ *  (repairParagraphIntegrity is LOCAL doc repair and stays.) */
+const AI_COMMANDS = new Set<RibbonCommandId>([
+  'aiAskAboutSelection',
+  'aiCreateCite',
+  'reformatAllCites',
+  'translate',
+  'repairText',
+  'repairFormatting',
+]);
+
 export function isRibbonCommandAvailable(id: RibbonCommandId): boolean {
+  if (isLiteBuild() && AI_COMMANDS.has(id)) return false;
   if (FLOW_COMMANDS.has(id)) return isWindowsHost();
   if (id === 'toggleVoice') return getElectronHost() !== null;
   // The dev console is Chromium DevTools via the Electron host; on the

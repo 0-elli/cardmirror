@@ -20,6 +20,7 @@
  */
 
 import { settings } from '../settings.js';
+import { ANTHROPIC_MESSAGES_URL, OPENROUTER_CHAT_URL } from './llm-endpoints.js';
 import { showToast } from '../toast.js';
 import { postNotice } from '../status-notices.js';
 
@@ -413,7 +414,7 @@ async function callAnthropicApi(req: LlmRequest): Promise<LlmReply> {
     };
 
     const res = await fetchWithTimeout(
-      'https://api.anthropic.com/v1/messages',
+      ANTHROPIC_MESSAGES_URL,
       {
         method: 'POST',
         headers: {
@@ -566,7 +567,7 @@ async function callOpenRouter(req: LlmRequest): Promise<LlmReply> {
     };
 
     const res = await fetchWithTimeout(
-      'https://openrouter.ai/api/v1/chat/completions',
+      OPENROUTER_CHAT_URL,
       {
         method: 'POST',
         headers: {

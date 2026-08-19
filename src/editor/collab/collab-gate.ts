@@ -21,6 +21,7 @@
  */
 
 import { getHost } from '../host/index.js';
+import { isLiteBuild } from '../lite.js';
 
 /** The web-collab prototype console flip. */
 export function webCollabPrototypeEnabled(): boolean {
@@ -42,6 +43,10 @@ export function enableWebCollabForJoinLink(): void {
 }
 
 export function collabEnabled(): boolean {
+  // Lite builds have no collaboration at all — closing this gate is
+  // what removes the pills, sessions list, join links, web account
+  // wiring, and every collab command in one move.
+  if (isLiteBuild()) return false;
   // On desktop (Electron / a future non-browser host) co-editing is on.
   // A browser host stays closed unless the prototype flip is set or
   // this window was opened via an invite link — the browser exclusion
