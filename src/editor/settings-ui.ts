@@ -1738,7 +1738,6 @@ function buildInstallInfoSection(): HTMLElement {
     pauseWrap.appendChild(pauseStatus);
     pauseWrap.appendChild(pauseDesc);
     pauseWrap.appendChild(pauseBtn);
-    wrap.appendChild(pauseWrap);
 
     const actions = document.createElement('div');
     actions.className = 'pmd-install-info-actions';
@@ -1778,7 +1777,10 @@ function buildInstallInfoSection(): HTMLElement {
       });
     });
     actions.appendChild(updatesBtn);
+    // Order (user spec, 2026-08-18): auto-check checkbox, then the
+    // manual Check button, then the tournament-pause area.
     wrap.appendChild(actions);
+    wrap.appendChild(pauseWrap);
   }
 
   if (electronHost && isLiteBuild()) {

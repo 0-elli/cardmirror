@@ -5870,6 +5870,7 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   flex-direction: column;
   gap: 0.35rem;
   align-items: flex-start;
+  margin-top: 0.9rem;
   margin-bottom: 0.6rem;
   font-size: 0.85rem;
 }

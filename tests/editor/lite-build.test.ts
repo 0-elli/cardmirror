@@ -67,6 +67,18 @@ describe('CardMirror Lite', () => {
     });
   });
 
+  it('stamps the edition on the About-this-install Version row', async () => {
+    await withLite(async () => {
+      const { getInstallInfo, appVersion } = await import('../../src/editor/install-info.js');
+      const version = getInstallInfo().find((e) => e.label === 'Version');
+      expect(version?.value).toBe(`${appVersion} (CardMirror Lite)`);
+    });
+    // Standard builds keep the bare version — no edition suffix.
+    vi.resetModules();
+    const { getInstallInfo, appVersion } = await import('../../src/editor/install-info.js');
+    expect(getInstallInfo().find((e) => e.label === 'Version')?.value).toBe(appVersion);
+  });
+
   it('hides AI + pairing rows and force-sanitizes the masters off', async () => {
     await withLite(async () => {
       const s = await import('../../src/editor/settings.js');
