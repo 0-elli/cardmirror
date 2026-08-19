@@ -318,7 +318,14 @@ function onVisible(): void {
 }
 
 export async function webPairingRegenerateKey(): Promise<{ ownCode: string }> {
-  return { ownCode: await webRegenerateKey() };
+  const ownCode = await webRegenerateKey();
+  // The live stream is subscribed to the OLD key's mailbox — cards
+  // sent to the new code landed unseen until a reload rebuilt it
+  // (field find, 2026-08-18). Abort so the loop reconnects under the
+  // new routing id, and catch up immediately.
+  streamAbort?.abort();
+  void pollOnce();
+  return { ownCode };
 }
 
 export async function webPairingSend(
