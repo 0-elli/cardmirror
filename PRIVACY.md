@@ -33,6 +33,32 @@ feature sends, what (if anything) is stored, and for how long.
 
 ---
 
+## CardMirror Lite
+
+**CardMirror Lite** is a separate edition built for schools and managed
+environments with strict network policies. It is the same editor with
+every network‑dependent feature removed rather than merely switched
+off:
+
+- **No AI features** — the AI settings, commands, and provider
+  endpoints are absent from the build itself, so there is nothing for
+  a student to enable or a filter to miss.
+- **No card sharing, no co‑editing, no accounts, no plugins, and no
+  update checks.**
+- **No network communication.** The web edition at
+  **lite.cardmirror.app** loads only from its own address, and its
+  Content‑Security‑Policy makes the **browser itself refuse** any
+  other network request — this is enforceable machinery an IT
+  department can verify in the page's response headers, not a promise.
+  The desktop Lite app blocks web requests at the application level
+  and never contacts an update server.
+
+When you use Lite, sections 3–7, 9, and 10 of this policy simply do
+not apply: no data leaves your device at all, beyond your browser
+fetching the app itself from lite.cardmirror.app (the desktop Lite
+app fetches nothing). Documents are fully interchangeable between
+Lite and the standard edition — same format, same files.
+
 ## 2. Data stored on your device
 
 Almost everything CardMirror knows about you stays on your own computer:
