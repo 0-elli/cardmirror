@@ -9,6 +9,7 @@
  * bursts both did exactly that when the service ran in-process).
  */
 import { app, ipcMain, systemPreferences } from 'electron';
+import { LITE_BUILD } from '../lite-build.js';
 import { fork, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -504,7 +505,9 @@ export function registerVoiceIpc(): void {
   }));
 
   ipcMain.handle('host:voice-download-dictation-model', async (event) =>
-    downloadLargeModel(event.sender),
+    LITE_BUILD
+      ? { ok: false, error: 'Model downloads are disabled in CardMirror Lite.' }
+      : downloadLargeModel(event.sender),
   );
 
   // Base recognition model (the one voice control needs to run) — a
@@ -515,7 +518,9 @@ export function registerVoiceIpc(): void {
   }));
 
   ipcMain.handle('host:voice-download-base-model', async (event) =>
-    downloadBaseModel(event.sender),
+    LITE_BUILD
+      ? { ok: false, error: 'Model downloads are disabled in CardMirror Lite.' }
+      : downloadBaseModel(event.sender),
   );
 
   // Delete installed models to reclaim disk space. Only the userData copy is

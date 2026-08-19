@@ -3939,6 +3939,17 @@ export class SettingsStore {
   }
 
   get<K extends keyof Settings>(key: K): Settings[K] {
+    // Lite: the network-touching masters read as OFF no matter what
+    // storage holds or what a console call set — the read side is the
+    // enforcement every feature gate actually consults, so hiding the
+    // rows plus this makes the state unreachable rather than merely
+    // undocumented.
+    if (
+      isLiteBuild() &&
+      (key === 'aiFeaturesEnabled' || key === 'pairingEnabled' || key === 'pluginsEnabled')
+    ) {
+      return false as Settings[K];
+    }
     return this.values[key];
   }
 

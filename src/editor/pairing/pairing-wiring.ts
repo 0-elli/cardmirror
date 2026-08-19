@@ -15,6 +15,7 @@
 import type { EditorView } from 'prosemirror-view';
 import { getElectronHost } from '../host/index.js';
 import { collabEnabled } from '../collab/collab-gate.js';
+import { isLiteBuild } from '../lite.js';
 import { settings } from '../settings.js';
 import { appVersion, CARD_COMPAT_MIN_VERSION } from '../install-info.js';
 import { showToast } from '../toast.js';
@@ -95,6 +96,10 @@ let lastMismatchToast = 0;
 /** Wire config sync + incoming-event handling. Idempotent-ish; call once
  *  at boot. */
 export function initPairingWiring(): void {
+  // Lite: card sharing does not exist — no inbox, no config pushes,
+  // no relay wiring (also avoids invoking IPC handlers the Lite main
+  // process deliberately never registers).
+  if (isLiteBuild()) return;
   void inboxStore.init();
 
   const electron = getElectronHost();

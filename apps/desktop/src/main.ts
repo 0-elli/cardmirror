@@ -28,12 +28,14 @@ import {
   screen,
   shell,
   utilityProcess,
+  session,
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { bundlePathFromExe, launchSwapHelper, macBundleSelfUpdatable } from './mac-swap-update.js';
 import { registerVoiceIpc } from './voice/ipc';
 import { registerFlowIpc } from './flow-bridge.js';
 import { registerPairingIpc, relayUrl } from './pairing-ipc.js';
+import { LITE_BUILD } from './lite-build.js';
 import {
   readAccessibilityTreeEnabled,
   writeAccessibilityTreeEnabled,
@@ -1745,6 +1747,18 @@ async function pruneHistoryFiles(): Promise<void> {
 }
 
 void app.whenReady().then(() => {
+  // Lite enforcement, desktop edition: the CSP equivalent. Every
+  // http(s)/ws request from ANY renderer session is cancelled at the
+  // network layer — "does not talk to the internet" as a property of
+  // the process, not a promise of the UI. file:// and devtools are
+  // unaffected (not matched by these URL patterns).
+  if (LITE_BUILD) {
+    session.defaultSession.webRequest.onBeforeRequest(
+      { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
+      (_details, callback) => callback({ cancel: true }),
+    );
+  }
+
   void pruneHistoryFiles();
   const timer = setInterval(() => void pruneHistoryFiles(), 60 * 60 * 1000);
   timer.unref?.();
@@ -2354,7 +2368,10 @@ ipcMain.handle('host:flow-post', async (_event, appId: string, route: string, bo
 
 // Cross-machine card sharing — receive poller + send + inbox. Idle until
 // the renderer sends `host:pairing-configure` with sharing enabled.
-registerPairingIpc();
+// Lite: no pairing/relay IPC at all — the renderer's own lite gates
+// never call it, and the absent handlers make any stray call reject
+// into the callers' existing catch paths.
+if (!LITE_BUILD) registerPairingIpc();
 // The plugin installer's allowlist fetch rides the same relay (and the
 // same self-hosted override) as pairing — a getter, so a settings change
 // takes effect without a restart. The route itself is ungated.
@@ -2865,6 +2882,7 @@ interface UpdateCheckOpts {
  *  dialog only for the manual path (`opts.alertOnLatest`); the
  *  auto-launch path is a complete no-op in dev. */
 function runUpdateCheck(opts: UpdateCheckOpts): void {
+  if (LITE_BUILD) return; // Lite never contacts the update host
   if (!app.isPackaged) {
     if (opts.alertOnLatest) {
       const win = dialogParentWindow();
