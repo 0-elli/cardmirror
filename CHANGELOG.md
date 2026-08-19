@@ -5,7 +5,7 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## Unreleased
+## 1.2.0 — 2026-08-18
 
 ### Added
 
@@ -27,6 +27,20 @@ see `DETAILED_CHANGELOG.md`.
   CardMirror displayed them correctly. Each list now restarts at 1.
   Exported substructure letters also match the editor's default
   separator now ("a." instead of "a)").
+
+- **Clod's thinking indicator sits properly in comment threads.** The
+  activity line now renders where a timestamp would, directly under
+  the name, instead of floating mis-aligned below the block.
+
+- **The AI status pill stays pinned to your text on the web editor.**
+  It could drift to the top of the document when the page scrolled.
+
+- **Reformat Every Cite on the web says "double-tap Esc to stop"** —
+  matching how stopping actually behaves there. Desktop is unchanged
+  (a single Esc).
+
+- **Checking for new shared cards is much lighter on the network.**
+  Empty mailbox checks now cost almost nothing, on both editions.
 
 ## 1.1.0 — 2026-08-17
 

@@ -5,7 +5,29 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 1.2.0 — 2026-08-18
+
+### Added: CardMirror Lite (no-AI / no-internet edition)
+
+A build VARIANT (never a fork — Lite inherits every editor fix) for
+school-managed environments, driven by a district audit that flagged
+student-supplied AI keys as unfilterable. Three enforcement layers:
+UI (collab gate closed on all hosts, AI commands out of availability,
+AI/pairing/plugins settings hidden via a shared predicate, and
+`settings.get` force-reads the network masters as off so console
+flips can't resurrect them); bundle (the AI-provider and relay
+endpoints live in modules the Lite build aliases to empty variants —
+`verify-lite-bundle.mjs` hard-fails on any reachable endpoint in an
+entry chunk); network (the web deploy at lite.cardmirror.app ships a
+`connect-src 'self'` CSP the browser enforces, and the desktop Lite
+main process cancels all http(s)/ws renderer requests at the session
+layer, skips update checks and pairing IPC, and blocks voice-model
+downloads — the base model is a first-use download too). Release
+builds produce "CardMirror Lite" installers with their own appId for
+side-by-side installs; Lite carries no relay token and never touches
+the auto-update manifests.
+
+
 
 ### Fixed: exported numbering never restarted in Word (startOverride)
 
