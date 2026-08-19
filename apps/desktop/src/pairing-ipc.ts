@@ -468,6 +468,10 @@ function deleteMessage(msgId: string): void {
   });
 }
 
+/** Last mailbox ETag — echoed as If-None-Match so empty polls come
+ *  back as bodyless 304s (relays without the tag just ignore it). */
+let lastPollTag = '';
+
 /** One catch-up/poll cycle: pull our mailbox and process it. */
 async function pollOnce(): Promise<void> {
   if (polling || !config.enabled) return;
@@ -475,11 +479,16 @@ async function pollOnce(): Promise<void> {
   polling = true;
   try {
     const url = `${relayUrl()}/messages?recipient=${encodeURIComponent(ks().ownRoutingId())}`;
-    const res = await fetch(url, { method: 'GET', headers: authHeaders() });
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: authHeaders(lastPollTag ? { 'If-None-Match': lastPollTag } : {}),
+    });
+    if (res.status === 304) return; // empty poll — bodyless (capacity, 2026-08-18)
     if (!res.ok) {
       console.warn(`[pairing] GET inbox returned ${res.status}`);
       return;
     }
+    lastPollTag = res.headers.get('ETag') ?? '';
     const data = (await res.json()) as { messages?: RelayMessage[] };
     const messages = data.messages ?? [];
     if (messages.length === 0) return;

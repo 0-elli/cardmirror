@@ -190,6 +190,9 @@ async function processMessages(messages: RelayMessage[]): Promise<void> {
 }
 
 let pollInFlight = false;
+/** Last mailbox ETag: echoing it back turns an empty poll into a
+ *  bodyless 304 (capacity, 2026-08-18). */
+let lastPollTag = '';
 async function pollOnce(): Promise<void> {
   checkAccountRequired();
   if (pollInFlight || !config?.enabled || !mailboxToken().token) return;
@@ -198,13 +201,18 @@ async function pollOnce(): Promise<void> {
     const recipient = await webOwnRoutingId();
     const res = await fetch(
       `${relayUrl()}/messages?recipient=${encodeURIComponent(recipient)}`,
-      { method: 'GET', headers: authHeaders() },
+      {
+        method: 'GET',
+        headers: authHeaders(lastPollTag ? { 'If-None-Match': lastPollTag } : {}),
+      },
     );
+    if (res.status === 304) return; // nothing new — no body to parse
     if (res.status === 401 || res.status === 403) {
       for (const fn of unauthorizedListeners) fn();
       return;
     }
     if (!res.ok) return;
+    lastPollTag = res.headers.get('ETag') ?? '';
     const data = (await res.json()) as { messages?: RelayMessage[] };
     if (data.messages?.length) await processMessages(data.messages);
   } catch {
