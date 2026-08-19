@@ -74,27 +74,6 @@ its own window — offline, and updating itself when you relaunch. On a
 Chromebook, this is the best way to run it. Installed, the web app covers
 most of the desktop experience; what follows is only what still differs.
 
-### CardMirror Lite
-
-**CardMirror Lite** is a third option, built for school-managed devices
-whose IT policies restrict AI tools or network access. It's the same
-editor — same files, same shortcuts, same formatting engine — with the
-network-dependent features removed from the build entirely: no AI
-features, no card sharing or co-editing, no account linking, no
-plugins, and no update checks. The web version at
-**lite.cardmirror.app** is locked down by a browser-enforced security
-policy so it cannot contact anything but its own address; the desktop
-version ("CardMirror Lite" installers on the releases page) blocks
-network requests at the application level and installs alongside a
-standard copy without touching it.
-
-Everything in this manual applies to Lite **except** the sections on
-AI features, collaboration, plugins, and updates. Documents move
-freely between Lite and the standard edition — if your school uses
-Lite and your home machine runs the full app, they read and write the
-same files. Desktop Lite doesn't update itself; install a newer Lite
-build from the releases page when you want one.
-
 A few capabilities still need the **desktop app**: the background
 **[file-library search](#the-search-everything-palette-mod-shift-space)**,
 **folder-wide** bulk operations (the web app runs Clean / Convert one
@@ -116,6 +95,27 @@ document full-bleed, a **Read** button for read mode (tap the page to
 drop or remove a reading marker), pinch-zoom, an outline drawer, and a
 touch-sized Settings page. **Use desktop layout** switches back to the
 full editor.
+
+### CardMirror Lite
+
+**CardMirror Lite** is a third option, built for school-managed devices
+whose IT policies restrict AI tools or network access. It's the same
+editor — same files, same shortcuts, same formatting engine — with the
+network-dependent features removed from the build entirely: no AI
+features, no card sharing or co-editing, no account linking, no
+plugins, and no update checks. The web version at
+**lite.cardmirror.app** is locked down by a browser-enforced security
+policy so it cannot contact anything but its own address; the desktop
+version ("CardMirror Lite" installers on the releases page) blocks
+network requests at the application level and installs alongside a
+standard copy without touching it.
+
+Everything in this manual applies to Lite **except** the sections on
+AI features, collaboration, plugins, and updates. Documents move
+freely between Lite and the standard edition — if your school uses
+Lite and your home machine runs the full app, they read and write the
+same files. Desktop Lite doesn't update itself; install a newer Lite
+build from the releases page when you want one.
 
 ### First launch and the welcome guide
 
