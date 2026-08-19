@@ -8,6 +8,7 @@
  */
 
 import { confirmDialog } from './text-prompt.js';
+import { isLiteBuild } from './lite.js';
 import { entryConflictWarnings } from './custom-autocorrect-plugin.js';
 import {
   CUSTOMIZABLE_COLOR_TOKENS,
@@ -1666,7 +1667,7 @@ function buildInstallInfoSection(): HTMLElement {
   // OS (update check via electron-updater, crash-dumps folder via
   // shell.openPath). The web edition has neither capability.
   const electronHost = getElectronHost();
-  if (electronHost) {
+  if (electronHost && !isLiteBuild()) {
     // "Check for updates automatically" toggle — kept next to the
     // manual Check-for-updates button since both govern updates.
     // When enabled, the app checks at launch AND once a day, staying
@@ -1773,6 +1774,24 @@ function buildInstallInfoSection(): HTMLElement {
       });
     });
     actions.appendChild(updatesBtn);
+    wrap.appendChild(actions);
+  }
+
+  // Crash dumps are local files — available in every desktop edition.
+  if (electronHost) {
+    const actions = document.createElement('div');
+    actions.className = 'pmd-install-info-actions';
+    if (isLiteBuild()) {
+      // Lite: say WHY there is no update UI instead of showing
+      // controls that silently do nothing (field find, 2026-08-18).
+      const liteNote = document.createElement('div');
+      liteNote.className = 'pmd-update-pause-desc';
+      liteNote.textContent =
+        'CardMirror Lite never checks for updates or connects to the ' +
+        'internet. To upgrade, install a newer Lite build from the ' +
+        'releases page.';
+      wrap.appendChild(liteNote);
+    }
 
     const crashBtn = document.createElement('button');
     crashBtn.type = 'button';

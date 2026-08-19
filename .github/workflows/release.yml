@@ -283,7 +283,9 @@ jobs:
             -c.appId=com.cardmirror.lite \
             -c.productName="CardMirror Lite" \
             -c.artifactName='CardMirror-Lite-${version}.${ext}' \
-            -c.linux.artifactName='CardMirror-Lite-${version}.${ext}')
+            -c.linux.artifactName='CardMirror-Lite-${version}.${ext}' \
+            -c.executableName='CardMirror Lite' \
+            -c.linux.executableName=cardmirror-lite)
           shopt -s nullglob
           files=(apps/desktop/release/CardMirror-Lite-*.dmg \
                  apps/desktop/release/CardMirror-Lite-*.exe \

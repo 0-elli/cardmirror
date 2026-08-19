@@ -2666,10 +2666,16 @@ function buildMenu(): Menu {
         },
       },
       { type: 'separator' },
-      {
-        label: 'Check for Updates…',
-        click: runManualUpdateCheck,
-      },
+      // Lite never contacts an update server — the menu item goes
+      // rather than clicking into silence.
+      ...(LITE_BUILD
+        ? []
+        : [
+            {
+              label: 'Check for Updates…',
+              click: runManualUpdateCheck,
+            },
+          ]),
       {
         label: 'Open Crash Dumps Folder',
         click: () => {
