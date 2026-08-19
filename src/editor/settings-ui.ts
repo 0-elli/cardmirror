@@ -523,6 +523,8 @@ class SettingsModal {
       if (id === 'general') {
         panel.appendChild(buildBenchmarkSection(() => this.close()));
         panel.appendChild(buildInstallInfoSection());
+        const crashDumps = buildCrashDumpsSection();
+        if (crashDumps) panel.appendChild(crashDumps);
         panel.appendChild(this.buildSettingsBackupSection());
         panel.appendChild(buildDocLinksSection());
       }
@@ -1731,9 +1733,11 @@ function buildInstallInfoSection(): HTMLElement {
     const unsubscribePause = settings.subscribe(() => renderPause());
     registerRowCleanup(pauseWrap, () => unsubscribePause());
     renderPause();
+    // Caption above the button — description-then-control is the
+    // ordering everywhere else in Settings.
     pauseWrap.appendChild(pauseStatus);
-    pauseWrap.appendChild(pauseBtn);
     pauseWrap.appendChild(pauseDesc);
+    pauseWrap.appendChild(pauseBtn);
     wrap.appendChild(pauseWrap);
 
     const actions = document.createElement('div');
@@ -1777,39 +1781,60 @@ function buildInstallInfoSection(): HTMLElement {
     wrap.appendChild(actions);
   }
 
-  // Crash dumps are local files — available in every desktop edition.
-  if (electronHost) {
-    const actions = document.createElement('div');
-    actions.className = 'pmd-install-info-actions';
-    if (isLiteBuild()) {
-      // Lite: say WHY there is no update UI instead of showing
-      // controls that silently do nothing (field find, 2026-08-18).
-      const liteNote = document.createElement('div');
-      liteNote.className = 'pmd-update-pause-desc';
-      liteNote.textContent =
-        'CardMirror Lite never checks for updates or connects to the ' +
-        'internet. To upgrade, install a newer Lite build from the ' +
-        'releases page.';
-      wrap.appendChild(liteNote);
-    }
-
-    const crashBtn = document.createElement('button');
-    crashBtn.type = 'button';
-    crashBtn.className = 'pmd-install-info-btn';
-    crashBtn.textContent = 'Open crash dumps folder';
-    crashBtn.addEventListener('click', () => {
-      electronHost.openCrashDumpsFolder().catch((err: unknown) => {
-        showToast(
-          `Open crash dumps folder failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-    });
-    actions.appendChild(crashBtn);
-
-    wrap.appendChild(actions);
+  if (electronHost && isLiteBuild()) {
+    // Lite: say WHY there is no update UI instead of showing
+    // controls that silently do nothing (field find, 2026-08-18).
+    const liteNote = document.createElement('div');
+    liteNote.className = 'pmd-update-pause-desc';
+    liteNote.textContent =
+      'CardMirror Lite never checks for updates or connects to the ' +
+      'internet. To upgrade, install a newer Lite build from the ' +
+      'releases page.';
+    wrap.appendChild(liteNote);
   }
 
   return wrap;
+}
+
+/** Crash-dumps section — its own header between About this install and
+ *  Back up settings (same markup as the backup section). Desktop only:
+ *  the folder is an OS path the web edition doesn't have. */
+function buildCrashDumpsSection(): HTMLElement | null {
+  const electronHost = getElectronHost();
+  if (!electronHost) return null;
+  const section = document.createElement('section');
+  section.className = 'pmd-settings-backup';
+
+  const title = document.createElement('div');
+  title.className = 'pmd-settings-row-title';
+  title.textContent = 'Crash dumps';
+  section.appendChild(title);
+
+  const desc = document.createElement('div');
+  desc.className = 'pmd-settings-row-desc';
+  desc.textContent =
+    'If CardMirror ever crashes, the system saves a diagnostic dump in this ' +
+    'folder. Attaching the newest file to a bug report helps pin down the ' +
+    'cause — nothing is sent anywhere unless you share it yourself.';
+  section.appendChild(desc);
+
+  const actions = document.createElement('div');
+  actions.className = 'pmd-settings-backup-actions';
+  const crashBtn = document.createElement('button');
+  crashBtn.type = 'button';
+  crashBtn.className = 'pmd-settings-backup-btn';
+  crashBtn.textContent = 'Open crash dumps folder';
+  crashBtn.addEventListener('click', () => {
+    electronHost.openCrashDumpsFolder().catch((err: unknown) => {
+      showToast(
+        `Open crash dumps folder failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  });
+  actions.appendChild(crashBtn);
+  section.appendChild(actions);
+
+  return section;
 }
 
 /** GitHub-hosted copies of the user-facing docs — opened from Settings → General

@@ -20,6 +20,13 @@ see `DETAILED_CHANGELOG.md`.
   you turn on **Enable collaboration**; the mobile layout and
   CardMirror Lite have no collaboration.
 
+### Changed
+
+- **Settings → General → About this install got a tidy-up.** The
+  pause-updates caption sits above its button (matching the rest of
+  Settings), and **Open crash dumps folder** moved into its own
+  "Crash dumps" section with a description of what the folder is for.
+
 ## 1.2.0 — 2026-08-18
 
 ### Added
