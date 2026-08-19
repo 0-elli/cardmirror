@@ -7,6 +7,17 @@ see `DETAILED_CHANGELOG.md`.
 
 ## Unreleased
 
+### Added
+
+- **CardMirror Lite.** A separate edition for school-managed devices:
+  the same editor with every network-dependent feature removed from
+  the build itself — no AI, no collaboration, no accounts, no
+  plugins, no update checks, and no network communication at all. On
+  the web at **lite.cardmirror.app** (locked down by a
+  browser-enforced security policy IT departments can verify), and as
+  "CardMirror Lite" desktop installers that live alongside a standard
+  copy. Documents move freely between Lite and the full edition.
+
 ### Fixed
 
 - **Numbered lists restart properly in Word again.** Exported documents
