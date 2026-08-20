@@ -32,6 +32,9 @@ import { aiFailureNotice, aiGateToast, callLlm, LlmError, activeApiKey } from '.
 import { AiActivity } from './ai-activity.js';
 import { claimRegion } from './edit-coordinator.js';
 import { showToast } from '../toast.js';
+import { foldForTokenMatch, markCiteTokensInText } from '../cite-token-match.js';
+
+export { foldForTokenMatch };
 
 /** Today's-date placeholder substituted into the prompt at run
  *  time. Putting it in the prompt rather than the user message
@@ -207,25 +210,6 @@ function findMarker(text: string, name: string): number {
  *  body paragraph) never happens silently. */
 export const CITE_TOKENS_MARKED_META = 'aiCiteTokensMarked';
 
-/** Case / typography folding for token matching, strictly 1:1 per
- *  character so a match's offsets in the folded string ARE its offsets
- *  in the real text. Curly quotes → straight, en/em/minus dashes →
- *  hyphen, NBSP → space, casefold (skipped for the rare characters
- *  whose lowercase form changes length). */
-export function foldForTokenMatch(s: string): string {
-  let out = '';
-  for (const ch of s) {
-    let c = ch;
-    if (c === '‘' || c === '’' || c === 'ʼ') c = "'";
-    else if (c === '“' || c === '”') c = '"';
-    else if (c === '–' || c === '—' || c === '−') c = '-';
-    else if (c === '\u00a0') c = ' ';
-    const lower = c.toLowerCase();
-    out += lower.length === c.length ? lower : c;
-  }
-  return out;
-}
-
 /** Build (but don't dispatch) the transaction that replaces
  *  [from, to] with the formatted cite and marks the tokens. Also
  *  ensures the cite is its own paragraph by splitting before /
@@ -295,44 +279,10 @@ export function buildCiteTransaction(
   // redundant. The cite text should come out clean and only the
   // tokens should pick up cite_mark afterward.
   tr.removeMark(start, end);
-  // FUZZY token location. Exact `indexOf` was the original matcher, and
-  // model drift between the [[CITE]] and [[TOKENS]] sections — a case
-  // change, a curly vs straight quote, an en dash, stray edge
-  // punctuation — made it silently mark NOTHING. An unmarked cite never
-  // gets promoted to `cite_paragraph` by the classifier (by design:
-  // cite-ness IS the mark), so it stayed an ordinary body paragraph
-  // that shrink happily shrank (field report, beta.22). Both sides are
-  // folded (case / quotes / dashes, 1:1 per char so offsets carry
-  // straight back to the real text); a token that still misses retries
-  // with its edge punctuation trimmed. No fallback marking beyond that:
-  // if a token genuinely isn't in the cite, nothing is marked and the
-  // paragraph legitimately stays body text.
-  const foldedCite = foldForTokenMatch(result.cite);
-  let markedTokens = 0;
-  for (const token of result.tokens) {
-    if (!token) continue;
-    const candidates = [foldForTokenMatch(token)];
-    const trimmed = candidates[0]!.replace(/^[\s.,;:'"()]+|[\s.,;:'"()]+$/g, '');
-    if (trimmed && trimmed !== candidates[0]) candidates.push(trimmed);
-    for (const needle of candidates) {
-      let found = false;
-      let searchOffset = 0;
-      while (searchOffset <= foldedCite.length - needle.length) {
-        const idx = foldedCite.indexOf(needle, searchOffset);
-        if (idx < 0) break;
-        const matchStart = start + idx;
-        const matchEnd = matchStart + needle.length;
-        if (matchEnd > end) break;
-        tr.addMark(matchStart, matchEnd, citeType.create());
-        found = true;
-        searchOffset = idx + needle.length;
-      }
-      if (found) {
-        markedTokens++;
-        break;
-      }
-    }
-  }
+  // FUZZY token location — shared with the external-insert bridge
+  // (`../cite-token-match.ts`); see there for the folding/trim rules
+  // and the beta.22 field report that motivated them.
+  const markedTokens = markCiteTokensInText(tr, start, result.cite, result.tokens, citeType);
   tr.setMeta(CITE_TOKENS_MARKED_META, markedTokens);
 
   // When we trimmed a grabbed trailing break, the original selection still

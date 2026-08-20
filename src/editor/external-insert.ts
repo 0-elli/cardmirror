@@ -36,8 +36,10 @@
 
 import { Fragment, Slice, type Node as PMNode } from 'prosemirror-model';
 import { type EditorState, type Transaction } from 'prosemirror-state';
+import { ReplaceStep } from 'prosemirror-transform';
 import { newHeadingId } from '../schema/ids.js';
 import { nearestValidInsertPos } from './insert-position.js';
+import { markCiteTokensInText } from './cite-token-match.js';
 
 /**
  * What the sender wants the text to become. `pocket` / `hat` / `block` /
@@ -61,6 +63,13 @@ export interface ExternalInsertOpts {
   /** Omitted means `card` — body paragraphs, the pre-role behavior. */
   role?: ExternalInsertRole;
   newParagraph: boolean;
+  /** Cite emphasis (role `cite` only): verbatim substrings of the
+   *  FIRST line — the lastname(s) + shortdate of the leading author
+   *  block — to be styled with `cite_mark` on arrival. The sender
+   *  states intent ("this span is the cite emphasis"), never
+   *  presentation; matching is fuzzy (`./cite-token-match.ts`) and a
+   *  token that isn't found marks nothing. */
+  citeTokens?: readonly string[];
 }
 
 /**
@@ -173,5 +182,36 @@ export function buildExternalInsertTransaction(
   const slice = new Slice(Fragment.fromArray(bodies), 0, 1);
   const tr = state.tr.replaceSelection(slice);
   tr.setStoredMarks([]);
+
+  // Cite emphasis: apply `cite_mark` to the sender's tokens within the
+  // FIRST inserted paragraph (the cite line — any article text the
+  // sender bundled follows in later paragraphs and is never marked).
+  // Position arithmetic can't be trusted here: slice fitting may split
+  // the cursor's textblock or merge the first body into it, shifting
+  // where the line lands. So read the replace step's affected range and
+  // find the first textblock whose text BEGINS with the cite line (the
+  // closed slice start pins the cite to a block head; the open end can
+  // glue trailing text after it). No match → no marks — an unmarked
+  // cite is today's behavior, a mismarked one would be a bug.
+  const line = lines[0];
+  if (role === 'cite' && opts.citeTokens?.length && line) {
+    const citeType = state.schema.marks['cite_mark'];
+    const step = tr.steps[tr.steps.length - 1];
+    if (citeType && step instanceof ReplaceStep) {
+      const rangeEnd = Math.min(step.from + step.slice.size, tr.doc.content.size);
+      let markStart = -1;
+      tr.doc.nodesBetween(step.from, rangeEnd, (node, pos) => {
+        if (markStart !== -1) return false;
+        if (node.isTextblock && node.textContent.startsWith(line)) {
+          markStart = pos + 1;
+          return false;
+        }
+        return true;
+      });
+      if (markStart !== -1) {
+        markCiteTokensInText(tr, markStart, line, opts.citeTokens, citeType);
+      }
+    }
+  }
   return tr;
 }

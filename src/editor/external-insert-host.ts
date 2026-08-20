@@ -35,6 +35,8 @@ interface InsertRequest {
   /** Doc-targeted insert: the pane uid to land in (from GET /docs).
    *  Absent = the legacy path — this window's focused view. */
   target?: string;
+  /** Cite-emphasis substrings (role `cite`) — see ExternalInsertOpts. */
+  citeTokens?: string[];
 }
 
 interface InsertResult {
@@ -109,10 +111,15 @@ function handle(req: InsertRequest, opts: ExternalInsertHostOpts): InsertResult 
       if (!view) return { requestId, ok: false, error: 'no-target-doc' };
       return { requestId, ok: false, error: 'doc-readonly' };
     }
+    // citeTokens off the wire: keep only a well-formed string array.
+    const citeTokens = Array.isArray(req.citeTokens)
+      ? req.citeTokens.filter((t): t is string => typeof t === 'string' && t.length > 0)
+      : undefined;
     const tr = buildExternalInsertTransaction(view.state, {
       text: req.text,
       role: req.role,
       newParagraph: req.newParagraph,
+      ...(citeTokens && citeTokens.length > 0 ? { citeTokens } : {}),
     });
     if (!tr) {
       // schema didn't carry the body type we asked for — should never

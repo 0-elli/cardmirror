@@ -245,6 +245,19 @@ export function setDocDirectory(dir: DocDirectory | null): void {
   docDirectory = dir;
 }
 
+/** Sanitized citeTokens of an insert payload: a small array of short
+ *  strings, or null. Caps (8 tokens, 200 chars) are far above any real
+ *  cite head and keep a malformed sender from shipping bulk data
+ *  through a styling field. */
+function citeTokensOf(payload: InsertPayload): string[] | null {
+  const raw = (payload as { citeTokens?: unknown }).citeTokens;
+  if (!Array.isArray(raw)) return null;
+  const tokens = raw
+    .filter((t): t is string => typeof t === 'string' && t.length > 0 && t.length <= 200)
+    .slice(0, 8);
+  return tokens.length > 0 ? tokens : null;
+}
+
 /** The target uid of an insert payload, or null for the legacy
  *  focused-window path. Opaque session-scoped token from /docs. */
 function targetUidOf(payload: InsertPayload): string | null {
@@ -281,6 +294,7 @@ function dispatchToRenderer(payload: InsertPayload, win: BrowserWindow | null): 
         typeof payload.newParagraph === 'boolean' ? payload.newParagraph : true,
       omitted: payload.omitted === true,
       ...(targetUidOf(payload) ? { target: targetUidOf(payload) } : {}),
+      ...(citeTokensOf(payload) ? { citeTokens: citeTokensOf(payload) } : {}),
     });
   });
 }
