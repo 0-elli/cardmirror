@@ -5,7 +5,32 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
-## Unreleased
+## 1.3.0 — 2026-08-20
+
+### Added: citeTokens on the insert bridge (styled external cites)
+
+The Fast Debate Paste `/insert` payload accepts an optional
+`citeTokens: string[]` on role-`cite` inserts: verbatim substrings of
+the first line (the lastname + shortdate emphasis spans) that arrive
+wearing `cite_mark`. The sender states intent, never presentation —
+CardMirror decides what the emphasis looks like. Matching reuses the
+AI cite creator's fuzzy token matcher, extracted into
+`cite-token-match.ts` (the bridge path must not drag the LLM stack,
+and Lite carries the bridge without AI); landing position is read
+from the replace step's range with a block-head match, never position
+arithmetic, and a token that misses marks nothing. The field is
+optional in both directions, so old senders and old receivers are
+both unaffected; structured runs are the agreed upgrade path if
+general styling is ever needed. First consumer: Fast Debate Paste
+2.2.0/1.2.0 relaying the Research Tracker extension's F8 trailer.
+
+### Changed: About-this-install cleanup
+
+Auto-check checkbox, then the manual Check button, then the
+tournament-pause area (caption above its button, matching the rest of
+Settings); Open crash dumps folder moved to its own section between
+About and Back up settings; the Version row reads
+"1.3.0 (CardMirror Lite)" on Lite installs.
 
 ### Added: web collaboration ungated (soft launch)
 
