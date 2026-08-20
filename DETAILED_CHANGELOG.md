@@ -22,7 +22,7 @@ arithmetic, and a token that misses marks nothing. The field is
 optional in both directions, so old senders and old receivers are
 both unaffected; structured runs are the agreed upgrade path if
 general styling is ever needed. First consumer: Fast Debate Paste
-2.2.0/1.2.0 relaying the Research Tracker extension's F8 trailer.
+2.2.0/1.2.0.
 
 ### Changed: About-this-install cleanup
 

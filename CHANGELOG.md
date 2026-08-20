@@ -22,8 +22,8 @@ see `DETAILED_CHANGELOG.md`.
 
 - **Cites sent from other apps can arrive pre-styled.** The Fast Debate
   Paste insert bridge accepts an optional list of cite-emphasis spans
-  (the author/date "F8" part), applied on arrival — cites relayed from
-  the Research Tracker browser extension land already formatted.
+  (the author/date "F8" part), applied on arrival — cites relayed
+  through Fast Debate Paste can land already formatted.
 
 ### Changed
 
