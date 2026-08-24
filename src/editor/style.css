@@ -219,6 +219,34 @@
   src: local("Arial Bold Italic"), local("Arial Bold Oblique"), local("Arimo Bold Italic"), local("Arimo Bold Oblique"), url("./fonts/arimo-700-italic.woff2") format("woff2");
 }
 @font-face {
+  font-family: "Arial Narrow";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("Arial Narrow"), local("ArialNarrow"), local("Liberation Sans Narrow"), url("./fonts/liberation-sans-narrow-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Arial Narrow";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local("Arial Narrow Bold"), local("ArialNarrow-Bold"), local("Liberation Sans Narrow Bold"), url("./fonts/liberation-sans-narrow-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Arial Narrow";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local("Arial Narrow Italic"), local("ArialNarrow-Italic"), local("Liberation Sans Narrow Italic"), url("./fonts/liberation-sans-narrow-400-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Arial Narrow";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: local("Arial Narrow Bold Italic"), local("ArialNarrow-BoldItalic"), local("Liberation Sans Narrow Bold Italic"), url("./fonts/liberation-sans-narrow-700-italic.woff2") format("woff2");
+}
+@font-face {
   font-family: "Helvetica";
   font-style: normal;
   font-weight: 400;

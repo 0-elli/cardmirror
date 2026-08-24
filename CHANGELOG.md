@@ -5,6 +5,16 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **Arial Narrow in the font picker.** Available under Microsoft Office
+  defaults for both the document and interface font. Machines without
+  Arial Narrow installed render with the bundled metric-compatible
+  Liberation Sans Narrow, so documents keep their layout everywhere —
+  including the web editor and Linux.
+
 ## 1.3.0 — 2026-08-20
 
 ### Added

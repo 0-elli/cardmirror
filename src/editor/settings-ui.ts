@@ -123,7 +123,7 @@ const FONT_GROUPS: FontGroup[] = [
   },
   {
     label: 'Microsoft Office defaults',
-    fonts: ['Calibri', 'Cambria', 'Times New Roman', 'Arial', 'Georgia'],
+    fonts: ['Calibri', 'Cambria', 'Times New Roman', 'Arial', 'Arial Narrow', 'Georgia'],
   },
   {
     label: 'Apple defaults',
