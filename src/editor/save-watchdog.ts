@@ -21,9 +21,9 @@
  *     two copies, never zero.
  *
  * The underlying write always wins the race the moment it settles:
- * success resolves 'done' (a still-open dialog's later answer is
- * ignored), and rejection propagates unchanged so the caller's
- * EMODIFIED / ENOENT / ELOCKED handling is untouched.
+ * success resolves 'done' — a still-open escalation dialog closes
+ * itself (abort signal) — and rejection propagates unchanged so the
+ * caller's EMODIFIED / ENOENT / ELOCKED handling is untouched.
  */
 
 import { postNotice } from './status-notices.js';
@@ -52,10 +52,14 @@ export function awaitWithSaveWatchdog(
   return new Promise<'done' | 'saveAs'>((resolve, reject) => {
     let finished = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
+    // Closes a still-open escalation dialog the moment the write
+    // settles — its question is moot once the save has landed/failed.
+    const dialogCloser = new AbortController();
     const finish = (outcome: 'done' | 'saveAs'): void => {
       if (finished) return;
       finished = true;
       for (const t of timers) clearTimeout(t);
+      dialogCloser.abort();
       resolve(outcome);
     };
     write.then(
@@ -64,6 +68,7 @@ export function awaitWithSaveWatchdog(
         if (finished) return;
         finished = true;
         for (const t of timers) clearTimeout(t);
+        dialogCloser.abort();
         reject(err instanceof Error ? err : new Error(String(err)));
       },
     );
@@ -89,6 +94,7 @@ export function awaitWithSaveWatchdog(
         setTimeout(() => {
           if (finished) return;
           void promptForRouteChoice<'saveAs' | 'wait'>({
+            signal: dialogCloser.signal,
             message:
               `"${name}" still hasn't finished saving — its folder isn't ` +
               `responding. Your work is safe in this window, but this save ` +
@@ -107,8 +113,8 @@ export function awaitWithSaveWatchdog(
               },
             ],
           }).then((choice) => {
-            // A write that settled while the dialog sat open already
-            // finished the race — a late answer changes nothing.
+            // A settled write aborts the dialog (resolves null); this
+            // guard is belt-and-braces for the same-tick race.
             if (choice === 'saveAs') finish('saveAs');
           });
         }, dialogMs),

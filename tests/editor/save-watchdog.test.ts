@@ -74,11 +74,17 @@ describe('awaitWithSaveWatchdog', () => {
     expect(notice).toHaveBeenCalledTimes(1); // warning only
   });
 
-  it('a write settling while the dialog is open wins; a late answer is ignored', async () => {
+  it('a write settling while the dialog is open wins and CLOSES the dialog', async () => {
+    // Mirror the real prompt's abort behavior: resolve null on abort.
     let answer: (v: 'saveAs' | 'wait' | null) => void = () => {};
-    prompt.mockImplementation(
-      () => new Promise((r) => (answer = r as typeof answer)) as ReturnType<typeof prompt>,
-    );
+    let dialogSignal: AbortSignal | undefined;
+    prompt.mockImplementation(((opts: { signal?: AbortSignal }) => {
+      dialogSignal = opts.signal;
+      return new Promise((r) => {
+        answer = r as typeof answer;
+        opts.signal?.addEventListener('abort', () => r(null), { once: true });
+      });
+    }) as unknown as typeof promptForRouteChoice);
     let settle: () => void = () => {};
     const write = new Promise<void>((r) => (settle = r));
     const p = awaitWithSaveWatchdog(write, 'a.cmir', {
@@ -87,9 +93,12 @@ describe('awaitWithSaveWatchdog', () => {
       dialogMs: 100,
     });
     await vi.advanceTimersByTimeAsync(101); // dialog now open
+    expect(dialogSignal?.aborted).toBe(false);
     settle();
     await expect(p).resolves.toBe('done');
-    answer('saveAs'); // late click — must change nothing (already resolved)
+    // The settled write aborts the dialog — it closes itself.
+    expect(dialogSignal?.aborted).toBe(true);
+    answer('saveAs'); // impossible late click — must change nothing
   });
 
   it('propagates the write rejection unchanged in effect', async () => {
