@@ -916,7 +916,12 @@ export class NavigationPanel {
 
       const label = document.createElement('span');
       label.className = 'pmd-nav-label';
-      label.textContent = entry.text;
+      // Whitespace-only headings must render exactly like empty ones: a
+      // space-filled text node defeats the `:empty::before` NBSP rule
+      // that holds an empty row at full height, yet still collapses to
+      // zero width — yielding a squashed row. Normalize to truly empty
+      // so the CSS fallback applies.
+      label.textContent = entry.text.trim() === '' ? '' : entry.text;
       li.appendChild(label);
 
       if (entry.cite && settings.get('showCitePreview')) {

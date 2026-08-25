@@ -9,6 +9,10 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Fixed
 
+- **Whitespace-only headings no longer squash their navigation row.** A
+  heading containing only spaces rendered as a sliver in the nav pane;
+  it now gets the same full-height row as a blank heading.
+
 - **Flow sends starting with `=`, `+`, `-`, or `@` no longer fail.** Excel
   reads those as the start of a formula, so an analytic like "- turns the
   case" was rejected instead of written. Sent cells are now always written
