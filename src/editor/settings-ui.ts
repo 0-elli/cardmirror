@@ -949,6 +949,10 @@ class SettingsModal {
       row.appendChild(text);
       row.appendChild(buildHeadingModeEditor());
       return row;
+    } else if (meta.kind === 'pasteCursor') {
+      row.appendChild(text);
+      row.appendChild(buildPasteCursorEditor());
+      return row;
     } else if (meta.kind === 'condenseWarningDelimiter') {
       row.appendChild(text);
       row.appendChild(buildCondenseWarningDelimiterEditor());
@@ -5965,6 +5969,35 @@ function buildMobileLayoutEditor(): HTMLElement {
     labelText.className = 'pmd-heading-mode-row-label';
     labelText.textContent = o.label;
     row.appendChild(labelText);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+function buildPasteCursorEditor(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pmd-heading-mode-editor';
+  const options: { value: 'after' | 'tag'; label: string }[] = [
+    { value: 'after', label: 'End of the pasted content (default)' },
+    { value: 'tag', label: 'End of the pasted tag \u2014 ready to rename it' },
+  ];
+  const groupName = `pmd-paste-cursor-${Math.random().toString(36).slice(2, 8)}`;
+  for (const o of options) {
+    const row = document.createElement('label');
+    row.className = 'pmd-heading-mode-row';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = groupName;
+    input.value = o.value;
+    input.checked = o.value === settings.get('pasteCursor');
+    input.addEventListener('change', () => {
+      if (input.checked) settings.set('pasteCursor', o.value);
+    });
+    row.appendChild(input);
+    const text = document.createElement('span');
+    text.className = 'pmd-heading-mode-row-label';
+    text.textContent = o.label;
+    row.appendChild(text);
     wrap.appendChild(row);
   }
   return wrap;

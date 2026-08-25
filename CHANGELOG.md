@@ -7,6 +7,14 @@ see `DETAILED_CHANGELOG.md`.
 
 ## Unreleased
 
+### Changed
+
+- **Pasting a card now leaves the cursor at the end of what you
+  pasted**, matching every other paste. The old behavior — cursor at
+  the end of the pasted card's tag, ready to rename it — is available
+  as a setting: Settings → Editing → Paste → "Cursor after pasting a
+  card".
+
 ### Fixed
 
 - **Whitespace-only headings no longer squash their navigation row.** A

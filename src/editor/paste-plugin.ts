@@ -50,6 +50,7 @@ import {
 } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
 import { schema, newHeadingId } from '../schema/index.js';
+import { settings } from './settings.js';
 import { freshHeadingIds } from './drag-controller.js';
 import { condenseBranchC, condenseMerge } from './condense.js';
 import { buildImageNodeFromBlob, insertImageNode } from './image-insert.js';
@@ -874,10 +875,16 @@ function buildContainerSplit(
   const last = pastedNodes[pastedNodes.length - 1]!;
   const lastName = last.type.name;
   let trailing: PMNode[] = [];
+  // Size of the last pasted container's OWN children — recorded before
+  // the destination's remainder is absorbed after them, so the
+  // end-of-paste cursor mode can stop at the true pasted/absorbed
+  // boundary instead of after content the user never pasted.
+  let lastOwnKidsSize: number | null = null;
   if (lastName === 'card' || lastName === 'analytic_unit') {
     const fit = lastName === 'card' ? fitForCard : fitForAnalyticUnit;
     const lastKids: PMNode[] = [];
     last.forEach((c) => lastKids.push(c));
+    lastOwnKidsSize = lastKids.reduce((sum, k) => sum + k.nodeSize, 0);
     pastedNodes[pastedNodes.length - 1] = last.copy(
       Fragment.fromArray([...lastKids, ...remainder.map(fit)]),
     );
@@ -890,16 +897,38 @@ function buildContainerSplit(
   const replacement = Fragment.fromArray([originalContainer, ...pastedNodes, ...trailing]);
   let tr = state.tr.replaceWith(containerFrom, containerTo, replacement);
 
-  // Cursor at the end of the FIRST pasted head's text — the F7/setHeading
-  // convention, so the user can immediately edit the heading name.
+  // Cursor placement, per the `pasteCursor` setting.
+  //  'after' (default): the end of the pasted content — like every other
+  //    paste. When the destination's post-cursor remainder was absorbed
+  //    into the last pasted container, "end of pasted" is the boundary
+  //    BEFORE that remainder (content the user never pasted).
+  //  'tag': the end of the FIRST pasted head's text — the F7/setHeading
+  //    convention, so the user can immediately rename the heading.
   const afterOriginal = containerFrom + originalContainer.nodeSize;
-  const firstDoc = pastedNodes[0]!;
-  const head = STRUCTURAL_CONTAINERS.has(firstDoc.type.name) ? firstDoc.firstChild : firstDoc;
-  const cursorPos = STRUCTURAL_CONTAINERS.has(firstDoc.type.name)
-    ? afterOriginal + 2 + (head?.content.size ?? 0) // +1 into container, +1 into head
-    : afterOriginal + 1 + (head?.content.size ?? 0); // +1 into the heading
+  let cursorPos: number;
+  if (settings.get('pasteCursor') === 'tag') {
+    const firstDoc = pastedNodes[0]!;
+    const head = STRUCTURAL_CONTAINERS.has(firstDoc.type.name) ? firstDoc.firstChild : firstDoc;
+    cursorPos = STRUCTURAL_CONTAINERS.has(firstDoc.type.name)
+      ? afterOriginal + 2 + (head?.content.size ?? 0) // +1 into container, +1 into head
+      : afterOriginal + 1 + (head?.content.size ?? 0); // +1 into the heading
+  } else if (lastOwnKidsSize !== null) {
+    const beforeLast = pastedNodes
+      .slice(0, -1)
+      .reduce((sum, n) => sum + n.nodeSize, 0);
+    // +1 enters the last pasted container; stop after its own kids.
+    cursorPos = afterOriginal + beforeLast + 1 + lastOwnKidsSize;
+  } else {
+    cursorPos = afterOriginal + pastedNodes.reduce((sum, n) => sum + n.nodeSize, 0);
+  }
   try {
-    tr = tr.setSelection(TextSelection.create(tr.doc, cursorPos));
+    if (settings.get('pasteCursor') === 'tag') {
+      tr = tr.setSelection(TextSelection.create(tr.doc, cursorPos));
+    } else {
+      // Snap to the nearest valid text position at/before the boundary —
+      // the end of the last pasted textblock.
+      tr = tr.setSelection(Selection.near(tr.doc.resolve(cursorPos), -1));
+    }
   } catch {
     /* schema rejected the position — selection stays where PM left it */
   }

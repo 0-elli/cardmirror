@@ -1156,6 +1156,12 @@ export interface Settings {
    *  nothing recognizable is found, pastes behave exactly as before.
    *  F2 plain paste always overrides. */
   smartPasteConversion: boolean;
+  /** Where the cursor lands after a paste that splits a card around
+   *  pasted structure (a whole card / tag / heading pasted into a card
+   *  body). 'after' (default): the end of the pasted content, like
+   *  every other paste. 'tag': the end of the FIRST pasted heading —
+   *  the F7/setHeading convention, ready to rename the tag. */
+  pasteCursor: 'after' | 'tag';
   /** Which gaps the formatting-gap bridge treats as bridgeable: 'both'
    *  (whitespace and punctuation) or 'whitespace' (whitespace only). Feeds both
    *  the auto-bridge and the manual Fix Formatting Gaps command. */
@@ -1736,6 +1742,7 @@ const DEFAULTS: Settings = {
   headingMode: 'respect',
   condenseOnPaste: false,
   smartPasteConversion: true,
+  pasteCursor: 'after',
   formattingGapClass: 'both',
   autoBridgeFormattingGaps: true,
   clearFormattingOnNamedStyleToggleOff: true,
@@ -1956,6 +1963,7 @@ export interface SettingMeta {
     | 'speechFilenameTemplate'
     | 'saveFormat'
     | 'formattingGapClass'
+    | 'pasteCursor'
     | 'sendDocDestination'
     | 'markedCardsDestination'
     | 'findCategoryOrder'
@@ -3087,6 +3095,17 @@ export const SETTING_METADATA: SettingMeta[] = [
   },
 
   {
+    key: 'pasteCursor',
+    label: 'Cursor after pasting a card',
+    description:
+      'Where the cursor lands after pasting a whole card (or heading) into a card body. "End of the pasted content" (default) matches every other paste. "End of the pasted tag" puts the cursor at the end of the first pasted heading, ready to rename it.',
+    kind: 'pasteCursor',
+    category: 'editing',
+    section: 'Paste',
+    aliases: ['paste cursor', 'cursor position', 'after paste', 'tag cursor'],
+  },
+
+  {
     key: 'headingMode',
     label: 'Condense: heading handling',
     description:
@@ -3754,6 +3773,13 @@ export interface CyclableSetting {
 
 export const CYCLABLE_SETTINGS: readonly CyclableSetting[] = [
   {
+    key: 'pasteCursor',
+    values: [
+      { value: 'after', label: 'End of pasted content' },
+      { value: 'tag', label: 'End of pasted tag' },
+    ],
+  },
+  {
     key: 'headingMode',
     values: [
       { value: 'strict', label: 'Strict' },
@@ -4358,6 +4384,7 @@ function sanitize(s: Settings): Settings {
         ? DEFAULTS.condenseOnPaste
         : !!s.condenseOnPaste,
     smartPasteConversion: s.smartPasteConversion === false ? false : true,
+    pasteCursor: s.pasteCursor === 'tag' ? 'tag' : 'after',
     formattingGapClass: FORMATTING_GAP_CLASSES.includes(
       s.formattingGapClass as FormattingGapClass,
     )
