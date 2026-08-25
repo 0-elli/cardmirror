@@ -7,6 +7,13 @@ see `DETAILED_CHANGELOG.md`.
 
 ## Unreleased
 
+### Fixed
+
+- **Flow sends starting with `=`, `+`, `-`, or `@` no longer fail.** Excel
+  reads those as the start of a formula, so an analytic like "- turns the
+  case" was rejected instead of written. Sent cells are now always written
+  as text.
+
 ### Added
 
 - **Arial Narrow in the font picker.** Available under Microsoft Office

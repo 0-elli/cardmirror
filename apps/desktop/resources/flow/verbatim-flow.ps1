@@ -80,7 +80,16 @@ function Invoke-FlowVerb($req) {
 
       $written = 0
       foreach ($c in $cells) {
-        $xl.ActiveCell.Value2 = [string]$c
+        $v = [string]$c
+        # Excel parses a leading =, +, - or @ as the start of a formula, so
+        # an ordinary analytic like "- turns the case" fails the write
+        # outright. A leading apostrophe marks the value as text and Excel
+        # neither stores nor displays it. Unconditional: flow cells are
+        # always prose, never intentional formulas. (Reported in #39.)
+        if ($v.Length -gt 0 -and '=+-@'.Contains($v.Substring(0, 1))) {
+          $v = "'" + $v
+        }
+        $xl.ActiveCell.Value2 = $v
         $xl.ActiveCell.Offset(1, 0).Select() | Out-Null   # advance down one row
         $written++
       }
