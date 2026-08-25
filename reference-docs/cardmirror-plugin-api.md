@@ -74,6 +74,14 @@ a self-hosting operator curates their own users' allowlist via
 `RELAY_PLUGIN_ALLOWLIST` on their relay. Its default matches the app's
 baked list, so an unconfigured self-hosted relay changes nothing.
 
+Separately from the allowlist, the relay serves a **public plugin
+directory** at `GET /plugin-directory` (since 1.4.0) — the browsable,
+maintainer-curated subset of the allowlist that appears in the app's
+Browse-plugins picker, each entry carrying the name, `description`,
+`author`, and `version` from the repo's latest-release manifest.
+Allowlisted-but-unlisted plugins stay installable by `owner/repo`;
+the directory only controls what is advertised.
+
 Users who understand the trust model can unlock arbitrary-repo installs
 from the developer console with `__plugins('community-on')` (persisted;
 `__plugins('community-off')` reverts, `__plugins('status')` reports).
@@ -83,7 +91,8 @@ the allowlist.
 ### Install flow
 
 1. The user pastes a GitHub URL or an `owner/repo` shorthand into the
-   Plugins settings tab.
+   Plugins settings tab — or (since 1.4.0) picks the plugin from the
+   Browse list, which fills the same role. Both continue identically.
 2. The main process checks the allowlist, fetches the latest GitHub
    release, and downloads the two assets. Each asset must be 5 MiB or
    less.
@@ -158,7 +167,10 @@ export type PluginSettingValue = boolean | string | number;
 export interface PluginSettingDef {
   key: string;
   label: string;
-  type: 'boolean' | 'text' | 'number' | 'select';
+  /** `text` renders a single-line input; `multiline` a full-width
+   *  textarea (for list-shaped values — one entry per line by
+   *  convention). Both hold a plain string value. */
+  type: 'boolean' | 'text' | 'multiline' | 'number' | 'select';
   /** Must match `type`; for `select`, must be one of `options`. */
   default: PluginSettingValue;
   /** Required for `select` (the choices), forbidden otherwise. */
@@ -195,8 +207,12 @@ Rules:
 The optional `settings` array declares user-configurable settings.
 CardMirror renders the controls: an enabled plugin that declared
 settings gets a gear on its row in Settings → Plugins, which opens a
-modal with one control per entry (checkbox, text field, number field,
-or dropdown). Changes apply immediately — there is no save step.
+modal with one control per entry (checkbox, text field, multiline
+textarea, number field, or dropdown). Changes apply immediately —
+there is no save step. The `multiline` type (since 1.4.0) renders a
+full-width textarea for list-shaped values — one entry per line by
+convention; its value is a plain string, and a plugin adopting it
+should set `minAppVersion` to `1.4.0`.
 
 - `key` must match `[a-zA-Z0-9][a-zA-Z0-9_-]*` and be unique within
   the plugin.
