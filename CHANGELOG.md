@@ -24,6 +24,9 @@ see `DETAILED_CHANGELOG.md`.
   your work always has an exit. Previously the save button appeared to
   do nothing at all.
 
+- **Very long toasts wrap instead of running off the screen**, and a
+  toast near the screen edge now stays fully inside the window.
+
 - **Whitespace-only headings no longer squash their navigation row.** A
   heading containing only spaces rendered as a sliver in the nav pane;
   it now gets the same full-height row as a blank heading.

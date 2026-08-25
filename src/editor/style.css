@@ -6766,7 +6766,11 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   user-select: none;
   opacity: 1;
   transition: opacity 200ms;
-  white-space: nowrap;
+  /* Short toasts render one line (auto width up to the cap); long ones
+     wrap instead of running off the screen. `anywhere` so an unbroken
+     token (a URL, a long filename) can still break. */
+  max-width: min(26rem, calc(100vw - 1.5rem));
+  overflow-wrap: anywhere;
 }
 
 .pmd-toast-fade {
