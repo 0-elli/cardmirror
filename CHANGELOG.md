@@ -5,7 +5,7 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## Unreleased
+## 1.4.0 — 2026-08-25
 
 ### Changed
 
@@ -22,7 +22,8 @@ see `DETAILED_CHANGELOG.md`.
   to download before it can be written — CardMirror now says so after
   10 seconds, and a manual save offers Save As… after 30 seconds so
   your work always has an exit. Previously the save button appeared to
-  do nothing at all.
+  do nothing at all. The save button also now shows an amber
+  in-progress state whenever a save is still running.
 
 - **Very long toasts wrap instead of running off the screen**, and a
   toast near the screen edge now stays fully inside the window.

@@ -5,6 +5,116 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 1.4.0 — 2026-08-25
+
+### Added: version history for saved documents
+
+A new snapshot store (`userData/history/{docId}/`) keeps complete
+`.cmir` snapshots per saved document: content-hash dedup (an unchanged
+doc costs zero new bytes), tmp+rename writes, per-doc write chains,
+and three-way pruning — retention age, per-doc byte cap, global byte
+cap — with the invariant that a doc's newest snapshot is never
+size-pruned (a doc bigger than its own cap keeps one version, not
+none). Both save paths (manual and autosave) offer their serialized
+bytes to the store BEFORE the disk write is awaited, so a save whose
+destination folder hangs still leaves a recoverable version in app
+data. Interval-gated per doc (5 min standard / 2 min extended),
+fire-and-forget, never blocks a save. Deliberately NOT a replacement
+for the crash journals (always-on, seconds-fresh, self-clearing,
+covers never-saved drafts) — the journal is the hot copy, history the
+capped browsable trail behind it. The `versionHistory` setting
+defaults to Standard — insurance that is opt-in fails the people it
+exists for — with Extended, Custom (user caps in MB, 0 = uncapped,
+sent as a finite stand-in because the policy crosses IPC and main
+validates isFinite), and Off; a live disk-usage readout and a
+clear-history button sit with the radios. Recover Previous Version,
+with no session active, now lists the focused doc's snapshots
+directly by docId (no history-file picking); the manual envelope
+picker remains as the escape hatch for orphaned session history.
+
+### Fixed: the silent hung save (watchdog + in-flight button state)
+
+Field case (Windows + Dropbox): a save to a cloud-sync online-only
+placeholder whose hydration stalls BLOCKS the write syscall — no
+error, no UI, and every later save queues silently behind it on the
+per-path chain, indistinguishable from a dead Save button. Node
+cannot cancel a blocked fs call, so the fix converts silence into
+feedback: a coalesced warning notice at 10s (phrased as in-progress —
+a slow-but-healthy write may still land), and on manual saves a
+route-style dialog at 30s offering Save As… (the one real exit; the
+abandoned write stays queued, so a recovering folder yields two
+copies, never zero). The dialog closes itself the moment the write
+settles — `promptForRouteChoice` gained an optional AbortSignal
+(abort ≡ cancel) for prompts whose question goes moot while open.
+Rejections propagate unchanged, so EMODIFIED/ENOENT/ELOCKED handling
+is untouched. Alongside it, the save button now pulses amber (the
+pre-reserved `--pmd-c-warning` tokens) from click until the save
+settles, behind a 250ms flicker guard so healthy saves jump straight
+to the ✓ flash; the close-window flows inherit both behaviors because
+they route through the same save flow.
+
+### Added: plugin directory + Browse picker
+
+The relay serves a public plugin directory — the browsable, admin-
+curated SUBSET of the install allowlist — at `/plugin-directory`,
+each entry carrying name/description/author/version read server-side
+from the repo's latest-release `cardmirror-plugin.json` (the same
+asset the installer fetches, so the card shows what installs; cached
+6h, served stale on fetch failure). Main fetches it and filters
+through the effective allowlist so Browse can never offer what
+install would refuse. Settings → Plugins gains a Browse button
+opening a searchable picker; installing from a row runs the exact
+inspect → consent → commit flow as typing the slug — one click saves
+typing, never consent. Hidden in the Lite build (no internet).
+
+### Added: `multiline` plugin setting type
+
+`text` renders single-line, which left list-shaped plugin values
+(keyword lists) homeless — plugins built custom modals and hand-
+rolled the cross-window sync that declared settings get from the host
+for free. `multiline` renders a full-width stacked textarea in the
+plugin settings modal; the value is a plain string, one entry per
+line by convention. Purely additive to the spec (validation, value
+coercion, modal render); a plugin adopting it should set
+`minAppVersion` accordingly.
+
+### Changed: paste cursor lands after the pasted content
+
+Container-splitting pastes (a whole card / tag / heading pasted into
+a card body) put the cursor at the end of the first pasted head — the
+F7/setHeading convention, deliberate but inconsistent with every
+other paste. New enum setting `pasteCursor`: 'after' (new default)
+ends at the pasted content, stopping at the boundary BEFORE the
+absorbed destination remainder (content the user never pasted);
+'tag' keeps the legacy rename-ready convention. One shared builder
+(`buildContainerSplit`) means the change covers all four routes:
+direct structural paste, reparsed-clipboard recovery,
+body-then-structural, and smart-paste conversions.
+
+### Added: Arial Narrow (bundled Liberation Sans Narrow)
+
+`Arial Narrow` joins the Microsoft Office defaults group in the font
+picker, following the established substitute pattern: @font-face
+under the real name, `local()` preferring an installed Arial Narrow,
+falling back to bundled Liberation Sans Narrow — the metric-
+compatible clone, taken from the 1.07.4 TTFs (the 2.x Croscore line
+dropped the Narrow faces) and repackaged as WOFF2 UNMODIFIED, no
+subsetting: the Liberation license is GPLv2 with the font-embedding
+exception, and modification would trigger its rename-the-trademark
+clause. Full text in `fonts/Liberation-License.txt`; the docx export
+writes the literal name so files round-trip into Word.
+
+### Fixed: assorted
+
+Whitespace-only headings rendered squashed nav rows (a space-filled
+text node defeats the `:empty::before` NBSP height fallback while
+still collapsing to zero width — normalize to truly empty at render).
+Verbatim Flow sends now apostrophe-prefix cells starting with
+`=`/`+`/`-`/`@` — Excel parsed those as formulas and rejected
+ordinary analytics outright. Long toasts wrap (width cap +
+`overflow-wrap: anywhere`) and clamp inside the viewport instead of
+running off screen from a cursor near the edge.
+
 ## 1.3.0 — 2026-08-20
 
 ### Added: citeTokens on the insert bridge (styled external cites)
