@@ -6072,9 +6072,11 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 .pmd-plugin-browse-dialog {
   width: min(34rem, 92vw);
 }
-.pmd-plugin-browse-search {
-  /* The dialog is a flex COLUMN, where .pmd-settings-text's 12rem flex
-     basis would become a 12rem HEIGHT. Auto restores a normal input. */
+/* Compound selector on purpose: .pmd-settings-text is declared LATER in
+   this file, so an equal-specificity rule here would lose the cascade
+   and its 12rem flex basis would win — which, in the browse dialog's
+   flex COLUMN, becomes a 12rem HEIGHT. */
+.pmd-settings-text.pmd-plugin-browse-search {
   flex: 0 0 auto;
   width: 100%;
   margin-top: 0.5rem;
