@@ -17,6 +17,13 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Fixed
 
+- **A save that hangs is no longer silent.** When a document's folder
+  stops responding mid-write — typically a cloud-synced file that has
+  to download before it can be written — CardMirror now says so after
+  15 seconds, and a manual save offers Save As… after 45 seconds so
+  your work always has an exit. Previously the save button appeared to
+  do nothing at all.
+
 - **Whitespace-only headings no longer squash their navigation row.** A
   heading containing only spaces rendered as a sliver in the nav pane;
   it now gets the same full-height row as a blank heading.

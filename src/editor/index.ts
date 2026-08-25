@@ -60,6 +60,7 @@ import {
 import { sendViewToStarred } from './pairing/send-to-starred.js';
 import { installExternalConsent } from './external-consent-ui.js';
 import { maybeSnapshotVersion } from './version-history.js';
+import { awaitWithSaveWatchdog } from './save-watchdog.js';
 import { installExternalInsertHost } from './external-insert-host.js';
 import { installPluginRegistry } from './plugin-registry.js';
 import { createPluginApi } from './plugin-api.js';
@@ -7870,7 +7871,16 @@ async function runSaveFlowInner(): Promise<boolean> {
     // leaves a recoverable version in app data. Fire-and-forget.
     maybeSnapshotVersion(docId, bytes);
     try {
-      await getHost().saveExisting(file.handle, bytes);
+      // Watchdog: a write that HANGS (cloud-sync placeholder hydration
+      // stalling — the silent-save field case) warns at 15s and offers
+      // Save As at 45s; real errors propagate to the handling below.
+      if (
+        (await awaitWithSaveWatchdog(getHost().saveExisting(file.handle, bytes), file.filename, {
+          escalate: true,
+        })) === 'saveAs'
+      ) {
+        return runSaveAsFlow();
+      }
     } catch (err) {
       // The file changed on disk since we last read/wrote it — another
       // program, device, or sync service (Dropbox syncing down another
@@ -7881,7 +7891,15 @@ async function runSaveFlowInner(): Promise<boolean> {
       const choice = await promptDiskConflict(file.filename);
       if (choice === 'saveAs') return runSaveAsFlow();
       if (choice !== 'overwrite') return false;
-      await getHost().saveExisting(file.handle, bytes, { force: true });
+      if (
+        (await awaitWithSaveWatchdog(
+          getHost().saveExisting(file.handle, bytes, { force: true }),
+          file.filename,
+          { escalate: true },
+        )) === 'saveAs'
+      ) {
+        return runSaveAsFlow();
+      }
     }
     // Written to its file — no longer a stale-recovery-overwrite candidate.
     clearRecoveredDraftMark(activeUid);
@@ -8175,7 +8193,11 @@ async function runAutosaveAttempt(): Promise<void> {
     );
     // Same pre-write snapshot as the manual save path (see there).
     maybeSnapshotVersion(activeSavedDocId(), bytes);
-    await getHost().saveExisting(file.handle, bytes);
+    // Watchdog without the dialog — never a modal mid-typing; the
+    // 15s warning chip still converts a hung autosave into feedback.
+    await awaitWithSaveWatchdog(getHost().saveExisting(file.handle, bytes), file.filename, {
+      escalate: false,
+    });
     flashSaveSuccess();
     commitClean();
     reportAutosaveSuccess();
