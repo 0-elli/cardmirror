@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   parseRepoRef,
   compareVersions,
@@ -8,6 +8,8 @@ import {
   commitPendingInstall,
   discardPendingInstall,
   parseAllowlistResponse,
+  fetchPluginDirectory,
+  setAllowlistRelayUrlSupplier,
 } from '../../apps/desktop/src/plugin-manager.js';
 
 describe('parseRepoRef', () => {
@@ -131,5 +133,85 @@ describe('checkInstallAllowed with an explicit (server-fetched) list', () => {
     expect(checkInstallAllowed('newauthor/new-plugin', false, server)).toBeNull();
     // Revocation: a baked entry absent from the served list blocks.
     expect(checkInstallAllowed('shreerammodi/ebb', false, server)).toMatch(/curated/);
+  });
+});
+
+describe('fetchPluginDirectory (browse picker data)', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    setAllowlistRelayUrlSupplier(() => '');
+  });
+
+  function stubRelay(directoryBody: unknown, allowRepos: string[] = ['good/one']): void {
+    setAllowlistRelayUrlSupplier(() => 'http://relay.test');
+    globalThis.fetch = (async (url: unknown) => {
+      const u = String(url);
+      const body = u.endsWith('/plugin-allowlist')
+        ? { schema: 1, repos: allowRepos }
+        : directoryBody;
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+  }
+
+  it('returns entries folded to lowercase with sanitized metadata', async () => {
+    stubRelay({
+      schema: 1,
+      plugins: [
+        { repo: 'Good/One', name: '  Neat Plugin ', description: 'Does things.', version: '1.2.0' },
+      ],
+    });
+    const res = await fetchPluginDirectory();
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.plugins).toEqual([
+        {
+          repo: 'good/one',
+          name: 'Neat Plugin',
+          description: 'Does things.',
+          author: undefined,
+          version: '1.2.0',
+        },
+      ]);
+    }
+  });
+
+  it('drops repos the allowlist does not cover — Browse must never offer what install refuses', async () => {
+    stubRelay({
+      schema: 1,
+      plugins: [{ repo: 'good/one' }, { repo: 'unlisted/elsewhere', name: 'Sneaky' }],
+    });
+    const res = await fetchPluginDirectory();
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.plugins.map((p) => p.repo)).toEqual(['good/one']);
+  });
+
+  it('drops malformed rows instead of failing the whole listing', async () => {
+    stubRelay({
+      schema: 1,
+      plugins: [{ repo: 'good/one' }, { repo: 'not a slug' }, 42, null, { name: 'no repo' }],
+    });
+    const res = await fetchPluginDirectory();
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.plugins.map((p) => p.repo)).toEqual(['good/one']);
+  });
+
+  it('reports unreachable and malformed directories as errors', async () => {
+    setAllowlistRelayUrlSupplier(() => 'http://relay.test');
+    globalThis.fetch = (async () => {
+      throw new Error('offline');
+    }) as typeof fetch;
+    const offline = await fetchPluginDirectory();
+    expect(offline.ok).toBe(false);
+
+    stubRelay({ schema: 1, plugins: 'nope' });
+    const malformed = await fetchPluginDirectory();
+    expect(malformed.ok).toBe(false);
+  });
+
+  it('errors without a relay configured', async () => {
+    setAllowlistRelayUrlSupplier(() => '');
+    const res = await fetchPluginDirectory();
+    expect(res.ok).toBe(false);
   });
 });

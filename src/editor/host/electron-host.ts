@@ -190,6 +190,7 @@ interface ElectronAPI {
    *  release main-side and returns consent-dialog facts; commit writes
    *  after consent; discard drops the staged release on decline. */
   pluginInstallInspect?(ref: string): Promise<Record<string, unknown>>;
+  pluginBrowse?(): Promise<Record<string, unknown>>;
   pluginInstallCommit?(token: string): Promise<Record<string, unknown>>;
   pluginInstallDiscard?(token: string): Promise<void>;
   pluginCommunityInstalls?(on: boolean): Promise<void>;
@@ -616,6 +617,11 @@ export class ElectronHost implements Host {
    *  preload that predates the plugin surface. */
   async pluginInstallInspect(ref: string): Promise<Record<string, unknown>> {
     return (await api().pluginInstallInspect?.(ref)) ?? { ok: false, error: 'unsupported' };
+  }
+  async pluginBrowse(): Promise<Record<string, unknown>> {
+    return (
+      (await api().pluginBrowse?.()) ?? { ok: false, error: 'This build has no plugin directory.' }
+    );
   }
   async pluginInstallCommit(token: string): Promise<Record<string, unknown>> {
     return (await api().pluginInstallCommit?.(token)) ?? { ok: false, error: 'unsupported' };

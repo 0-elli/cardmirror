@@ -51,6 +51,7 @@ import {
 } from './doc-writes.js';
 import {
   inspectFromGithub,
+  fetchPluginDirectory,
   commitPendingInstall,
   discardPendingInstall,
   setCommunityInstallsUnlocked,
@@ -797,6 +798,8 @@ ipcMain.handle('host:cardcutter-read', async (_event, explicit: string | null) =
 ipcMain.handle('host:plugin-install-inspect', async (_e, ref: string) =>
   inspectFromGithub(String(ref)),
 );
+// The relay's browsable plugin directory (allowlist-filtered main-side).
+ipcMain.handle('host:plugin-browse', async () => fetchPluginDirectory());
 ipcMain.handle('host:plugin-install-commit', async (_e, token: string) =>
   commitPendingInstall(String(token)),
 );

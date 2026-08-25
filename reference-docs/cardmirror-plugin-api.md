@@ -32,7 +32,7 @@ A plugin is one GitHub repository. Each release attaches two assets:
 | `id` | string | yes | Lowercase. Must match `^[a-z0-9][a-z0-9-]*$`. Cannot be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `comN`, `lptN`). |
 | `name` | string | yes | Display name. |
 | `version` | string | yes | Semver, for example `0.1.0` or `0.2.0-beta.1`. |
-| `description` | string | no | One line for the Plugins tab. |
+| `description` | string | no | One line for the Plugins tab. Also shown on your plugin's card in the Browse-plugins picker when it is listed in the public directory. |
 | `author` | string | no | Shown in the consent prompt. |
 | `apiVersion` | number | yes | Must be `1`. |
 | `minAppVersion` | string | no | Oldest CardMirror version that the plugin supports. |

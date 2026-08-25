@@ -252,6 +252,69 @@ export function setCommunityInstallsUnlocked(on: boolean): void {
   communityInstallsUnlocked = on;
 }
 
+/** One entry of the relay's public plugin directory — the browsable
+ *  subset of the allowlist, with display metadata the relay reads from
+ *  each repo's latest-release manifest (the same file the installer
+ *  fetches, so what the browser shows is what installs). */
+export interface DirectoryEntry {
+  repo: string;
+  name?: string;
+  description?: string;
+  author?: string;
+  version?: string;
+}
+
+const DIRECTORY_MAX_ENTRIES = 200;
+const DIRECTORY_STR_MAX = 400;
+
+function directoryString(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, DIRECTORY_STR_MAX) : undefined;
+}
+
+/**
+ * The relay's browsable plugin directory, filtered through the
+ * effective allowlist — Browse must never offer a repo the install
+ * check would then refuse. No disk cache: browsing is an online act
+ * (installing needs GitHub anyway), so offline it degrades to the
+ * type-a-slug path rather than showing a stale storefront.
+ */
+export async function fetchPluginDirectory(): Promise<
+  { ok: true; plugins: DirectoryEntry[] } | { ok: false; error: string }
+> {
+  const base = relayUrlSupplier?.();
+  if (!base) return { ok: false, error: 'No relay is configured.' };
+  let raw: unknown;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ALLOWLIST_FETCH_TIMEOUT_MS);
+    const res = await fetch(`${base}/plugin-directory`, { signal: ctl.signal }).finally(() =>
+      clearTimeout(timer),
+    );
+    if (!res.ok) return { ok: false, error: `The plugin directory answered ${res.status}.` };
+    raw = await res.json();
+  } catch {
+    return { ok: false, error: 'Could not reach the plugin directory. Are you online?' };
+  }
+  const list = (raw as { plugins?: unknown })?.plugins;
+  if (!Array.isArray(list)) return { ok: false, error: 'The plugin directory looked malformed.' };
+  const allowlist = await currentAllowlist();
+  const plugins: DirectoryEntry[] = [];
+  for (const item of list.slice(0, DIRECTORY_MAX_ENTRIES)) {
+    const o = item as Record<string, unknown>;
+    const repo = typeof o?.repo === 'string' ? o.repo.trim().toLowerCase() : '';
+    if (!OWNER_REPO_RE.test(repo)) continue;
+    if (!communityInstallsUnlocked && !allowlist.has(repo)) continue;
+    plugins.push({
+      repo,
+      name: directoryString(o.name),
+      description: directoryString(o.description),
+      author: directoryString(o.author),
+      version: directoryString(o.version),
+    });
+  }
+  return { ok: true, plugins };
+}
+
 /** The allowlist verdict for a parsed ref — null to allow, message to block. */
 export function checkInstallAllowed(
   ownerRepo: string,

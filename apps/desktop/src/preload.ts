@@ -984,6 +984,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  where it self-registers via window.__registerCardMirrorPlugin. */
   pluginInstallInspect: (ref: string): Promise<Record<string, unknown>> =>
     ipcRenderer.invoke('host:plugin-install-inspect', ref),
+  pluginBrowse: (): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke('host:plugin-browse'),
   pluginInstallCommit: (token: string): Promise<Record<string, unknown>> =>
     ipcRenderer.invoke('host:plugin-install-commit', token),
   pluginInstallDiscard: (token: string): Promise<void> =>

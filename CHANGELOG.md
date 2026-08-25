@@ -16,6 +16,12 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Added
 
+- **Browse plugins.** Settings → Plugins gains a Browse button next to
+  the install field: a searchable list of curated plugins — name,
+  description, and author from each plugin's own release — with
+  one-click install. Installing from the list runs the same consent
+  dialog as installing by name.
+
 - **Arial Narrow in the font picker.** Available under Microsoft Office
   defaults for both the document and interface font. Machines without
   Arial Narrow installed render with the bundled metric-compatible
