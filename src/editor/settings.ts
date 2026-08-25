@@ -1167,7 +1167,12 @@ export interface Settings {
    *  every save trigger; 'extended' keeps more, longer; 'off' keeps
    *  none. Browsable via Recover Previous Version. Never a substitute
    *  for the crash journals — see version-history.ts. */
-  versionHistory: 'off' | 'standard' | 'extended';
+  versionHistory: 'off' | 'standard' | 'extended' | 'custom';
+  /** Custom-tier caps (MB), used only when versionHistory = 'custom'.
+   *  Rendered inside the Keep-version-history editor, not as their
+   *  own settings rows. */
+  versionHistoryDocCapMb: number;
+  versionHistoryTotalCapMb: number;
   /** Which gaps the formatting-gap bridge treats as bridgeable: 'both'
    *  (whitespace and punctuation) or 'whitespace' (whitespace only). Feeds both
    *  the auto-bridge and the manual Fix Formatting Gaps command. */
@@ -1750,6 +1755,8 @@ const DEFAULTS: Settings = {
   smartPasteConversion: true,
   pasteCursor: 'after',
   versionHistory: 'standard',
+  versionHistoryDocCapMb: 200,
+  versionHistoryTotalCapMb: 2048,
   formattingGapClass: 'both',
   autoBridgeFormattingGaps: true,
   clearFormattingOnNamedStyleToggleOff: true,
@@ -3117,7 +3124,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     key: 'versionHistory',
     label: 'Keep version history',
     description:
-      'Keeps periodic snapshots of saved documents on this computer, browsable with Recover Previous Version — protection against a bad edit, a broken file, or a sync service eating a save. Standard keeps up to 30 days within modest disk caps. Extended keeps up to 90 days with much larger caps and can use several gigabytes of disk space. Snapshots live in app data, never next to your files.',
+      'Keeps periodic snapshots of saved documents on this computer, browsable with Recover Previous Version. Standard keeps up to 30 days within modest disk caps. Extended keeps up to 90 days with much larger caps and can use several gigabytes of disk space. Custom lets you set the per-document and total disk caps yourself.',
     kind: 'versionHistory',
     category: 'general',
     section: 'Backup',
@@ -4405,9 +4412,19 @@ function sanitize(s: Settings): Settings {
     smartPasteConversion: s.smartPasteConversion === false ? false : true,
     pasteCursor: s.pasteCursor === 'tag' ? 'tag' : 'after',
     versionHistory:
-      s.versionHistory === 'off' || s.versionHistory === 'extended'
+      s.versionHistory === 'off' ||
+      s.versionHistory === 'extended' ||
+      s.versionHistory === 'custom'
         ? s.versionHistory
         : 'standard',
+    versionHistoryDocCapMb:
+      typeof s.versionHistoryDocCapMb === 'number' && Number.isFinite(s.versionHistoryDocCapMb)
+        ? Math.min(1_048_576, Math.max(1, Math.round(s.versionHistoryDocCapMb)))
+        : DEFAULTS.versionHistoryDocCapMb,
+    versionHistoryTotalCapMb:
+      typeof s.versionHistoryTotalCapMb === 'number' && Number.isFinite(s.versionHistoryTotalCapMb)
+        ? Math.min(1_048_576, Math.max(1, Math.round(s.versionHistoryTotalCapMb)))
+        : DEFAULTS.versionHistoryTotalCapMb,
     formattingGapClass: FORMATTING_GAP_CLASSES.includes(
       s.formattingGapClass as FormattingGapClass,
     )

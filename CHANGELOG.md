@@ -37,8 +37,8 @@ see `DETAILED_CHANGELOG.md`.
   next to your files), are capped and expire automatically, and the
   new **Keep version history** setting (Settings → General) chooses
   Standard (default, up to 30 days within 500 MB), Extended (up to 90
-  days within 2 GB), or Off — with a live disk-usage readout and a
-  clear-history button.
+  days within 2 GB), Custom (caps of your choosing), or Off — with a
+  live disk-usage readout and a clear-history button.
 
 - **Plugins can declare multiline settings.** A new `multiline` setting
   type renders a full-width textarea in the plugin's settings modal —

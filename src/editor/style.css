@@ -6072,6 +6072,19 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 .pmd-plugin-browse-dialog {
   width: min(34rem, 92vw);
 }
+/* Custom-tier cap fields inside the Keep-version-history editor. */
+.pmd-version-history-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.4rem 0 0 1.4rem;
+}
+.pmd-version-history-cap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
 /* Compound selector on purpose: .pmd-settings-text is declared LATER in
    this file, so an equal-specificity rule here would lose the cascade
    and its 12rem flex basis would win — which, in the browse dialog's

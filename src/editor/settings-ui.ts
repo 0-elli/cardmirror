@@ -5981,11 +5981,19 @@ function buildMobileLayoutEditor(): HTMLElement {
 function buildVersionHistoryEditor(): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'pmd-heading-mode-editor';
-  const options: { value: 'off' | 'standard' | 'extended'; label: string }[] = [
+  const options: { value: 'off' | 'standard' | 'extended' | 'custom'; label: string }[] = [
     { value: 'off', label: 'Off \u2014 keep no version snapshots' },
     { value: 'standard', label: 'Standard \u2014 up to 30 days, capped at 500 MB (default)' },
     { value: 'extended', label: 'Extended \u2014 up to 90 days, capped at 2 GB' },
+    { value: 'custom', label: 'Custom \u2014 up to 90 days, caps of your choosing' },
   ];
+  // Custom's cap fields — built up front so the radio handler can
+  // toggle them; wired after the loop.
+  const customRow = document.createElement('div');
+  customRow.className = 'pmd-version-history-custom';
+  const syncCustomVisibility = (): void => {
+    customRow.style.display = settings.get('versionHistory') === 'custom' ? '' : 'none';
+  };
   const groupName = `pmd-version-history-${Math.random().toString(36).slice(2, 8)}`;
   for (const o of options) {
     const row = document.createElement('label');
@@ -5997,6 +6005,7 @@ function buildVersionHistoryEditor(): HTMLElement {
     input.checked = o.value === settings.get('versionHistory');
     input.addEventListener('change', () => {
       if (input.checked) settings.set('versionHistory', o.value);
+      syncCustomVisibility();
     });
     row.appendChild(input);
     const text = document.createElement('span');
@@ -6005,6 +6014,41 @@ function buildVersionHistoryEditor(): HTMLElement {
     row.appendChild(text);
     wrap.appendChild(row);
   }
+
+  const capField = (
+    label: string,
+    key: 'versionHistoryDocCapMb' | 'versionHistoryTotalCapMb',
+  ): HTMLElement => {
+    const holder = document.createElement('label');
+    holder.className = 'pmd-version-history-cap';
+    const caption = document.createElement('span');
+    caption.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'pmd-settings-text';
+    input.min = '1';
+    input.style.width = '6.5rem';
+    input.style.flex = '0 0 auto';
+    input.value = String(settings.get(key));
+    input.addEventListener('change', () => {
+      const n = Number.parseFloat(input.value);
+      if (Number.isFinite(n) && n >= 1) {
+        settings.set(key, Math.round(n));
+      }
+      // Snap the field to the stored (clamped) value either way.
+      input.value = String(settings.get(key));
+    });
+    const unit = document.createElement('span');
+    unit.textContent = 'MB';
+    holder.append(caption, input, unit);
+    return holder;
+  };
+  customRow.append(
+    capField('Per-document cap', 'versionHistoryDocCapMb'),
+    capField('Total cap', 'versionHistoryTotalCapMb'),
+  );
+  syncCustomVisibility();
+  wrap.appendChild(customRow);
 
   // Usage readout + clear — the snapshots live in app data where the
   // user can't see them, so the disk cost must be visible HERE.

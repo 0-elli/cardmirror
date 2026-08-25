@@ -27,7 +27,7 @@ import { isTopOverlay, popOverlay, pushOverlay } from './overlay-stack.js';
 import { settings } from './settings.js';
 import { showToast } from './toast.js';
 
-export type VersionHistoryTier = 'off' | 'standard' | 'extended';
+export type VersionHistoryTier = 'off' | 'standard' | 'extended' | 'custom';
 
 interface TierPolicy {
   minIntervalMs: number;
@@ -39,7 +39,7 @@ interface TierPolicy {
 /** The tiers the setting exposes. Standard is the capped default the
  *  settings copy describes; Extended is the opt-in "more history, more
  *  disk" mode whose description carries the disk warning. */
-const TIER_POLICIES: Record<Exclude<VersionHistoryTier, 'off'>, TierPolicy> = {
+const TIER_POLICIES: Record<'standard' | 'extended', TierPolicy> = {
   standard: {
     minIntervalMs: 5 * 60 * 1000,
     retentionDays: 30,
@@ -65,13 +65,30 @@ const lastAttemptAt = new Map<string, number>();
  * failed snapshot must not scare anyone out of a successful save —
  * the journal still guards the crash case).
  */
+/** The active tier's effective policy, or null when history is off.
+ *  Custom takes Extended's cadence and retention and the user's own
+ *  byte caps (the caps are the knob people actually asked for; a
+ *  custom retention would multiply the matrix for little gain). */
+export function currentHistoryPolicy(): TierPolicy | null {
+  const tier = settings.get('versionHistory');
+  if (tier === 'off') return null;
+  if (tier === 'custom') {
+    return {
+      minIntervalMs: TIER_POLICIES.extended.minIntervalMs,
+      retentionDays: TIER_POLICIES.extended.retentionDays,
+      maxDocBytes: settings.get('versionHistoryDocCapMb') * 1024 * 1024,
+      maxTotalBytes: settings.get('versionHistoryTotalCapMb') * 1024 * 1024,
+    };
+  }
+  return TIER_POLICIES[tier];
+}
+
 export function maybeSnapshotVersion(docId: string | null | undefined, bytes: Uint8Array): void {
   if (!docId) return; // never-saved drafts are the journal's job
-  const tier = settings.get('versionHistory');
-  if (tier === 'off') return;
   const host = getElectronHost();
   if (!host) return; // web: no app-data store
-  const policy = TIER_POLICIES[tier];
+  const policy = currentHistoryPolicy();
+  if (!policy) return;
   const now = Date.now();
   const last = lastAttemptAt.get(docId) ?? 0;
   if (now - last < policy.minIntervalMs) return;
