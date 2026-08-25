@@ -27,6 +27,7 @@ function registerDemo(): void {
       { key: 'endpoint', label: 'Endpoint', type: 'text', default: 'a' },
       { key: 'batch', label: 'Batch', type: 'number', default: 5 },
       { key: 'mode', label: 'Mode', type: 'select', default: 'fast', options: ['fast', 'careful'] },
+      { key: 'list', label: 'List', type: 'multiline', default: 'one\ntwo' },
     ],
   });
   expect(res.ok).toBe(true);
@@ -52,7 +53,7 @@ describe('plugin settings modal', () => {
     const d = dialog()!;
     expect(d.querySelector('.pmd-route-header')!.textContent).toBe('Demo settings');
     const rows = [...d.querySelectorAll('.pmd-plugin-settings-row')];
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(5);
     expect(rows[0]!.querySelector('input[type=checkbox]')).toBeTruthy();
     expect(rows[0]!.querySelector('.pmd-settings-row-desc')!.textContent).toBe('Send as you go');
     expect(rows[1]!.querySelector('input[type=text]')).toBeTruthy();
@@ -123,5 +124,24 @@ describe('plugin settings modal', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(dialog()).toBeNull();
     expect(isAnyOverlayOpen()).toBe(false);
+  });
+});
+
+describe('multiline control', () => {
+  it('renders a stacked textarea holding the newline value and saves edits', () => {
+    openPluginSettingsModal('demo', 'Demo');
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '.pmd-plugin-settings-multiline',
+    );
+    expect(textarea).not.toBeNull();
+    expect(textarea!.value).toBe('one\ntwo');
+    expect(
+      textarea!.closest('.pmd-plugin-settings-label')!.classList.contains(
+        'pmd-plugin-settings-label-stacked',
+      ),
+    ).toBe(true);
+    textarea!.value = 'one\ntwo\nthree';
+    textarea!.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(getPluginSettingValue('demo', 'list')).toBe('one\ntwo\nthree');
   });
 });

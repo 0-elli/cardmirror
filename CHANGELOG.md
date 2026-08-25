@@ -16,6 +16,10 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Added
 
+- **Plugins can declare multiline settings.** A new `multiline` setting
+  type renders a full-width textarea in the plugin's settings modal —
+  for list-shaped values like keyword lists, one entry per line.
+
 - **Browse plugins.** Settings → Plugins gains a Browse button next to
   the install field: a searchable list of curated plugins — name,
   description, and author from each plugin's own release — with

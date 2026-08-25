@@ -184,6 +184,8 @@ describe('plugin settings declarations', () => {
       [{ key: 'a', label: 'A', type: 'boolean', default: 'yes' }],
       [{ key: 'a', label: 'A', type: 'number', default: Number.NaN }],
       [{ key: 'a', label: 'A', type: 'text', default: 7 }],
+      [{ key: 'a', label: 'A', type: 'multiline', default: 7 }],
+      [{ key: 'a', label: 'A', type: 'multiline', default: 'x', options: ['a'] }],
       [{ key: 'a', label: 'A', type: 'boolean', default: true, description: 42 }],
       [null],
     ];
@@ -212,5 +214,23 @@ describe('plugin settings declarations', () => {
     const res = registerPluginDefinition(def({ settings: [{ key: 'a', label: 'New', type: 'boolean', default: true }] }));
     expect(res.ok).toBe(true);
     expect(pluginSettingsDefs('demo')[0]!.label).toBe('New');
+  });
+});
+
+describe('multiline settings', () => {
+  it('accepts a multiline declaration with a string default', () => {
+    installPluginRegistry(() => stubApi);
+    const ok = registerPluginDefinition(
+      def({
+        settings: [
+          { key: 'keywords', label: 'Keywords', type: 'multiline', default: 'a\nb\nc' },
+          { key: 'phrases', label: 'Phrases', type: 'multiline', default: '' },
+        ],
+      }),
+    );
+    expect(ok.ok).toBe(true);
+    const defs = pluginSettingsDefs('demo');
+    expect(defs.map((d) => d.type)).toEqual(['multiline', 'multiline']);
+    expect(defs[0]!.default).toBe('a\nb\nc');
   });
 });

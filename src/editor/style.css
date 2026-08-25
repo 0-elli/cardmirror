@@ -6138,6 +6138,20 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 .pmd-plugin-settings-label .pmd-settings-toggle {
   margin-top: 0;
 }
+.pmd-plugin-settings-label-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+.pmd-settings-text.pmd-plugin-settings-multiline {
+  /* flex-basis would misbehave in the stacked column, same trap as the
+     browse search box; a textarea sizes by rows + width. */
+  flex: 0 0 auto;
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.4;
+}
 .pmd-plugin-settings-row .pmd-settings-row-desc {
   margin: 0.3rem 0 0;
 }
