@@ -7783,13 +7783,45 @@ export async function runSaveMarkedCardsFlow(): Promise<boolean> {
  * support, etc.). Returns the same boolean as Save-As.
  */
 /** Hardened Save entry — same never-reject contract as runSaveAsFlow. */
+// ─── In-flight save state ──────────────────────────────────────────
+// Amber pulse on the save button from click until the save settles —
+// the click acknowledgement the hung-write field case exposed as
+// missing (nothing visible happened for the watchdog's first 10s).
+// Applied only after a short delay so fast saves go straight to the
+// ✓ flash without an amber flicker. Depth-counted: the close flows
+// also route through runSaveFlow.
+const SAVING_STATE_DELAY_MS = 250;
+let savingDepth = 0;
+let savingStateTimer: number | null = null;
+function setSaveInProgress(on: boolean): void {
+  if (on) {
+    savingDepth++;
+    if (savingDepth > 1) return;
+    savingStateTimer = window.setTimeout(() => {
+      savingStateTimer = null;
+      exportBtn.classList.add('pmd-save-saving');
+    }, SAVING_STATE_DELAY_MS);
+  } else {
+    savingDepth = Math.max(0, savingDepth - 1);
+    if (savingDepth > 0) return;
+    if (savingStateTimer !== null) {
+      window.clearTimeout(savingStateTimer);
+      savingStateTimer = null;
+    }
+    exportBtn.classList.remove('pmd-save-saving');
+  }
+}
+
 export async function runSaveFlow(): Promise<boolean> {
+  setSaveInProgress(true);
   try {
     return await runSaveFlowInner();
   } catch (err) {
     console.error('Save flow crashed:', err);
     void alertDialog(`Save failed unexpectedly: ${err instanceof Error ? err.message : err}`);
     return false;
+  } finally {
+    setSaveInProgress(false);
   }
 }
 
@@ -8008,6 +8040,9 @@ function flashSavedGlyph(el: HTMLElement): void {
     flashOrigHtml.set(el, el.innerHTML);
   }
   el.textContent = '✓';
+  // A success flash supersedes the in-flight amber immediately (the
+  // depth-counted clear runs a beat later, in runSaveFlow's finally).
+  el.classList.remove('pmd-save-saving');
   el.classList.add('pmd-save-flash');
   const id = window.setTimeout(() => {
     flashTimers.delete(el);

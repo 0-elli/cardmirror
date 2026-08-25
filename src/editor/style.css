@@ -1377,6 +1377,19 @@ html:has(body.pmd-speech-banner-visible) {
   20%  { transform: scale(1.18); background: var(--pmd-c-success-soft); }
   100% { transform: scale(1);    background: transparent; }
 }
+/* In-flight save: amber pulse on the save button from click until the
+   bytes land (or fail). Applied only when a save outlives the flicker
+   guard, so fast saves jump straight to the ✓ flash. */
+@keyframes pmd-save-saving-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+#ribbon .ribbon-button-stack button.pmd-save-saving {
+  color: var(--pmd-c-warning);
+  background: var(--pmd-c-warning-soft);
+  animation: pmd-save-saving-pulse 1.2s ease-in-out infinite;
+}
+
 #ribbon .ribbon-button-stack button.pmd-save-flash {
   color: var(--pmd-c-success);
   animation: pmd-save-flash-pulse 1400ms ease-out;
