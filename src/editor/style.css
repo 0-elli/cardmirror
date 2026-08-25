@@ -6073,6 +6073,9 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   width: min(34rem, 92vw);
 }
 .pmd-plugin-browse-search {
+  /* The dialog is a flex COLUMN, where .pmd-settings-text's 12rem flex
+     basis would become a 12rem HEIGHT. Auto restores a normal input. */
+  flex: 0 0 auto;
   width: 100%;
   margin-top: 0.5rem;
 }
