@@ -1168,9 +1168,9 @@ export interface Settings {
    *  none. Browsable via Recover Previous Version. Never a substitute
    *  for the crash journals — see version-history.ts. */
   versionHistory: 'off' | 'standard' | 'extended' | 'custom';
-  /** Custom-tier caps (MB), used only when versionHistory = 'custom'.
-   *  Rendered inside the Keep-version-history editor, not as their
-   *  own settings rows. */
+  /** Custom-tier caps (MB), used only when versionHistory = 'custom';
+   *  0 = uncapped. Rendered inside the Keep-version-history editor,
+   *  not as their own settings rows. */
   versionHistoryDocCapMb: number;
   versionHistoryTotalCapMb: number;
   /** Which gaps the formatting-gap bridge treats as bridgeable: 'both'
@@ -4419,11 +4419,11 @@ function sanitize(s: Settings): Settings {
         : 'standard',
     versionHistoryDocCapMb:
       typeof s.versionHistoryDocCapMb === 'number' && Number.isFinite(s.versionHistoryDocCapMb)
-        ? Math.min(1_048_576, Math.max(1, Math.round(s.versionHistoryDocCapMb)))
+        ? Math.min(1_048_576, Math.max(0, Math.round(s.versionHistoryDocCapMb)))
         : DEFAULTS.versionHistoryDocCapMb,
     versionHistoryTotalCapMb:
       typeof s.versionHistoryTotalCapMb === 'number' && Number.isFinite(s.versionHistoryTotalCapMb)
-        ? Math.min(1_048_576, Math.max(1, Math.round(s.versionHistoryTotalCapMb)))
+        ? Math.min(1_048_576, Math.max(0, Math.round(s.versionHistoryTotalCapMb)))
         : DEFAULTS.versionHistoryTotalCapMb,
     formattingGapClass: FORMATTING_GAP_CLASSES.includes(
       s.formattingGapClass as FormattingGapClass,

@@ -6026,13 +6026,13 @@ function buildVersionHistoryEditor(): HTMLElement {
     const input = document.createElement('input');
     input.type = 'number';
     input.className = 'pmd-settings-text';
-    input.min = '1';
+    input.min = '0';
     input.style.width = '6.5rem';
     input.style.flex = '0 0 auto';
     input.value = String(settings.get(key));
     input.addEventListener('change', () => {
       const n = Number.parseFloat(input.value);
-      if (Number.isFinite(n) && n >= 1) {
+      if (Number.isFinite(n) && n >= 0) {
         settings.set(key, Math.round(n));
       }
       // Snap the field to the stored (clamped) value either way.
@@ -6043,9 +6043,14 @@ function buildVersionHistoryEditor(): HTMLElement {
     holder.append(caption, input, unit);
     return holder;
   };
+  const zeroHint = document.createElement('span');
+  zeroHint.className = 'pmd-settings-row-desc';
+  zeroHint.style.margin = '0';
+  zeroHint.textContent = '0 = no cap';
   customRow.append(
     capField('Per-document cap', 'versionHistoryDocCapMb'),
     capField('Total cap', 'versionHistoryTotalCapMb'),
+    zeroHint,
   );
   syncCustomVisibility();
   wrap.appendChild(customRow);

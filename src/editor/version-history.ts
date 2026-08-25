@@ -73,11 +73,15 @@ export function currentHistoryPolicy(): TierPolicy | null {
   const tier = settings.get('versionHistory');
   if (tier === 'off') return null;
   if (tier === 'custom') {
+    // 0 = uncapped. A huge FINITE stand-in rather than Infinity: the
+    // policy crosses IPC and main validates Number.isFinite on it.
+    const mb = (v: number): number =>
+      v === 0 ? Number.MAX_SAFE_INTEGER : v * 1024 * 1024;
     return {
       minIntervalMs: TIER_POLICIES.extended.minIntervalMs,
       retentionDays: TIER_POLICIES.extended.retentionDays,
-      maxDocBytes: settings.get('versionHistoryDocCapMb') * 1024 * 1024,
-      maxTotalBytes: settings.get('versionHistoryTotalCapMb') * 1024 * 1024,
+      maxDocBytes: mb(settings.get('versionHistoryDocCapMb')),
+      maxTotalBytes: mb(settings.get('versionHistoryTotalCapMb')),
     };
   }
   return TIER_POLICIES[tier];
