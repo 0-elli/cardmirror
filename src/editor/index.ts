@@ -7872,8 +7872,8 @@ async function runSaveFlowInner(): Promise<boolean> {
     maybeSnapshotVersion(docId, bytes);
     try {
       // Watchdog: a write that HANGS (cloud-sync placeholder hydration
-      // stalling — the silent-save field case) warns at 15s and offers
-      // Save As at 45s; real errors propagate to the handling below.
+      // stalling — the silent-save field case) warns at 10s and offers
+      // Save As at 30s; real errors propagate to the handling below.
       if (
         (await awaitWithSaveWatchdog(getHost().saveExisting(file.handle, bytes), file.filename, {
           escalate: true,
@@ -8194,7 +8194,7 @@ async function runAutosaveAttempt(): Promise<void> {
     // Same pre-write snapshot as the manual save path (see there).
     maybeSnapshotVersion(activeSavedDocId(), bytes);
     // Watchdog without the dialog — never a modal mid-typing; the
-    // 15s warning chip still converts a hung autosave into feedback.
+    // 10s warning chip still converts a hung autosave into feedback.
     await awaitWithSaveWatchdog(getHost().saveExisting(file.handle, bytes), file.filename, {
       escalate: false,
     });

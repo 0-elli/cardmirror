@@ -20,7 +20,7 @@ see `DETAILED_CHANGELOG.md`.
 - **A save that hangs is no longer silent.** When a document's folder
   stops responding mid-write — typically a cloud-synced file that has
   to download before it can be written — CardMirror now says so after
-  15 seconds, and a manual save offers Save As… after 45 seconds so
+  10 seconds, and a manual save offers Save As… after 30 seconds so
   your work always has an exit. Previously the save button appeared to
   do nothing at all.
 

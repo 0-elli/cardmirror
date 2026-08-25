@@ -29,8 +29,8 @@
 import { postNotice } from './status-notices.js';
 import { promptForRouteChoice } from './text-prompt.js';
 
-export const SAVE_WARN_MS = 15_000;
-export const SAVE_DIALOG_MS = 45_000;
+export const SAVE_WARN_MS = 10_000;
+export const SAVE_DIALOG_MS = 30_000;
 
 export interface SaveWatchdogOptions {
   /** Offer the Save As escalation dialog (manual saves; autosave
@@ -98,7 +98,7 @@ export function awaitWithSaveWatchdog(
               {
                 value: 'saveAs',
                 label: 'Save As…',
-                description: 'Save a copy somewhere responsive now (Desktop always works).',
+                description: 'Save a copy somewhere responsive now — a local folder, such as the Desktop, is best.',
               },
               {
                 value: 'wait',
