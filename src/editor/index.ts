@@ -59,6 +59,7 @@ import {
   setReceivedInsertNavHook, insertMostRecentReceived, RECEIVE_NEEDS_DOC_MESSAGE } from './pairing/inbox-insert.js';
 import { sendViewToStarred } from './pairing/send-to-starred.js';
 import { installExternalConsent } from './external-consent-ui.js';
+import { maybeSnapshotVersion } from './version-history.js';
 import { installExternalInsertHost } from './external-insert-host.js';
 import { installPluginRegistry } from './plugin-registry.js';
 import { createPluginApi } from './plugin-api.js';
@@ -2110,7 +2111,12 @@ const ribbonContext: RibbonContext = {
         uid: null,
       });
     };
-    void loadCollabUi().then((m) => m.recoverPreviousVersionFlow(openRecovered));
+    void loadCollabUi().then((m) =>
+      m.recoverPreviousVersionFlow(openRecovered, {
+        docId: activeSavedDocId() ?? null,
+        docTitle: activeFile().filename ?? 'Untitled',
+      }),
+    );
   },
   cycleTheme: () => {
     // light → dark → system → light. The settings subscription
@@ -7859,6 +7865,10 @@ async function runSaveFlowInner(): Promise<boolean> {
       },
       docId,
     );
+    // Version-history snapshot BEFORE the disk write is awaited: a save
+    // whose destination folder hangs (cloud-sync placeholder) still
+    // leaves a recoverable version in app data. Fire-and-forget.
+    maybeSnapshotVersion(docId, bytes);
     try {
       await getHost().saveExisting(file.handle, bytes);
     } catch (err) {
@@ -8163,6 +8173,8 @@ async function runAutosaveAttempt(): Promise<void> {
       // has one; without this the autosave write would strip it).
       activeSavedDocId(),
     );
+    // Same pre-write snapshot as the manual save path (see there).
+    maybeSnapshotVersion(activeSavedDocId(), bytes);
     await getHost().saveExisting(file.handle, bytes);
     flashSaveSuccess();
     commitClean();

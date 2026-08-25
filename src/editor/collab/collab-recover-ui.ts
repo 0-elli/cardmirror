@@ -47,6 +47,7 @@ export type OpenRecoveredDoc = (name: string, bytes: Uint8Array) => Promise<void
 export async function openRecoverPreviousVersion(
   session: CollabSession | null,
   openDoc?: OpenRecoveredDoc,
+  solo?: { docId: string | null; docTitle: string },
 ): Promise<void> {
   const host = getElectronHost();
   if (!host) {
@@ -64,6 +65,14 @@ export async function openRecoverPreviousVersion(
       return;
     }
   } else {
+    // No session: the focused doc's version-history snapshots are the
+    // normal source — straight into the version list, no file picking.
+    // The manual envelope picker stays as the escape hatch for orphaned
+    // session history (doc closed, file copied from another machine).
+    if (solo?.docId) {
+      const vh = await import('../version-history.js');
+      if (await vh.openVersionSnapshotDialog(solo.docId, solo.docTitle, openDoc)) return;
+    }
     envelope = await pickEnvelopeFromFile();
     if (!envelope) return; // cancelled, or already toasted
   }

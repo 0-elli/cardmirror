@@ -953,6 +953,10 @@ class SettingsModal {
       row.appendChild(text);
       row.appendChild(buildPasteCursorEditor());
       return row;
+    } else if (meta.kind === 'versionHistory') {
+      row.appendChild(text);
+      row.appendChild(buildVersionHistoryEditor());
+      return row;
     } else if (meta.kind === 'condenseWarningDelimiter') {
       row.appendChild(text);
       row.appendChild(buildCondenseWarningDelimiterEditor());
@@ -5970,6 +5974,78 @@ function buildMobileLayoutEditor(): HTMLElement {
     labelText.textContent = o.label;
     row.appendChild(labelText);
     wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+function buildVersionHistoryEditor(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pmd-heading-mode-editor';
+  const options: { value: 'off' | 'standard' | 'extended'; label: string }[] = [
+    { value: 'off', label: 'Off \u2014 keep no version snapshots' },
+    { value: 'standard', label: 'Standard \u2014 up to 30 days, capped at 500 MB (default)' },
+    { value: 'extended', label: 'Extended \u2014 up to 90 days, capped at 2 GB' },
+  ];
+  const groupName = `pmd-version-history-${Math.random().toString(36).slice(2, 8)}`;
+  for (const o of options) {
+    const row = document.createElement('label');
+    row.className = 'pmd-heading-mode-row';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = groupName;
+    input.value = o.value;
+    input.checked = o.value === settings.get('versionHistory');
+    input.addEventListener('change', () => {
+      if (input.checked) settings.set('versionHistory', o.value);
+    });
+    row.appendChild(input);
+    const text = document.createElement('span');
+    text.className = 'pmd-heading-mode-row-label';
+    text.textContent = o.label;
+    row.appendChild(text);
+    wrap.appendChild(row);
+  }
+
+  // Usage readout + clear — the snapshots live in app data where the
+  // user can't see them, so the disk cost must be visible HERE.
+  const host = getElectronHost();
+  if (host) {
+    const usageRow = document.createElement('div');
+    usageRow.className = 'pmd-settings-row-desc';
+    usageRow.textContent = 'Checking disk usage\u2026';
+    const refreshUsage = (): void => {
+      void host
+        .historyUsage()
+        .then(({ totalBytes, snapshots }) => {
+          const mb = totalBytes / (1024 * 1024);
+          usageRow.textContent =
+            snapshots === 0
+              ? 'No version snapshots stored yet.'
+              : `Currently using ${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB across ${snapshots} snapshot${snapshots === 1 ? '' : 's'}.`;
+        })
+        .catch(() => {
+          usageRow.textContent = '';
+        });
+    };
+    refreshUsage();
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'pmd-install-info-btn';
+    clearBtn.textContent = 'Clear version history';
+    clearBtn.addEventListener('click', () => {
+      void (async () => {
+        if (!(await confirmDialog('Delete every stored version snapshot? Documents themselves are not affected.'))) {
+          return;
+        }
+        await host.historyClear();
+        showToast('Version history cleared.');
+        refreshUsage();
+      })();
+    });
+    const actions = document.createElement('div');
+    actions.style.marginTop = '0.4rem';
+    actions.appendChild(clearBtn);
+    wrap.append(usageRow, actions);
   }
   return wrap;
 }

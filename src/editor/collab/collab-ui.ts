@@ -1364,7 +1364,8 @@ export function activeSession(): CollabSession | null {
  *  recover module needs no import back into this one. */
 export async function recoverPreviousVersionFlow(
   openDoc?: import('./collab-recover-ui.js').OpenRecoveredDoc,
+  solo?: { docId: string | null; docTitle: string },
 ): Promise<void> {
   const m = await import('./collab-recover-ui.js');
-  await m.openRecoverPreviousVersion(activeSession(), openDoc);
+  await m.openRecoverPreviousVersion(activeSession(), openDoc, solo);
 }

@@ -362,6 +362,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  byte-conversion shims are needed at this boundary. */
   writeHistory: (envelope: unknown) => ipcRenderer.invoke('host:write-history', envelope),
   listHistory: () => ipcRenderer.invoke('host:list-history'),
+  historySnapshot: (
+    docId: string,
+    bytes: Uint8Array,
+    policy: { retentionDays: number; maxDocBytes: number; maxTotalBytes: number },
+  ): Promise<{ stored: boolean; reason?: string }> =>
+    ipcRenderer.invoke('host:history-snapshot', docId, bytes, policy),
+  historyList: (
+    docId: string,
+  ): Promise<Array<{ id: string; ts: number; size: number }>> =>
+    ipcRenderer.invoke('host:history-list', docId),
+  historyRead: (docId: string, id: string): Promise<Uint8Array | null> =>
+    ipcRenderer.invoke('host:history-read', docId, id),
+  historyUsage: (): Promise<{ totalBytes: number; snapshots: number }> =>
+    ipcRenderer.invoke('host:history-usage'),
+  historyClear: (): Promise<void> => ipcRenderer.invoke('host:history-clear'),
   readHistory: (target: { roomId?: string; path?: string }) =>
     ipcRenderer.invoke('host:read-history', target),
   deleteHistory: (roomId: string) => ipcRenderer.invoke('host:delete-history', roomId),

@@ -28,6 +28,18 @@ see `DETAILED_CHANGELOG.md`.
 
 ### Added
 
+- **Version history for saved documents.** CardMirror now keeps
+  periodic snapshots of every saved document on your computer —
+  protection against a bad edit, a corrupted file, or a sync service
+  eating a save. Browse and restore them with **Recover Previous
+  Version**: with no session active, the command now lists the current
+  document's saved versions directly. Snapshots live in app data (never
+  next to your files), are capped and expire automatically, and the
+  new **Keep version history** setting (Settings → General) chooses
+  Standard (default, up to 30 days within 500 MB), Extended (up to 90
+  days within 2 GB), or Off — with a live disk-usage readout and a
+  clear-history button.
+
 - **Plugins can declare multiline settings.** A new `multiline` setting
   type renders a full-width textarea in the plugin's settings modal —
   for list-shaped values like keyword lists, one entry per line.

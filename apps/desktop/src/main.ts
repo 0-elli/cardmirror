@@ -43,6 +43,14 @@ import {
 import { installMacAccessibilitySuppression } from './ax-suppress-mac.js';
 import { resolveCmirCandidates, isWithin } from './transclusion-path.js';
 import {
+  storeHistorySnapshot,
+  listHistorySnapshots,
+  readHistorySnapshot,
+  historyUsage,
+  clearHistory,
+  type HistoryPolicy,
+} from './doc-history.js';
+import {
   saveExistingDoc,
   saveNewDoc,
   DocExistsError,
@@ -1635,6 +1643,56 @@ ipcMain.handle('host:write-history', (_event, entry: HistoryWriteIpc) => {
   });
   return next;
 });
+
+// ─── Version-history snapshots (userData/history/{docId}/) ─────────
+// The solo-document counterpart of session history: complete .cmir
+// snapshots per doc, written by the renderer's version-history module
+// on save triggers, policy (tier caps) supplied per call. Storage
+// mechanics — dedup, retention, per-doc + global caps — live in
+// doc-history.ts.
+
+function versionHistoryRoot(): string {
+  return path.join(app.getPath('userData'), 'history');
+}
+
+function validHistoryPolicy(raw: unknown): HistoryPolicy | null {
+  const p = raw as Partial<HistoryPolicy> | null;
+  if (!p || typeof p !== 'object') return null;
+  const num = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+  const retentionDays = num(p.retentionDays);
+  const maxDocBytes = num(p.maxDocBytes);
+  const maxTotalBytes = num(p.maxTotalBytes);
+  if (retentionDays === null || maxDocBytes === null || maxTotalBytes === null) return null;
+  return { retentionDays, maxDocBytes, maxTotalBytes };
+}
+
+ipcMain.handle(
+  'host:history-snapshot',
+  async (_event, docId: string, bytes: unknown, policy: unknown) => {
+    if (typeof docId !== 'string' || !docId) return { stored: false, reason: 'bad-doc-id' };
+    const pol = validHistoryPolicy(policy);
+    if (!pol) return { stored: false, reason: 'bad-doc-id' };
+    const buf = bytesToBuffer(bytes);
+    if (buf.length === 0) return { stored: false, reason: 'bad-doc-id' };
+    return storeHistorySnapshot(versionHistoryRoot(), docId, buf, pol);
+  },
+);
+
+ipcMain.handle('host:history-list', async (_event, docId: string) => {
+  if (typeof docId !== 'string' || !docId) return [];
+  return listHistorySnapshots(versionHistoryRoot(), docId);
+});
+
+ipcMain.handle('host:history-read', async (_event, docId: string, id: string) => {
+  if (typeof docId !== 'string' || typeof id !== 'string') return null;
+  const buf = await readHistorySnapshot(versionHistoryRoot(), docId, id);
+  return buf ? new Uint8Array(buf) : null;
+});
+
+ipcMain.handle('host:history-usage', async () => historyUsage(versionHistoryRoot()));
+
+ipcMain.handle('host:history-clear', async () => clearHistory(versionHistoryRoot()));
 
 ipcMain.handle('host:list-history', async () => {
   let entries: string[];

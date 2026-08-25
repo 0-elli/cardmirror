@@ -263,6 +263,15 @@ interface ElectronAPI {
   writeHistory(envelope: HistoryEnvelopeWrite): Promise<void>;
   listHistory(): Promise<HistoryMeta[]>;
   readHistory(target: { roomId?: string; path?: string }): Promise<HistoryEnvelope | null>;
+  historySnapshot?(
+    docId: string,
+    bytes: Uint8Array,
+    policy: { retentionDays: number; maxDocBytes: number; maxTotalBytes: number },
+  ): Promise<{ stored: boolean; reason?: string }>;
+  historyList?(docId: string): Promise<Array<{ id: string; ts: number; size: number }>>;
+  historyRead?(docId: string, id: string): Promise<Uint8Array | null>;
+  historyUsage?(): Promise<{ totalBytes: number; snapshots: number }>;
+  historyClear?(): Promise<void>;
   deleteHistory(roomId: string): Promise<void>;
   pickHistoryFile(): Promise<string | null>;
   readLearnStore(): Promise<string | null>;
@@ -880,6 +889,28 @@ export class ElectronHost implements Host {
 
   async readHistory(target: { roomId?: string; path?: string }): Promise<HistoryEnvelope | null> {
     return api().readHistory(target);
+  }
+
+  /** Version-history snapshot store (userData/history). All no-op
+   *  gracefully on an older preload without the surface. */
+  async historySnapshot(
+    docId: string,
+    bytes: Uint8Array,
+    policy: { retentionDays: number; maxDocBytes: number; maxTotalBytes: number },
+  ): Promise<{ stored: boolean; reason?: string }> {
+    return (await api().historySnapshot?.(docId, bytes, policy)) ?? { stored: false };
+  }
+  async historyList(docId: string): Promise<Array<{ id: string; ts: number; size: number }>> {
+    return (await api().historyList?.(docId)) ?? [];
+  }
+  async historyRead(docId: string, id: string): Promise<Uint8Array | null> {
+    return (await api().historyRead?.(docId, id)) ?? null;
+  }
+  async historyUsage(): Promise<{ totalBytes: number; snapshots: number }> {
+    return (await api().historyUsage?.()) ?? { totalBytes: 0, snapshots: 0 };
+  }
+  async historyClear(): Promise<void> {
+    await api().historyClear?.();
   }
 
   async deleteHistory(roomId: string): Promise<void> {

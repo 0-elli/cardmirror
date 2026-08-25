@@ -1162,6 +1162,12 @@ export interface Settings {
    *  every other paste. 'tag': the end of the FIRST pasted heading —
    *  the F7/setHeading convention, ready to rename the tag. */
   pasteCursor: 'after' | 'tag';
+  /** Version-history snapshots for saved documents (userData/history):
+   *  'standard' (default) keeps capped periodic .cmir snapshots on
+   *  every save trigger; 'extended' keeps more, longer; 'off' keeps
+   *  none. Browsable via Recover Previous Version. Never a substitute
+   *  for the crash journals — see version-history.ts. */
+  versionHistory: 'off' | 'standard' | 'extended';
   /** Which gaps the formatting-gap bridge treats as bridgeable: 'both'
    *  (whitespace and punctuation) or 'whitespace' (whitespace only). Feeds both
    *  the auto-bridge and the manual Fix Formatting Gaps command. */
@@ -1743,6 +1749,7 @@ const DEFAULTS: Settings = {
   condenseOnPaste: false,
   smartPasteConversion: true,
   pasteCursor: 'after',
+  versionHistory: 'standard',
   formattingGapClass: 'both',
   autoBridgeFormattingGaps: true,
   clearFormattingOnNamedStyleToggleOff: true,
@@ -1964,6 +1971,7 @@ export interface SettingMeta {
     | 'saveFormat'
     | 'formattingGapClass'
     | 'pasteCursor'
+    | 'versionHistory'
     | 'sendDocDestination'
     | 'markedCardsDestination'
     | 'findCategoryOrder'
@@ -3103,6 +3111,17 @@ export const SETTING_METADATA: SettingMeta[] = [
     category: 'editing',
     section: 'Paste',
     aliases: ['paste cursor', 'cursor position', 'after paste', 'tag cursor'],
+  },
+
+  {
+    key: 'versionHistory',
+    label: 'Keep version history',
+    description:
+      'Keeps periodic snapshots of saved documents on this computer, browsable with Recover Previous Version — protection against a bad edit, a broken file, or a sync service eating a save. Standard keeps up to 30 days within modest disk caps. Extended keeps up to 90 days with much larger caps and can use several gigabytes of disk space. Snapshots live in app data, never next to your files.',
+    kind: 'versionHistory',
+    category: 'general',
+    section: 'Backup',
+    aliases: ['version history', 'snapshots', 'backup versions', 'recover version', 'history'],
   },
 
   {
@@ -4385,6 +4404,10 @@ function sanitize(s: Settings): Settings {
         : !!s.condenseOnPaste,
     smartPasteConversion: s.smartPasteConversion === false ? false : true,
     pasteCursor: s.pasteCursor === 'tag' ? 'tag' : 'after',
+    versionHistory:
+      s.versionHistory === 'off' || s.versionHistory === 'extended'
+        ? s.versionHistory
+        : 'standard',
     formattingGapClass: FORMATTING_GAP_CLASSES.includes(
       s.formattingGapClass as FormattingGapClass,
     )
