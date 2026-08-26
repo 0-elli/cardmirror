@@ -71,6 +71,11 @@ interface InsertPayload {
   /** Session-scoped doc target (a uid from GET /docs). Absent = the
    *  legacy path: focused/last-focused window, active pane. */
   target?: unknown;
+  /** Rich payload (schema-2+, additive): HTML the renderer parses
+   *  through the document schema. Optional both directions — an older
+   *  CardMirror ignores it and renders `text`; a sender that omits it
+   *  behaves exactly as before. */
+  html?: unknown;
 }
 
 interface RendererAck {
@@ -258,6 +263,16 @@ function citeTokensOf(payload: InsertPayload): string[] | null {
   return tokens.length > 0 ? tokens : null;
 }
 
+/** Sanitized html of an insert payload: a non-empty string within the
+ *  renderer's parse cap (mirrored there), else null. */
+const INSERT_HTML_MAX_BYTES = 2 * 1024 * 1024;
+function htmlOf(payload: InsertPayload): string | null {
+  const raw = payload.html;
+  return typeof raw === 'string' && raw.length > 0 && raw.length <= INSERT_HTML_MAX_BYTES
+    ? raw
+    : null;
+}
+
 /** The target uid of an insert payload, or null for the legacy
  *  focused-window path. Opaque session-scoped token from /docs. */
 function targetUidOf(payload: InsertPayload): string | null {
@@ -295,6 +310,7 @@ function dispatchToRenderer(payload: InsertPayload, win: BrowserWindow | null): 
       omitted: payload.omitted === true,
       ...(targetUidOf(payload) ? { target: targetUidOf(payload) } : {}),
       ...(citeTokensOf(payload) ? { citeTokens: citeTokensOf(payload) } : {}),
+      ...(htmlOf(payload) ? { html: htmlOf(payload) } : {}),
     });
   });
 }

@@ -5,6 +5,16 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- **External apps can insert fully formatted content.** The local
+  insert bridge accepts an optional rich payload alongside the plain
+  text: content arrives with structure, highlighting, and cite
+  formatting intact, and whole cards land at the correct outline
+  position. Plain-text senders and older versions are unaffected.
+
 ## 1.4.0 — 2026-08-25
 
 ### Changed

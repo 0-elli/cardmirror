@@ -609,6 +609,27 @@ Heading roles never insert at a raw caret — they snap to the nearest
 outline slot a drag-and-drop would use (so a mid-card cursor can't
 split the card) — and a heading role outranks `newParagraph`.
 
+**Rich payloads** (since 1.5.0, additive): the body may carry an
+optional `"html": "<...>"` field (2 MiB max) alongside `text`. A
+rich-aware CardMirror parses it through the document schema in an
+inert DOM — only schema-valid content survives, so scripts and
+unknown markup are simply dropped — and inserts the result with full
+fidelity: CardMirror-native HTML (the app's own serialization format,
+which is what a copy from CardMirror produces) round-trips structure,
+highlight colors, and cite/underline marks exactly. Whole cards and
+headings snap to the nearest valid outline slot like the heading
+roles; purely inline content follows `newParagraph`. **`text` remains
+required** — it is the fallback rendered by an older CardMirror
+(which ignores `html`) and by a rich-aware one when the html parses
+to nothing, so always send a faithful plain-text version. When `html`
+is used, `role` and `citeTokens` are ignored: the markup carries its
+own structure and marks.
+
+**Cite emphasis** (since 1.3.0, additive): a role-`cite` text insert
+may include `"citeTokens": ["Smith", "24"]` — verbatim substrings of
+the first line styled with the cite mark on arrival. Ignored by older
+CardMirrors and when `html` is used.
+
 **Targeting.** Two modes, the caller's choice per request:
 
 - **Doc-targeted** (since 0.1.0-beta.23): include

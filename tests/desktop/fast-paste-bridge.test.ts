@@ -190,6 +190,49 @@ describe('fast-paste-bridge', () => {
     expect(r.json).toEqual({ ok: true, inserted: true, docTitle: 'mydoc.cmir' });
   });
 
+  it('POST /insert forwards a valid html payload to the renderer', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST',
+      path: '/insert',
+      port: ep.port,
+      token: ep.token,
+      body: {
+        text: 'fallback text',
+        role: 'card',
+        newParagraph: true,
+        html: '<p>rich <strong>content</strong></p>',
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const sent = sentToRenderer[0]!;
+    // Both travel: html for a rich-aware renderer, text as the fallback
+    // an older renderer (or unusable html) renders.
+    expect(sent.payload).toMatchObject({
+      text: 'fallback text',
+      html: '<p>rich <strong>content</strong></p>',
+    });
+    fireRendererAck({ requestId: sent.payload.requestId, ok: true });
+    await inserted;
+  });
+
+  it('POST /insert drops an off-shape or oversized html field (payload still delivers)', async () => {
+    const ep = bridge.getRunningEndpoint()!;
+    const inserted = fetchJson({
+      method: 'POST',
+      path: '/insert',
+      port: ep.port,
+      token: ep.token,
+      body: { text: 'plain', newParagraph: true, html: 12345 },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const sent = sentToRenderer[0]!;
+    expect(sent.payload.text).toBe('plain');
+    expect('html' in sent.payload).toBe(false);
+    fireRendererAck({ requestId: sent.payload.requestId, ok: true });
+    await inserted;
+  });
+
   it('POST /insert: no-target-doc ack → 200 ok:false', async () => {
     const ep = bridge.getRunningEndpoint()!;
     const inserted = fetchJson({
