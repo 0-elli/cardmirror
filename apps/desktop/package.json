@@ -65,15 +65,13 @@
       {
         "from": "resources/flow",
         "to": "flow"
+      },
+      {
+        "from": "build/docx.ico",
+        "to": "docx.ico"
       }
     ],
     "fileAssociations": [
-      {
-        "ext": "docx",
-        "name": "Word Document",
-        "description": "Microsoft Word document",
-        "role": "Editor"
-      },
       {
         "ext": "cmir",
         "name": "CardMirror Document",

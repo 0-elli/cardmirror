@@ -7,6 +7,17 @@ see `DETAILED_CHANGELOG.md`.
 
 ## Unreleased
 
+### Fixed
+
+- **Installing CardMirror no longer removes Word's "New → Microsoft
+  Word Document" right-click menu entry on Windows.** The installer
+  claimed the .docx file type's default handler, which hid Word's
+  New-menu entry and could leave the .docx association dangling after
+  an uninstall. CardMirror now registers only as an "Open with" choice
+  for .docx — Word keeps its default and its New menu — and installing
+  this version automatically repairs machines the old installers
+  affected.
+
 ### Added
 
 - **External apps can insert fully formatted content.** The local
