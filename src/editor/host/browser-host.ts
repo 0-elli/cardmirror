@@ -296,7 +296,15 @@ export class BrowserHost implements Host {
     // `ensureWritable`.
     const file = await handle.getFile();
     const buf = await file.arrayBuffer();
-    return { name: handle.name ?? file.name, bytes: new Uint8Array(buf), handle };
+    return {
+      name: handle.name ?? file.name,
+      bytes: new Uint8Array(buf),
+      handle,
+      // A browser File's size is the real on-disk size (the OS hydrates
+      // cloud placeholders before handing them over), so 0 here means
+      // genuinely empty — open as a blank doc (see editor/empty-open.ts).
+      ...(buf.byteLength === 0 ? { emptyOnDisk: true } : {}),
+    };
   }
 
   private openOnce(opts: OpenFileOptions): Promise<OpenedFile | null> {
@@ -344,6 +352,9 @@ export class BrowserHost implements Host {
           resolve({
             name: file.name,
             bytes: new Uint8Array(buf),
+            // Same reasoning as the picker path: a 0-byte read of a
+            // real browser File is genuinely empty, not a placeholder.
+            ...(buf.byteLength === 0 ? { emptyOnDisk: true } : {}),
           });
         } catch (err) {
           reject(err);

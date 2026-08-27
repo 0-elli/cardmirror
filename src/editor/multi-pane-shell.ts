@@ -73,6 +73,7 @@ import {
   recoveredDraftJournalSavedAt,
 } from './journal-staleness.js';
 import { makeBlankDoc } from './blank-doc.js';
+import { opensAsBlank, blankDocumentBytes } from './empty-open.js';
 import { homeScreen } from './home-screen.js';
 import { captureCleanToken } from './save-clean-token.js';
 import { scheduleIdle, cancelIdle, type IdleHandle } from './idle-scheduler.js';
@@ -2639,6 +2640,17 @@ class MultiPaneShell {
     // shows, so we don't pester the user with a slot prompt for a
     // doc they already have open.
     const format = formatFromFilename(opened.name) ?? 'docx';
+    // Genuinely-empty file (stat size 0): load as a blank document —
+    // same substitution the single-pane funnel does in resolveOpenedFile
+    // (the slot-Open button reaches here without passing through it).
+    if (opensAsBlank(opened)) {
+      opened = {
+        ...opened,
+        bytes: await blankDocumentBytes(format, makeBlankDoc(), {
+          defaultFont: settings.get('bodyFont'),
+        }),
+      };
+    }
     // Password-protected .docx (a compound file, not a zip) → prompt +
     // decrypt to real .docx bytes before parsing; passes through
     // otherwise. Cancel aborts silently; an unsupported scheme shows

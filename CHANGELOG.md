@@ -17,6 +17,12 @@ see `DETAILED_CHANGELOG.md`.
   for .docx — Word keeps its default and its New menu — and installing
   this version automatically repairs machines the old installers
   affected.
+- **Genuinely empty files now open as blank documents.** A zero-byte
+  file — like the one Explorer's "New → Microsoft Word Document"
+  creates — opens as a blank document bound to that file, the same way
+  Word treats it, instead of showing "This file is empty or hasn't
+  finished downloading." Cloud-synced files that haven't finished
+  downloading still get the downloading message as before.
 
 ### Added
 

@@ -190,6 +190,10 @@ interface InitialDocPayload {
   handle: string | null;
   format: 'cmir' | 'docx' | null;
   uid: string | null;
+  /** True when the file was GENUINELY 0 bytes on disk (stat size 0 — see
+   *  isEmptyOnDisk); the renderer opens it as a blank document. Only the
+   *  OS-open path sets this; renderer-spawned payloads omit it. */
+  emptyOnDisk?: boolean;
   /** New Speech Document flow: spawned window self-marks the new
    *  doc as the speech doc after mounting. Optional / absent for
    *  normal Open + New spawns. */
@@ -313,6 +317,24 @@ async function readDocumentBytes(filePath: string): Promise<Buffer> {
   return bytes;
 }
 
+/** True when the file is GENUINELY zero bytes on disk — a stat size of 0,
+ *  as Explorer's "New > Microsoft Word Document" (Office's ShellNew
+ *  template is 0 bytes by design) or `touch` creates. The renderer opens
+ *  such a file as a blank document, like Word does. A cloud placeholder
+ *  that hasn't downloaded is the OPPOSITE shape — it stats at the file's
+ *  REAL size while reading short (the Cloud Files API requires the size
+ *  in placeholder metadata; macOS dataless files keep true st_size) — so
+ *  it stays false here and keeps the "hasn't finished downloading"
+ *  error. Computed per open, next to the read it describes. */
+async function isEmptyOnDisk(filePath: string, bytes: Buffer): Promise<boolean> {
+  if (bytes.length !== 0) return false;
+  try {
+    return (await fs.stat(filePath)).size === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Open a file the OS handed us (macOS `open-file`, Windows / Linux
  *  argv at launch or second-instance — e.g. "Open with… CardMirror").
  *  Multi-pane reuses an open window and routes the file through its
@@ -348,6 +370,7 @@ async function openExternalFile(filePath: string): Promise<void> {
       handle: filePath,
       format,
       uid: null,
+      emptyOnDisk: await isEmptyOnDisk(filePath, buf),
     });
   } catch (err) {
     console.warn('Failed to open external file:', filePath, err);
@@ -763,6 +786,7 @@ ipcMain.handle('host:open-file', async (event, opts: { filters?: FileFilter[] })
     name: path.basename(filePath),
     bytes: new Uint8Array(bytes),
     handle: filePath,
+    emptyOnDisk: await isEmptyOnDisk(filePath, bytes),
   };
 });
 
@@ -884,6 +908,7 @@ ipcMain.handle('host:read-file-at-path', async (_event, filePath: string) => {
       bytes: new Uint8Array(bytes),
       handle: filePath,
       format,
+      emptyOnDisk: await isEmptyOnDisk(filePath, bytes),
     };
   } catch {
     return null;

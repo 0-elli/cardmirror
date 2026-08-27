@@ -275,6 +275,7 @@ import {
   autosaveBlockedForRecoveredDraft,
 } from './journal-staleness.js';
 import { makeBlankDoc } from './blank-doc.js';
+import { opensAsBlank, blankDocumentBytes } from './empty-open.js';
 import { indentParagraph, outdentParagraph } from './indent-keymap.js';
 import {
   registerRibbonTooltip,
@@ -6203,11 +6204,12 @@ const OPEN_FILE_FILTERS = [
  *  (so it mounts dirty and prompts before closing). Non-journal files pass
  *  through with their format inferred from the extension. Returns `'corrupt'`
  *  for an unreadable journal envelope. */
-function resolveOpenedFile(
+async function resolveOpenedFile(
   opened: OpenedFile,
-):
+): Promise<
   | { name: string; bytes: Uint8Array; handle: unknown; format: 'cmir' | 'docx'; recovered: boolean }
-  | 'corrupt' {
+  | 'corrupt'
+> {
   if (opened.name.toLowerCase().endsWith('.cmir-journal')) {
     try {
       const env = JSON.parse(new TextDecoder().decode(opened.bytes)) as {
@@ -6237,14 +6239,27 @@ function resolveOpenedFile(
       return 'corrupt';
     }
   }
+  const format = formatFromFilename(opened.name) ?? 'docx';
+  // A GENUINELY empty file — stat size 0, e.g. Explorer's "New >
+  // Microsoft Word Document" — opens as a blank document bound to its
+  // path, like Word does: substitute canonical blank bytes here so every
+  // downstream open path (parse, mount, multi-pane routing, spawn-window)
+  // works unmodified. Cloud placeholders never take this branch (the host
+  // only flags stat-0 files; a not-yet-downloaded placeholder stats at
+  // its real size and keeps the "hasn't finished downloading" error).
+  const bytes = opensAsBlank(opened)
+    ? await blankDocumentBytes(format, makeBlankNewDoc(), {
+        defaultFont: settings.get('bodyFont'),
+      })
+    : opened.bytes;
   return {
     name: opened.name,
-    bytes: opened.bytes,
+    bytes,
     // Keep the handle as-is: an Electron path string OR a web FileSystemFile-
     // Handle object (so Save can write in place). Only string paths reach the
     // path-keyed stores downstream (they guard with `typeof === 'string'`).
     handle: opened.handle ?? null,
-    format: formatFromFilename(opened.name) ?? 'docx',
+    format,
     recovered: false,
   };
 }
@@ -6284,7 +6299,7 @@ async function runOpenFlow(): Promise<void> {
 async function routeOpenedFile(opened: OpenedFile): Promise<void> {
   // Decode a .cmir-journal into its wrapped doc (recovered, unsaved); a plain
   // .cmir/.docx passes through unchanged.
-  const src = resolveOpenedFile(opened);
+  const src = await resolveOpenedFile(opened);
   if (src === 'corrupt') {
     void alertDialog('That .cmir-journal file is corrupt or could not be read.');
     return;
@@ -6805,7 +6820,7 @@ async function pickAndLoadInPlace(): Promise<boolean> {
     return false;
   }
   if (!opened) return false;
-  const src = resolveOpenedFile(opened);
+  const src = await resolveOpenedFile(opened);
   if (src === 'corrupt') {
     void alertDialog('That .cmir-journal file is corrupt or could not be read.');
     return false;
@@ -6855,7 +6870,12 @@ async function openFileByPath(path: string, name: string): Promise<void> {
     showToast(`Couldn't open "${name}" — file moved or deleted.`);
     return;
   }
-  await routeOpenedFile({ name: file.name, bytes: file.bytes, handle: file.handle });
+  await routeOpenedFile({
+    name: file.name,
+    bytes: file.bytes,
+    handle: file.handle,
+    ...(file.emptyOnDisk === true ? { emptyOnDisk: true } : {}),
+  });
 }
 
 /** Resolve `descriptor` against the active view's doc and select +
@@ -6968,6 +6988,7 @@ async function showFlashcardSource(
     format,
     uid: null,
     focusAnchor: req.descriptor,
+    ...(file.emptyOnDisk === true ? { emptyOnDisk: true } : {}),
   });
 }
 setShowInContextHandler((req, closeSession) => void showFlashcardSource(req, closeSession));
@@ -7074,6 +7095,7 @@ async function routeInitialDocIntoWorkspace(): Promise<boolean> {
     name: payload.filename,
     bytes: payload.bytes,
     handle: payload.handle ?? null,
+    ...(payload.emptyOnDisk === true ? { emptyOnDisk: true } : {}),
   });
   return true;
 }
@@ -7083,11 +7105,22 @@ async function routeInitialDocIntoWorkspace(): Promise<boolean> {
 async function openRecentInPlace(recent: RecentFile): Promise<void> {
   const electron = getElectronHost();
   if (!electron || recent.handle == null) return;
-  const file = await electron.readFileAtPath(recent.handle);
+  let file = await electron.readFileAtPath(recent.handle);
   if (!file) {
     showToast(`Couldn't open "${recent.filename}" — file moved or deleted.`);
     removeRecent(recent.handle);
     return;
+  }
+  // Genuinely-empty file (stat size 0): open blank instead of erroring —
+  // same substitution resolveOpenedFile does for the Open-dialog path;
+  // this path bypasses it, so substitute once here for all three exits.
+  if (opensAsBlank(file)) {
+    file = {
+      ...file,
+      bytes: await blankDocumentBytes(file.format, makeBlankNewDoc(), {
+        defaultFont: settings.get('bodyFont'),
+      }),
+    };
   }
   const { takenByOther } = await electron.openPathCheck(file.handle);
   if (takenByOther) {
@@ -9414,6 +9447,19 @@ async function mountFromSpawnPayload(
   payload: Awaited<ReturnType<ReturnType<typeof getHost>['getInitialDoc']>>,
 ): Promise<void> {
   if (!payload) return;
+  // Genuinely-empty file (stat size 0 — main's OS-open path flags it):
+  // mount as a blank document instead of erroring in parseNative. Same
+  // substitution as resolveOpenedFile, which this path bypasses.
+  if (opensAsBlank({ name: payload.filename, bytes: payload.bytes, emptyOnDisk: payload.emptyOnDisk })) {
+    payload = {
+      ...payload,
+      bytes: await blankDocumentBytes(
+        payload.format ?? formatFromFilename(payload.filename) ?? 'docx',
+        makeBlankNewDoc(),
+        { defaultFont: settings.get('bodyFont') },
+      ),
+    };
+  }
   // Initial-doc / file-association opens land here without passing
   // through routeOpenedFile, so a password-protected file must be
   // handled at this parse point too.

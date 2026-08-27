@@ -171,6 +171,8 @@ interface ElectronAPI {
     name: string;
     bytes: Uint8Array;
     handle: string;
+    /** Optional so an older main without the stat-0 flag is tolerated. */
+    emptyOnDisk?: boolean;
   } | null>;
   /** Verbatim Flow bridge (Windows COM → Excel). Optional so an older
    *  preload tolerates its absence. */
@@ -209,6 +211,8 @@ interface ElectronAPI {
     bytes: Uint8Array;
     handle: string;
     format: 'cmir' | 'docx';
+    /** Optional so an older main without the stat-0 flag is tolerated. */
+    emptyOnDisk?: boolean;
   } | null>;
   statFile(filePath: string): Promise<{ mtimeMs: number; size: number } | null>;
   readCmirFile(
@@ -689,6 +693,7 @@ export class ElectronHost implements Host {
       name: result.name,
       bytes: result.bytes instanceof Uint8Array ? result.bytes : new Uint8Array(result.bytes),
       handle: result.handle,
+      ...(result.emptyOnDisk === true ? { emptyOnDisk: true } : {}),
     };
   }
 
@@ -723,6 +728,7 @@ export class ElectronHost implements Host {
     bytes: Uint8Array;
     handle: string;
     format: 'cmir' | 'docx';
+    emptyOnDisk?: boolean;
   } | null> {
     const result = await api().readFileAtPath(filePath);
     if (!result) return null;
@@ -731,6 +737,7 @@ export class ElectronHost implements Host {
       bytes: result.bytes instanceof Uint8Array ? result.bytes : new Uint8Array(result.bytes),
       handle: result.handle,
       format: result.format,
+      ...(result.emptyOnDisk === true ? { emptyOnDisk: true } : {}),
     };
   }
 

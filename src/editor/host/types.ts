@@ -46,6 +46,13 @@ export interface OpenedFile {
    *  a persistent reference — browsers without the File System
    *  Access API, for example. */
   handle?: unknown;
+  /** True when the file is GENUINELY zero bytes on disk (stat / File
+   *  size 0 — e.g. Explorer's "New > Microsoft Word Document" ShellNew
+   *  file, or `touch`). Such a file opens as a blank document bound to
+   *  its path, like Word does. Deliberately NOT set for a short read of
+   *  a cloud placeholder — those stat at the file's real size, and keep
+   *  the "hasn't finished downloading" error. See editor/empty-open.ts. */
+  emptyOnDisk?: boolean;
 }
 
 /** Result of a successful `Host.saveAs` — confirmation that the
@@ -311,6 +318,10 @@ export interface SpawnWindowPayload {
   bytes: Uint8Array;
   handle: string | null;
   format: 'cmir' | 'docx' | null;
+  /** True when the file was genuinely 0 bytes on disk — set by main's
+   *  OS-open path only; the receiving window opens it as a blank doc
+   *  (see OpenedFile.emptyOnDisk). Renderer-spawned payloads omit it. */
+  emptyOnDisk?: boolean;
   /** Pre-existing doc uid (when the doc is being moved between
    *  windows or recovered from a journal). Null for fresh docs. */
   uid: string | null;
