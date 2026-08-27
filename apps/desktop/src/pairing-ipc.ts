@@ -306,6 +306,31 @@ async function connectAccount(connectCode: string, confirmEvict: boolean): Promi
   return outcome;
 }
 
+/** Best-effort server-side seat release for a user-initiated unlink.
+ *  The entitlement (even one expired within the relay's 30-day renewal
+ *  grace) proves this machine owns the seat — a bare routing code must
+ *  never release one. Failures are logged and swallowed: the seat then
+ *  stays held until an evict, which is all Disconnect ever did before
+ *  this existed. */
+async function releaseSeat(entitlement: string): Promise<void> {
+  try {
+    const res = await fetch(`${relayUrl()}/disconnect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${entitlement}`,
+        [RELAY_CLIENT_VERSION_HEADER]: app.getVersion(),
+      },
+      body: JSON.stringify({ routingCode: ks().ownRoutingId() }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) console.log('[pairing] seat released server-side');
+    else console.warn(`[pairing] seat release refused (${res.status}); seat stays until evicted`);
+  } catch (err) {
+    console.warn('[pairing] seat release failed (seat stays until evicted):', err);
+  }
+}
+
 /** Renew the entitlement when it is inside its final 24h (or already
  *  expired). Code-less renewal — the relay refreshes active bindings
  *  freely; a 409 here means this machine's seat was taken. */
@@ -756,10 +781,17 @@ export function registerPairingIpc(): void {
   ipcMain.handle('host:pairing-disconnect-account', async () => {
     await ensureEntitlementLoaded();
     if (entitlementState !== null || membershipLapsed) {
+      const entitlement = entitlementState?.entitlement ?? '';
       entitlementState = null;
       membershipLapsed = false;
       await persistEntitlement();
       broadcastEntitlement();
+      // Release the seat server-side AFTER the local wipe (so a quick
+      // re-connect can't be clobbered by a slow release) and best-effort:
+      // offline / an older relay just leaves the seat held until an
+      // evict — exactly the pre-release behavior (field report
+      // 2026-08-27: unlinked machines kept holding seats).
+      if (entitlement) void releaseSeat(entitlement);
     }
     return accountStatus();
   });

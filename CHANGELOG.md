@@ -17,6 +17,16 @@ see `DETAILED_CHANGELOG.md`.
   for .docx — Word keeps its default and its New menu — and installing
   this version automatically repairs machines the old installers
   affected.
+- **Unlinking your Debate Decoded account now frees that machine's
+  seat immediately.** Disconnecting used to only forget the link on the
+  machine itself, so the seat stayed occupied server-side and could
+  block linking a new machine until it was manually replaced. (If the
+  app is offline when you disconnect, the seat is released the old way
+  — when a new machine takes it.)
+- **Linking a third browser past the seat limit now works when you
+  confirm.** On the web edition, confirming "Link This Browser" in the
+  seat-limit dialog re-showed the same dialog instead of linking; the
+  confirmation now goes through.
 - **Genuinely empty files now open as blank documents.** A zero-byte
   file — like the one Explorer's "New → Microsoft Word Document"
   creates — opens as a blank document bound to that file, the same way

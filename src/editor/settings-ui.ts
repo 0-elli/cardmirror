@@ -2701,7 +2701,10 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
               { okLabel: 'Link This Browser' },
             );
             if (go) {
-              await webConnect(d['retryCode'], false);
+              // confirmEvict MUST ride the retry — retrying with false
+              // just consumes the fresh retryCode, 409s again, and
+              // re-shows this dialog forever (field report 2026-08-27).
+              await webConnect(d['retryCode'], true);
             } else {
               message.textContent = 'Not linked — your existing machines keep their seats.';
             }
@@ -2733,7 +2736,9 @@ function buildPairingAccountEditor(row: HTMLElement): HTMLElement {
         if (e.key === 'Enter' && input.value.trim()) void webConnect(input.value.trim(), false);
       });
       disconnectBtn.addEventListener('click', () => {
-        account.webAccountDisconnect();
+        // Unlink (not bare disconnect): also releases this browser's
+        // seat server-side, best-effort, so it frees immediately.
+        account.webAccountUnlink(relay.relayBaseUrl());
         renderStatus({ connected: false, expiresAt: 0 });
         message.textContent = '';
       });

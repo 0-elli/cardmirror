@@ -46,6 +46,7 @@ import {
   webEntitlementToken,
   webRoutingCodeSync,
   webAccountDisconnect,
+  webAccountUnlink,
   __resetWebAccountForTests,
 } from '../../src/editor/collab/web-account.js';
 
@@ -170,5 +171,56 @@ describe('web account linking', () => {
     webAccountDisconnect();
     expect(webEntitlementToken()).toBe('');
     expect(webRoutingCodeSync()).toBe(rc);
+  });
+
+  it('unlink wipes locally FIRST, then posts a disconnect-purpose seat release', async () => {
+    await webAccountConnect(BASE, 'abc');
+    const rc = webRoutingCodeSync();
+    fetchMock.mockClear();
+    let sawTokenAtFetchTime: string | null = null;
+    let releaseBody: Record<string, unknown> = {};
+    const released = new Promise<void>((resolve) => {
+      fetchMock.mockImplementation(async (_url: unknown, init?: { body?: string }) => {
+        sawTokenAtFetchTime = webEntitlementToken();
+        releaseBody = JSON.parse(init?.body ?? '{}') as Record<string, unknown>;
+        resolve();
+        return { ok: true, json: async () => ({ ok: true, released: true }) };
+      });
+    });
+    webAccountUnlink(BASE);
+    // Local wipe is synchronous — a quick re-connect can't be clobbered.
+    expect(webEntitlementToken()).toBe('');
+    expect(webRoutingCodeSync()).toBe(rc);
+    await released;
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/disconnect`, expect.anything());
+    expect(sawTokenAtFetchTime).toBe(''); // release ran after the wipe
+    expect(releaseBody['routingCode']).toBe(rc);
+    // The proof is purpose-scoped to 'disconnect' — a captured connect
+    // proof must not release seats, and vice versa.
+    const pub = await crypto.subtle.importKey(
+      'spki',
+      b64urlToBytes(String(releaseBody['webSpki'])) as BufferSource,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    );
+    const verify = (purpose: string) =>
+      crypto.subtle.verify(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        pub,
+        b64urlToBytes(String(releaseBody['webSig'])) as BufferSource,
+        new TextEncoder().encode(
+          `cmweb1:${purpose}:${rc}:${releaseBody['webTs']}`,
+        ) as BufferSource,
+      );
+    expect(await verify('disconnect')).toBe(true);
+    expect(await verify('connect')).toBe(false);
+  });
+
+  it('unlink with nothing linked posts nothing', async () => {
+    fetchMock.mockClear();
+    webAccountUnlink(BASE);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

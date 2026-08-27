@@ -197,6 +197,36 @@ export function webAccountDisconnect(): void {
   fireChanged();
 }
 
+/** USER-initiated unlink: drop the credential locally, then release
+ *  the seat server-side in the background. Local wipe comes FIRST so a
+ *  quick re-connect can't be clobbered by a slow release; the release
+ *  proves key possession (purpose 'disconnect' — the key survives the
+ *  wipe), so it needs no stored token. Best-effort: offline or an
+ *  older relay just leaves the seat held until an evict, which is all
+ *  Disconnect ever did before this existed (field report 2026-08-27).
+ *  The renewal-failure paths keep calling webAccountDisconnect
+ *  directly — there the binding is already gone server-side. */
+export function webAccountUnlink(relayBase: string): void {
+  const s = ls();
+  const rc = s?.getItem(LS_RC) ?? '';
+  const hadLink = !!s?.getItem(LS_TOKEN);
+  webAccountDisconnect();
+  if (!hadLink || !rc || !relayBase) return;
+  void (async () => {
+    try {
+      const proof = await signWebProof('disconnect');
+      await fetch(`${relayBase.replace(/\/+$/, '')}/disconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ routingCode: rc, ...proof }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      /* seat stays held until evicted — same as before this existed */
+    }
+  })();
+}
+
 export function scheduleWebRenewal(relayBase: string): void {
   if (renewTimer !== null) return;
   renewTimer = setInterval(() => void webAccountRenew(relayBase), RENEW_CHECK_MS);
