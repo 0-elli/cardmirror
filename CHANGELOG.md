@@ -5,6 +5,21 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
+## Unreleased
+
+### Fixed
+
+- **Nav-pane clicks no longer jump to the wrong heading in documents
+  that picked up duplicate heading identities from a Word round
+  trip.** Word add-ins and other editors can duplicate the invisible
+  bookmark CardMirror uses to identify a heading — for example when a
+  heading line is copied as a formatting template and retyped —
+  which made clicking one heading navigate to the other, and could
+  point live views at the wrong section. Importing a .docx now keeps
+  the first occurrence and assigns the copy its own identity, and
+  documents that already carry duplicates are repaired automatically
+  when opened.
+
 ## 1.5.0 — 2026-08-28
 
 ### Fixed
