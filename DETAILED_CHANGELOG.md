@@ -5,6 +5,100 @@ behavior, rationale, and (where useful) the implementation context
 behind a change. For a shorter, jargon-free summary of what's new
 in each release, see `CHANGELOG.md`.
 
+## 1.5.0 — 2026-08-28
+
+### Added: rich payloads on the local insert bridge
+
+The `/insert` bridge accepts an optional `html` field alongside the
+(still required) plain `text`. When present and usable, the HTML is
+parsed through the editor schema's own parseDOM inside an inert
+detached document, with script/style/iframe/object/embed stripped
+before parsing — so CardMirror-native markup round-trips at full
+fidelity (cards, highlight colors, cite/underline marks), generic
+formatted HTML maps to the nearest schema constructs, and hostile
+markup is inert. Whole cards land at a valid outline slot via the
+same nearest-valid-position logic as internal pastes, never splitting
+the card under the cursor. Anything unusable (empty, over the 2 MiB
+cap, nothing parseable) falls back to the `text` path, which is also
+what older CardMirror versions do with the same payload — senders
+need no version detection. The insert consent prompt now says
+"insert content" rather than "insert text."
+
+### Fixed: the Windows .docx association, done right
+
+electron-builder's fileAssociations mechanism overwrites an
+extension's DEFAULT ProgId, and Explorer only shows the "New >" menu
+entry belonging to the current default — so installing (or updating)
+CardMirror removed Word's "New > Microsoft Word Document" right-click
+entry, and uninstalling left .docx pointing at a deleted class. The
+installer now registers .docx by hand: a properly-namespaced
+CardMirror.docx class listed under OpenWithProgids ONLY — CardMirror
+appears in "Open with" and default-apps UI while Word keeps its
+default, its New-menu entry, and double-click. A healing pass runs on
+every install/update and on uninstall: machines the old installers
+broke (default still reading our old "Word Document" class name) get
+Word.Document.12 restored when Word is present, or the dangling value
+deleted so Windows re-resolves. `.cmir` also gains its own ShellNew
+template ("New > CardMirror Document"). Verified in a real Windows
+VM, both healing branches. Thanks to
+[Q Cooper](https://github.com/mosuqc) for diagnosing the mechanism
+and sketching out the fix.
+
+### Fixed: genuinely empty files open as blank documents
+
+A zero-byte file — Explorer's "New > Microsoft Word Document"
+(Office's ShellNew template is literally 0 bytes by design), `touch`,
+some export tools — was refused with "This file is empty or hasn't
+finished downloading," a guard meant for cloud placeholders. The two
+cases are distinguishable on disk: a not-yet-downloaded placeholder
+stats at the file's REAL size while reading short (the Windows Cloud
+Files API requires the size in placeholder metadata; macOS dataless
+files keep true st_size — verified empirically against Dropbox and
+Google Drive), so stat size 0 means genuinely empty. The host flags
+such files at read time and every open path substitutes canonical
+blank-document bytes for the format, so the file mounts as a blank
+doc bound to its path — exactly Word's behavior — and saves write
+real content back to it. Short reads with a non-zero stat keep the
+placeholder message, and a 0-byte journal still reports corrupt.
+
+### Fixed: account seats release on unlink; web confirm-evict loop
+
+Disconnecting a Debate Decoded account only wiped local state; the
+server-side seat stayed occupied until another machine evicted it, so
+the seat-limit dialog kept naming machines the user had already
+unlinked. A new relay endpoint releases the caller's own seat, and
+both editions fire it best-effort on Disconnect — after the local
+wipe (so a quick re-link can't be clobbered), authenticated by the
+machine's own entitlement (desktop) or a purpose-scoped key proof
+(web); a bare routing code can never release a seat. Offline
+disconnects simply leave the seat held until an evict, the previous
+behavior. Separately, the web edition's seat-limit dialog retried
+with the confirmation flag unset, so "Link This Browser" consumed the
+fresh retry code, hit the limit again, and re-showed the same dialog
+forever; the confirmation now rides the retry (the desktop dialog was
+always correct).
+
+### Fixed: guest sessions end cleanly when the invite expires
+
+Room-data authentication runs before the room lookup server-side, so
+once a guest's invite pass (immutable, 7-day lifetime, not
+refreshable by guests) expires, the client only ever sees 401 — the
+"session ended" answers it treats as terminal are unreachable — and
+it retried forever, indistinguishable from being offline (observed as
+all-night presence/stream churn in relay logs). The stream now
+detects credential death conservatively: only a 401/403 whose body is
+the relay's JSON shape counts (a captive portal's HTML login page
+never does — school-wifi sign-in pages self-heal through ordinary
+retry), and only on the second consecutive refusal, a full backoff
+interval apart; being offline can't trigger it at all. Guest-pass
+sessions then end with a "Session invite expired" notice, keep the
+document as a local copy, and clear the persisted record so they
+can't auto-resume against a dead pass. Member sessions keep the
+notify-once-and-retry behavior, since an expired entitlement can
+quietly renew mid-session. Presence also posts only while the stream
+is connected — presence is delivered over the stream, so posting into
+a dead one was pure waste.
+
 ## 1.4.0 — 2026-08-25
 
 ### Added: version history for saved documents

@@ -5,7 +5,7 @@ changes in each release, written for users of the editor. For
 in-depth rationale and implementation context behind each entry,
 see `DETAILED_CHANGELOG.md`.
 
-## Unreleased
+## 1.5.0 — 2026-08-28
 
 ### Fixed
 
@@ -16,7 +16,8 @@ see `DETAILED_CHANGELOG.md`.
   an uninstall. CardMirror now registers only as an "Open with" choice
   for .docx — Word keeps its default and its New menu — and installing
   this version automatically repairs machines the old installers
-  affected.
+  affected. Thanks to [Q Cooper](https://github.com/mosuqc) for
+  sketching out the fix.
 - **Unlinking your Debate Decoded account now frees that machine's
   seat immediately.** Disconnecting used to only forget the link on the
   machine itself, so the seat stayed occupied server-side and could
