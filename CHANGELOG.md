@@ -27,6 +27,14 @@ see `DETAILED_CHANGELOG.md`.
   confirm.** On the web edition, confirming "Link This Browser" in the
   seat-limit dialog re-showed the same dialog instead of linking; the
   confirmation now goes through.
+- **A collaboration session joined by invite link now ends cleanly
+  when the invite expires.** Invite credentials last seven days;
+  before, a session past that point silently retried forever and just
+  looked offline. It now shows "Session invite expired," keeps your
+  copy of the document, and stops — ask the host for a fresh link to
+  rejoin. A brief sign-in page on school or hotel wifi is not
+  mistaken for an expired invite, and being offline never triggers
+  this.
 - **Genuinely empty files now open as blank documents.** A zero-byte
   file — like the one Explorer's "New → Microsoft Word Document"
   creates — opens as a blank document bound to that file, the same way

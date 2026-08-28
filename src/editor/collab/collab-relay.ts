@@ -55,7 +55,12 @@ export function relayBaseUrl(): string {
 export function relayClientWithGuestPass(pass: string): RoomsClient | null {
   const url = relayBaseUrl();
   if (!url || !pass) return null;
-  return new RoomsClient({ baseUrl: () => url, token: () => pass, routingCode: () => '' });
+  return new RoomsClient({
+    baseUrl: () => url,
+    token: () => pass,
+    routingCode: () => '',
+    guestAuth: true,
+  });
 }
 
 export function relayClient(): RoomsClient | null {
