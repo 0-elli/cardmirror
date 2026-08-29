@@ -182,6 +182,15 @@
 .pmd-icon-list { --pmd-icon: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M21%2012H9m12-6H9m12%2012H9m-4-6a1%201%200%201%201-2%200%201%201%200%200%201%202%200Zm0-6a1%201%200%201%201-2%200%201%201%200%200%201%202%200Zm0%2012a1%201%200%201%201-2%200%201%201%200%200%201%202%200Z%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E"); }
 :root[data-icons="classic"] .pmd-icon-list::before { content: "\2263 "; }
 
+.pmd-icon-align-left { --pmd-icon: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M16%2010H3m17-4H3m17%208H3m13%204H3%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E"); }
+:root[data-icons="classic"] .pmd-icon-align-left::before { content: "L"; }
+
+.pmd-icon-align-center { --pmd-icon: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M18%2010H6m15-4H3m18%208H3m15%204H6%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E"); }
+:root[data-icons="classic"] .pmd-icon-align-center::before { content: "C"; }
+
+.pmd-icon-align-justify { --pmd-icon: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M21%2010H3m18%208H3M21%206H3m18%208H3%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E"); }
+:root[data-icons="classic"] .pmd-icon-align-justify::before { content: "J"; }
+
 .pmd-icon-check { --pmd-icon: url("data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M20%206%209%2017l-5-5%22%20stroke%3D%22%23000%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E"); }
 :root[data-icons="classic"] .pmd-icon-check::before { content: "\2713 "; }
 

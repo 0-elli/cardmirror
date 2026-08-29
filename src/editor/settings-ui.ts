@@ -4086,7 +4086,7 @@ function buildCustomAutocorrectEditor(): HTMLElement {
 function buildDefaultZoomEditor(): HTMLElement {
   const input = document.createElement('input');
   input.type = 'number';
-  input.className = 'pmd-line-height-input';
+  input.className = 'pmd-line-height-input pmd-default-zoom-editor';
   input.min = String(ZOOM_MIN_PCT);
   input.max = String(ZOOM_MAX_PCT);
   input.step = '10';
@@ -6348,10 +6348,10 @@ function buildStyleAlignmentsEditor(): HTMLElement {
     { key: 'undertag', label: 'Undertags' },
     { key: 'citeParagraph', label: 'Cite paragraphs' },
   ];
-  const options: { value: StyleAlignment; label: string }[] = [
-    { value: 'default', label: 'Default' },
-    { value: 'center', label: 'Center' },
-    { value: 'justify', label: 'Justify' },
+  const options: { value: StyleAlignment; label: string; icon: IconName }[] = [
+    { value: 'default', label: 'Align left (default)', icon: 'align-left' },
+    { value: 'center', label: 'Align center', icon: 'align-center' },
+    { value: 'justify', label: 'Justify', icon: 'align-justify' },
   ];
   for (const style of styles) {
     const row = document.createElement('div');
@@ -6362,11 +6362,15 @@ function buildStyleAlignmentsEditor(): HTMLElement {
     row.appendChild(lbl);
     const group = document.createElement('div');
     group.className = 'pmd-theme-editor';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', `${style.label} alignment`);
     for (const o of options) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'pmd-theme-editor-btn';
-      btn.textContent = o.label;
+      btn.className = 'pmd-theme-editor-btn pmd-style-alignment-btn';
+      btn.setAttribute('aria-label', o.label);
+      btn.title = o.label;
+      setIcon(btn, o.icon);
       btn.dataset['styleKey'] = style.key;
       btn.dataset['value'] = o.value;
       btn.addEventListener('click', () => {
