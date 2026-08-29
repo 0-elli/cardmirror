@@ -4700,15 +4700,15 @@ function buildShadingExceptionEditor(): HTMLElement {
   return wrap;
 }
 
-/** Theme selector — light / dark / system. Renders as a small
- *  segmented control. */
+/** Theme selector — light / dark / automatic system preference.
+ *  Renders as a small segmented control. */
 function buildThemeEditor(): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'pmd-theme-editor';
   const options: { value: 'light' | 'dark' | 'system'; label: string }[] = [
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' },
+    { value: 'system', label: 'Auto' },
   ];
   for (const o of options) {
     const btn = document.createElement('button');

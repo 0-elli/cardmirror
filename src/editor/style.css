@@ -6640,6 +6640,10 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   font-size: 0.85rem;
 }
 
+.pmd-display-sizes-editor .pmd-display-size-label {
+  text-align: end;
+}
+
 /* "New paragraph on Enter" dropdown grid: fixed-width selects so the
    two columns line up regardless of label length (the label flexes,
    the select doesn't). */
