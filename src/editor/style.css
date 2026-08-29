@@ -878,7 +878,7 @@ button {
   --pmd-c-text-muted: #9a9a9a;
   --pmd-c-text-faint: #7a7a7a;
   --pmd-c-text-on-accent: #fff;
-  --pmd-c-segmented-selected-text: #000;
+  --pmd-c-segmented-selected-text: #fff;
 
   /* Hover / press — solid surfaces lift toward lighter grays;
      button-* overlays flip to translucent WHITE so they brighten
