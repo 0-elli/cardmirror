@@ -5699,9 +5699,9 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 
 /* Tab bar below the header. The bar wraps the tab nav and a
    left/right arrow on each side — the arrows are revealed by JS
-   only when the tab list overflows its container. Active tab is
-   indicated by a bottom border + heavier weight (border lives on
-   the bar so the active-tab border can overlay it). */
+   only when the tab list overflows its container. The active tab is
+   indicated by color + a bottom border (the border lives on the bar
+   so the active-tab border can overlay it). */
 .pmd-settings-tabs-bar {
   display: flex;
   flex: 0 0 auto;
