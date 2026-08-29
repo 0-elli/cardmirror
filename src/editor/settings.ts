@@ -2655,7 +2655,7 @@ export const SETTING_METADATA: SettingMeta[] = [
     label: 'Theme',
     kind: 'theme',
     category: 'appearance',
-    section: 'Theme & chrome',
+    section: 'UI',
     mobile: true,
     aliases: ['light mode', 'dark mode', 'toggle theme', 'system theme', 'color scheme'],
   },
@@ -2666,7 +2666,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       "Off by default: when the theme is dark (or system-resolved dark), only the chrome — ribbon, nav, status bar — goes dark. The document area stays light, so cards still read like paper. Turn on to make the document itself follow the theme.",
     kind: 'toggle',
     category: 'appearance',
-    section: 'Theme & chrome',
+    section: 'UI',
     aliases: ['dark document', 'dark paper', 'dark mode document'],
   },
   {
@@ -2676,7 +2676,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       "Modern (default) draws the toolbar, banner, and dialog icons from the Untitled UI line-icon set, tinted to match the theme. Classic reverts to the original emoji / text glyphs. Affects the app chrome only — the document is untouched.",
     kind: 'iconSet',
     category: 'appearance',
-    section: 'Theme & chrome',
+    section: 'UI',
   },
   {
     key: 'showDocNameChip',
@@ -2685,7 +2685,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       "Off by default. When on, the active document's filename appears as a pill in the center of the ribbon — useful when the OS title bar is hidden, unstyled, or non-existent (tiling window managers, frameless windows, web embeds). Hidden in multi-pane mode because each per-pane chip already shows its slot's filename.",
     kind: 'toggle',
     category: 'appearance',
-    section: 'Theme & chrome',
+    section: 'UI',
   },
   {
     key: 'showUndoRedoButtons',
@@ -2694,7 +2694,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       'Off by default. When on, a stacked Undo / Redo button pair appears at the far left of the ribbon, before the file buttons (after the timer panel when that is shown on the left). Undo and redo always work by keyboard either way.',
     kind: 'toggle',
     category: 'appearance',
-    section: 'Theme & chrome',
+    section: 'UI',
     aliases: ['undo button', 'redo button', 'undo redo'],
   },
   {
@@ -2704,7 +2704,7 @@ export const SETTING_METADATA: SettingMeta[] = [
       'What hovering a ribbon button reveals. "Both" shows the action label and its current keyboard shortcut. "Label only" hides the shortcut. "Shortcut only" hides the label and is recommended for users who already know what each button does but still want a key reminder. "None" disables ribbon tooltips entirely. Dropdown menu items (Doc / Card / Table menus, etc.) always show shortcut-only — the menu label already says what the action does.',
     kind: 'ribbonTooltipMode',
     category: 'appearance',
-    section: 'Theme & chrome',
+    section: 'UI',
   },
   {
     key: 'ribbonCustomButtons',

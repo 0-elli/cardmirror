@@ -2222,7 +2222,7 @@ file search scans.
 How things look. None of these change the file — only your view (see
 [Appearance and accessibility](#18-appearance-and-accessibility)).
 
-**Theme & chrome**
+**UI**
 
 - **Theme** — light, dark, or follow the system.
 - **Apply theme to the document area** — off by default, so dark mode
