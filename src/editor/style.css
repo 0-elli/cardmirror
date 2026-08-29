@@ -1614,9 +1614,9 @@ body:not(.pmd-inplace-save) #autosave-btn { display: none; }
 .ribbon-cite-panel.hidden { display: none; }
 
 /* Color panel — three split buttons for Highlight / Background /
-   Font Color. 2×2 grid with column-major flow:
+   Font Color and Font Size. 2×2 grid with column-major flow:
      Col 1 row 1: Highlight    Col 2 row 1: Font color
-     Col 1 row 2: Shading      Col 2 row 2: (reserved)
+     Col 1 row 2: Shading      Col 2 row 2: Font size
    Matches the cite panel's stacked layout so the whole ribbon-left
    section reads as a series of equal-height stacked groups. */
 .ribbon-color-panel {
@@ -1686,6 +1686,11 @@ body:not(.pmd-inplace-save) #autosave-btn { display: none; }
   /* A hair narrower than the Open / Save 2rem — wide enough to show
      the white field around the glyph but not stretched for no reason. */
   width: 1.75rem;
+  /* A three-part font-size control now determines this grid track's
+     width. Grow the main segment so the adjacent picker chevron stays
+     pinned to the far edge instead of leaving dead space after it. */
+  flex: 1 1 1.75rem;
+  min-width: 1.75rem;
   gap: 0;
   padding: 0;
 }
@@ -1810,21 +1815,17 @@ html.pmd-numbering-hidden #numbering-panel {
   display: none !important;
 }
 
-/* Editable font-size control inside the color panel — sits in the
-   4th cell of the 2×2 grid alongside the three color controls.
-   Numeric input on the left, dropdown arrow on the right (split-
-   button shape that matches the colors). The input shows the current
-   effective font-size in pt; Enter / blur applies. */
+/* Editable font-size combobox inside the color panel — decrement,
+   current pt, increment. The input opens the complete preset list;
+   typing never filters it. Enter / blur applies a custom value. */
 #ribbon .ribbon-font-size-input {
-  /* Match the main-button width (1.75rem) of the color controls so
-     the right column (font color over font size) reads as one stack
-     of equal-width controls. The arrow that follows sits at the
-     same 1.05rem as every other color-arrow. */
   width: 1.75rem;
   flex: 0 0 1.75rem;
   height: auto;
   align-self: stretch;
-  border: 1px solid transparent;
+  border: 0 solid var(--pmd-c-border-soft);
+  border-left-width: 1px;
+  border-right-width: 1px;
   background: transparent;
   font-family: inherit;
   font-size: 0.85rem;
@@ -1832,7 +1833,7 @@ html.pmd-numbering-hidden #numbering-panel {
   padding: 0;
   text-align: center;
   color: var(--pmd-c-text);
-  /* Hide the native spinner — the dropdown is our pt picker. */
+  /* Hide native number chrome; this remains an editable text combobox. */
   appearance: textfield;
   -moz-appearance: textfield;
 }
@@ -1853,30 +1854,14 @@ html.pmd-numbering-hidden #numbering-panel {
   color: var(--pmd-c-error);
 }
 
-/* Increment / decrement font-size buttons — third column of the
-   color panel, stacked. Match the doc-ops button size so the column
-   widths read uniformly across the ribbon. */
-#ribbon .ribbon-font-size-step {
-  width: 1.75rem;
-  height: 1.45rem;
-  font-size: 0.7rem;
+/* Increment / decrement segments flanking the editable value. */
+#ribbon .ribbon-font-size-control button.ribbon-font-size-step {
+  width: 1.05rem;
+  height: auto;
+  font-size: 0.9rem;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.05em;
-}
-
-/* Both step-button arrows: small gap between the A and the arrow
-   glyph so they don't read as one combined character. */
-.ribbon-font-size-step-arrow {
-  margin-left: 0.15rem;
-}
-
-/* The ▴ glyph sits high in the line box while ▾ sits low, yet the
-   natural position reads best alongside the row's other dropdown
-   ▾s. The explicit `translateY(0)` marks that as a deliberate
-   "no shift" rather than a missing override. */
-.ribbon-font-size-step-up-arrow {
-  display: inline-block;
-  transform: translateY(0);
+  letter-spacing: normal;
 }
 
 /* Dropdown popup — preset pt sizes, styled like the color picker. */
@@ -1892,20 +1877,22 @@ html.pmd-numbering-hidden #numbering-panel {
   max-height: 18rem;
   overflow-y: auto;
 }
-.pmd-font-size-picker button {
-  display: block;
+.pmd-font-size-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   padding: 0.2rem 0.8rem;
   background: transparent;
-  border: none;
   cursor: pointer;
   font-family: inherit;
   font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
-  text-align: right;
   color: var(--pmd-c-text);
+  box-sizing: border-box;
 }
-.pmd-font-size-picker button:hover {
+.pmd-font-size-option:hover,
+.pmd-font-size-option[aria-selected='true'] {
   background: var(--pmd-c-button-hover);
 }
 

@@ -117,24 +117,20 @@
             <button id="fontcolor-picker-btn" class="ribbon-color-arrow" type="button" title="Font color"
                     aria-haspopup="true" aria-expanded="false"><span class="pmd-icon pmd-icon-chevron-down" aria-hidden="true"></span></button>
           </div>
-          <!-- Font size split-control: input for the current pt
-               (Enter / blur applies), arrow opens a preset-size
-               dropdown. Sits in the 4th cell of the color panel's
-               2×2 grid. -->
+          <!-- Font-size combobox: decrement / editable current pt /
+               increment. Clicking the input opens the complete preset
+               list; typing never filters those options. -->
           <div class="ribbon-color-control ribbon-font-size-control" data-control="fontsize">
+            <button id="font-size-down-btn" class="ribbon-font-size-step" type="button"
+                    title="Decrease font size" aria-label="Decrease Font Size by 1pt"><span aria-hidden="true">−</span></button>
             <input id="font-size-input" class="ribbon-font-size-input" type="text"
                    inputmode="numeric" autocomplete="off" spellcheck="false"
+                   role="combobox" aria-autocomplete="none" aria-haspopup="listbox"
+                   aria-expanded="false" aria-controls="font-size-picker"
                    aria-label="Font size at cursor" title="Font size — Enter to apply" />
-            <button id="font-size-picker-btn" class="ribbon-color-arrow" type="button" title="Font size"
-                    aria-haspopup="true" aria-expanded="false"><span class="pmd-icon pmd-icon-chevron-down" aria-hidden="true"></span></button>
+            <button id="font-size-up-btn" class="ribbon-font-size-step" type="button"
+                    title="Increase font size" aria-label="Increase Font Size by 1pt"><span aria-hidden="true">+</span></button>
           </div>
-          <!-- 3rd column: increment/decrement font size of selection. -->
-          <button id="font-size-up-btn" class="ribbon-font-size-step" type="button"
-                  title="Increase font size" aria-label="Increase font size"
-                  ><span>A</span><span class="ribbon-font-size-step-arrow ribbon-font-size-step-up-arrow pmd-icon pmd-icon-chevron-up" aria-hidden="true"></span></button>
-          <button id="font-size-down-btn" class="ribbon-font-size-step" type="button"
-                  title="Decrease font size" aria-label="Decrease font size"
-                  ><span>A</span><span class="ribbon-font-size-step-arrow pmd-icon pmd-icon-chevron-down" aria-hidden="true"></span></button>
         </div>
         <!-- Document/card-level utility menus. "Doc" holds doc-wide
              operations (Verbatim's Doc menu — standardize highlighting

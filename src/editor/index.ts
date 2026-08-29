@@ -864,7 +864,6 @@ const cursorColorDisplay = document.getElementById('cursor-color-display') as HT
 const cursorColorText = document.getElementById('cursor-color-text')!;
 const plainPasteToggleBtn = document.getElementById('plain-paste-toggle-btn') as HTMLButtonElement | null;
 const fontSizeInput = document.getElementById('font-size-input') as HTMLInputElement | null;
-const fontSizePickerBtn = document.getElementById('font-size-picker-btn') as HTMLButtonElement | null;
 const fontSizeControlEl = fontSizeInput?.parentElement as HTMLDivElement | null;
 const fontSizeUpBtn = document.getElementById('font-size-up-btn') as HTMLButtonElement | null;
 const fontSizeDownBtn = document.getElementById('font-size-down-btn') as HTMLButtonElement | null;
@@ -2155,7 +2154,11 @@ const ribbonContext: RibbonContext = {
   openHighlightPicker: () => colorPanel?.openPicker('highlight'),
   openShadingPicker: () => colorPanel?.openPicker('shading'),
   openFontColorPicker: () => colorPanel?.openPicker('fontcolor'),
-  openFontSizePicker: () => fontSizePickerBtn?.click(),
+  openFontSizePicker: () => {
+    fontSizeInput?.focus();
+    fontSizeInput?.select();
+    openFontSizePicker();
+  },
   openDocToolsMenu: () => docMenuBtn?.click(),
   openCardToolsMenu: () => cardMenuBtn?.click(),
   openTableMenu: () => tableMenuBtn?.click(),
@@ -3907,17 +3910,12 @@ function initRibbonResizer(): void {
     ['doc-name-chip'],           // (d) Active-doc filename pill (opt-in)
     ['format-menu-panel'],       // (d) Table / image / sub / sup / strike
     ['doc-ops-panel'],           // (e) Paragraph integrity
-    ['font-size-up-btn',         // (f) Font-size step buttons
-     'font-size-down-btn'],
-    ['color-panel'],             // (g) Highlight / shading / font color
-                                 //     / font-size input + picker. Hiding
-                                 //     the whole color-panel also covers
-                                 //     the step buttons in (f), which is
-                                 //     fine — display:none is idempotent.
-    ['comments-ops-panel'],      // (h) Comments toggle + add-comment.
-    ['open-btn', 'new-btn',      // (i) File ops: open, new, save,
+    ['color-panel'],             // (f) Highlight / shading / font color
+                                 //     / atomic font-size combobox.
+    ['comments-ops-panel'],      // (g) Comments toggle + add-comment.
+    ['open-btn', 'new-btn',      // (h) File ops: open, new, save,
      'export-btn', 'autosave-btn'], //     autosave-toggle.
-    ['view-ops-panel'],          // (j) Read mode + nav-pane toggle.
+    ['view-ops-panel'],          // (i) Read mode + nav-pane toggle.
     ['settings-btn',             // (k) Settings + keyboard-shortcuts
      'reference-btn'],           //     reference. Genuinely last —
                                  //     reaching them requires user
@@ -4113,7 +4111,7 @@ if (timerToggleBtn) {
   button('fontcolor-picker-btn', 'openFontColorPicker', 'Font color');
   button('font-size-up-btn', 'adjustFontSizeUp');
   button('font-size-down-btn', 'adjustFontSizeDown');
-  button('font-size-picker-btn', 'openFontSizePicker', 'Font size');
+  button('font-size-input', 'openFontSizePicker', 'Font size');
   button('doc-menu-btn', 'openDocToolsMenu', 'Document utilities');
   button('card-menu-btn', 'openCardToolsMenu', 'Card utilities');
   button('table-menu-btn', 'openTableMenu', 'Table operations');
@@ -4503,109 +4501,155 @@ if (plainPasteToggleBtn) {
   // `shortcut` modes. The HTML title is the initial-paint fallback.
 }
 
-// ---- Font-size input + dropdown ----
+// ---- Font-size editable combobox ----
 
 const FONT_SIZE_PRESETS = [4, 6, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 26, 28, 32, 36, 48, 72];
+const FONT_SIZE_PICKER_ID = 'font-size-picker';
 
-function commitFontSizeInput(): void {
+let openFontSizePickerEl: HTMLElement | null = null;
+let fontSizePickerOptions: HTMLElement[] = [];
+let activeFontSizeOptionIndex = -1;
+let removeFontSizePickerListeners: (() => void) | null = null;
+
+function setActiveFontSizeOption(index: number): void {
+  if (!fontSizeInput) return;
+  activeFontSizeOptionIndex =
+    index < 0 ? -1 : Math.max(0, Math.min(fontSizePickerOptions.length - 1, index));
+  for (const [optionIndex, option] of fontSizePickerOptions.entries()) {
+    option.setAttribute('aria-selected', optionIndex === activeFontSizeOptionIndex ? 'true' : 'false');
+  }
+  const active = fontSizePickerOptions[activeFontSizeOptionIndex];
+  if (!active) {
+    fontSizeInput.removeAttribute('aria-activedescendant');
+    return;
+  }
+  fontSizeInput.setAttribute('aria-activedescendant', active.id);
+  active.scrollIntoView({ block: 'nearest' });
+}
+
+function closeFontSizePicker(): void {
+  openFontSizePickerEl?.remove();
+  openFontSizePickerEl = null;
+  fontSizePickerOptions = [];
+  activeFontSizeOptionIndex = -1;
+  fontSizeInput?.setAttribute('aria-expanded', 'false');
+  fontSizeInput?.removeAttribute('aria-activedescendant');
+  removeFontSizePickerListeners?.();
+  removeFontSizePickerListeners = null;
+}
+
+function applyFontSizePreset(pt: number): void {
+  if (view) setFontSize(pt, effectivePtForNode)(view.state, view.dispatch.bind(view));
+  if (fontSizeInput) fontSizeInput.value = formatPt(pt);
+  closeFontSizePicker();
+  view?.focus();
+}
+
+function commitFontSizeInput(focusEditor = true): void {
   if (!fontSizeInput || !view) return;
   const raw = fontSizeInput.value.trim();
   if (raw === '' || raw === '—') {
     // No-op revert: re-sync from current cursor state.
-    refreshFontSizeDisplay();
+    refreshFontSizeDisplay(undefined, true);
+    closeFontSizePicker();
     return;
   }
   const pt = parseFloat(raw);
   if (!Number.isFinite(pt) || pt <= 0) {
-    refreshFontSizeDisplay();
+    refreshFontSizeDisplay(undefined, true);
+    closeFontSizePicker();
     return;
   }
   // Clamp to OOXML's sane range (1–409pt; 818 half-points is Word's cap).
   const clamped = Math.max(1, Math.min(409, pt));
   setFontSize(clamped, effectivePtForNode)(view.state, view.dispatch.bind(view));
-  view.focus();
+  fontSizeInput.value = formatPt(clamped);
+  closeFontSizePicker();
+  if (focusEditor) view.focus();
 }
 
 if (fontSizeInput) {
   fontSizeInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      commitFontSizeInput();
+      openFontSizePicker();
+      if (activeFontSizeOptionIndex < 0) {
+        setActiveFontSizeOption(e.key === 'ArrowDown' ? 0 : fontSizePickerOptions.length - 1);
+      } else {
+        setActiveFontSizeOption(activeFontSizeOptionIndex + (e.key === 'ArrowDown' ? 1 : -1));
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const active = fontSizePickerOptions[activeFontSizeOptionIndex];
+      if (active) applyFontSizePreset(Number(active.dataset['pt']));
+      else commitFontSizeInput();
     } else if (e.key === 'Escape') {
-      e.preventDefault();
-      refreshFontSizeDisplay();
-      fontSizeInput.blur();
+      if (openFontSizePickerEl) {
+        e.preventDefault();
+        closeFontSizePicker();
+      }
     }
   });
   fontSizeInput.addEventListener('blur', () => {
-    commitFontSizeInput();
+    commitFontSizeInput(false);
   });
   // Focus highlights the current value so typing replaces it.
   fontSizeInput.addEventListener('focus', () => {
     fontSizeInput.select();
   });
-}
-
-let openFontSizePickerEl: HTMLElement | null = null;
-function closeFontSizePicker(): void {
-  if (!openFontSizePickerEl) return;
-  openFontSizePickerEl.remove();
-  openFontSizePickerEl = null;
-  fontSizePickerBtn?.setAttribute('aria-expanded', 'false');
+  fontSizeInput.addEventListener('click', () => {
+    openFontSizePicker();
+  });
+  // This combobox deliberately does not filter. Typing clears popup
+  // navigation state while preserving every preset option.
+  fontSizeInput.addEventListener('input', () => {
+    setActiveFontSizeOption(-1);
+  });
 }
 
 function openFontSizePicker(): void {
-  if (!fontSizePickerBtn) return;
-  if (openFontSizePickerEl) {
-    closeFontSizePicker();
-    return;
-  }
+  if (!fontSizeInput || !fontSizeControlEl || openFontSizePickerEl) return;
   const picker = document.createElement('div');
   picker.className = 'pmd-font-size-picker';
+  picker.id = FONT_SIZE_PICKER_ID;
+  picker.setAttribute('role', 'listbox');
+  picker.setAttribute('aria-label', 'Font size presets');
   for (const pt of FONT_SIZE_PRESETS) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = String(pt);
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
-    btn.addEventListener('click', () => {
-      if (view) setFontSize(pt, effectivePtForNode)(view.state, view.dispatch.bind(view));
-      closeFontSizePicker();
-      view?.focus();
+    const option = document.createElement('div');
+    option.className = 'pmd-font-size-option';
+    option.id = `pmd-font-size-option-${pt}`;
+    option.dataset['pt'] = String(pt);
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', 'false');
+    option.textContent = String(pt);
+    option.addEventListener('pointerdown', (e) => e.preventDefault());
+    option.addEventListener('pointerenter', () => {
+      setActiveFontSizeOption(fontSizePickerOptions.indexOf(option));
     });
-    picker.appendChild(btn);
+    option.addEventListener('click', () => applyFontSizePreset(pt));
+    fontSizePickerOptions.push(option);
+    picker.appendChild(option);
   }
   document.body.appendChild(picker);
-  const rect = fontSizePickerBtn.getBoundingClientRect();
+  const rect = fontSizeInput.getBoundingClientRect();
   picker.style.top = `${rect.bottom + 2}px`;
-  picker.style.left = `${rect.right - picker.offsetWidth}px`;
+  picker.style.left = `${Math.max(
+    4,
+    Math.min(rect.left + (rect.width - picker.offsetWidth) / 2, window.innerWidth - picker.offsetWidth - 4),
+  )}px`;
   openFontSizePickerEl = picker;
-  fontSizePickerBtn.setAttribute('aria-expanded', 'true');
+  fontSizeInput.setAttribute('aria-expanded', 'true');
 
   const onDocPointerDown = (e: PointerEvent) => {
     if (!openFontSizePickerEl) return;
     const t = e.target as Node | null;
-    if (t && (openFontSizePickerEl.contains(t) || fontSizePickerBtn.contains(t))) return;
+    if (t && (openFontSizePickerEl.contains(t) || fontSizeControlEl.contains(t))) return;
     closeFontSizePicker();
-    document.removeEventListener('pointerdown', onDocPointerDown);
-    document.removeEventListener('keydown', onKey);
-  };
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      closeFontSizePicker();
-      document.removeEventListener('pointerdown', onDocPointerDown);
-      document.removeEventListener('keydown', onKey);
-    }
   };
   document.addEventListener('pointerdown', onDocPointerDown);
-  document.addEventListener('keydown', onKey);
-}
-
-if (fontSizePickerBtn) {
-  fontSizePickerBtn.addEventListener('mousedown', (e) => e.preventDefault());
-  fontSizePickerBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openFontSizePicker();
-  });
+  removeFontSizePickerListeners = () => {
+    document.removeEventListener('pointerdown', onDocPointerDown);
+  };
 }
 
 for (const [btn, delta] of [
@@ -4616,6 +4660,7 @@ for (const [btn, delta] of [
   btn.addEventListener('mousedown', (e) => e.preventDefault());
   btn.addEventListener('click', () => {
     if (!view) return;
+    closeFontSizePicker();
     adjustFontSize(delta, effectivePtForNode)(view.state, view.dispatch.bind(view));
     view.focus();
   });
@@ -4719,11 +4764,11 @@ function refreshFormattingPanelButtonStates(chrome?: SelectionChrome | null): vo
   }
 }
 
-function refreshFontSizeDisplay(chrome?: SelectionChrome | null): void {
+function refreshFontSizeDisplay(chrome?: SelectionChrome | null, force = false): void {
   if (!fontSizeInput || !fontSizeControlEl) return;
   // Don't clobber the user's in-progress edit — only sync the input
   // value when it isn't focused.
-  if (document.activeElement === fontSizeInput) return;
+  if (!force && document.activeElement === fontSizeInput) return;
   if (!view) {
     fontSizeInput.value = '—';
     fontSizeControlEl.classList.remove('pmd-font-size-direct');
