@@ -2653,8 +2653,6 @@ export const SETTING_METADATA: SettingMeta[] = [
   {
     key: 'theme',
     label: 'Theme',
-    description:
-      "Light, dark, or follow the operating system's preference. System mode tracks OS-level changes live.",
     kind: 'theme',
     category: 'appearance',
     section: 'Theme & chrome',
@@ -2721,8 +2719,6 @@ export const SETTING_METADATA: SettingMeta[] = [
   {
     key: 'displaySizes',
     label: 'Style font sizes (pt)',
-    description:
-      "Render size for each named style. Doesn't change the underlying doc — only how it looks here.",
     kind: 'displaySizes',
     category: 'appearance',
     section: 'Document typography',

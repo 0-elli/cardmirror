@@ -6230,6 +6230,10 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
   gap: 0.2rem;
 }
 
+.pmd-settings-row > .pmd-theme-editor {
+  margin-block-start: 0.5rem;
+}
+
 .pmd-settings-row-title {
   font-weight: 500;
   font-size: 0.95rem;
