@@ -5771,7 +5771,6 @@ html.pmd-nav-flat .pmd-nav-type-analytic:hover .pmd-nav-label {
 .pmd-settings-tab-active {
   color: var(--pmd-c-text-strong);
   border-bottom-color: var(--pmd-c-accent);
-  font-weight: 600;
 }
 
 .pmd-settings-list {
