@@ -629,6 +629,7 @@ button {
   --pmd-c-text-muted: #666;            /* dimmer secondary */
   --pmd-c-text-faint: #888;            /* faint annotations */
   --pmd-c-text-on-accent: #fff;        /* text on a filled accent surface */
+  --pmd-c-segmented-selected-text: #fff; /* selected segmented-control text */
   /* Card numbering glyphs. Defaults to muted text (theme-aware via the var),
      but is its OWN token so it's user-overridable — see CUSTOMIZABLE_COLOR_TOKENS
      ('pmd-c-card-number') and the Card numbering settings color control. */
@@ -877,6 +878,7 @@ button {
   --pmd-c-text-muted: #9a9a9a;
   --pmd-c-text-faint: #7a7a7a;
   --pmd-c-text-on-accent: #fff;
+  --pmd-c-segmented-selected-text: #000;
 
   /* Hover / press — solid surfaces lift toward lighter grays;
      button-* overlays flip to translucent WHITE so they brighten
@@ -1328,7 +1330,6 @@ html:has(body.pmd-speech-banner-visible) {
 /* Shared scaffolding (accent fill (2-prop)).
    Diverge by pulling a selector out, not by re-copying. */
 #ribbon #timer-toggle-btn[aria-pressed="true"],
-.pmd-theme-editor-btn[aria-pressed='true'],
 .pmd-pane-focused .pmd-pane-chip,
 :is(#ribbon, body.pmd-timer-popout-page) .pmd-timer-start[aria-pressed="true"] {
   background: var(--pmd-c-accent);
@@ -3522,8 +3523,17 @@ body.pmd-override-shading [data-shading] {
   font-size: 0.85rem;
   cursor: pointer;
 }
+.pmd-theme-editor-btn:not([aria-pressed='true']):hover {
+  background: var(--pmd-c-hover);
+}
+.pmd-theme-editor-btn[aria-pressed='true'] {
+  background: var(--pmd-c-accent);
+  color: var(--pmd-c-segmented-selected-text);
+}
+.pmd-theme-editor-btn[aria-pressed='true']:hover {
+  background: var(--pmd-c-accent-hover);
+}
 .pmd-theme-editor-btn:last-child { border-right: none; }
-.pmd-theme-editor-btn:hover { background: var(--pmd-c-hover); }
 
 
 /* Multi-slot color editor — highlight / shading display
