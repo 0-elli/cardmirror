@@ -2256,7 +2256,7 @@ function buildLineHeightsEditor(): HTMLElement {
 
 function buildDisplaySizesEditor(): HTMLElement {
   const wrap = document.createElement('div');
-  wrap.className = 'pmd-display-sizes-editor';
+  wrap.className = 'pmd-display-sizes-editor pmd-style-font-sizes-editor';
 
   function commit(next: DisplaySizes): void {
     settings.set('displaySizes', next);
